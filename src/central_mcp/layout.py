@@ -16,9 +16,9 @@ import sys
 from pathlib import Path
 
 from central_mcp import tmux
-from central_mcp.registry import Project, load_registry
+from central_mcp.registry import Project, load_registry, projects_by_session
 
-SESSION = "central"
+HUB_SESSION = "central"
 HUB_WINDOW = "hub"
 PROJECTS_WINDOW = "projects"
 
@@ -34,47 +34,92 @@ _SPLIT_ALIASES = {
 
 
 def ensure_session(root: Path) -> tuple[bool, list[str]]:
-    """Idempotently bring up the central session. Returns (created, messages)."""
+    """Idempotently bring up every session referenced by the registry.
+
+    The session literally named 'central' (HUB_SESSION) gets a 'hub' window
+    with auto-split log tail. Other sessions only get a 'projects' window
+    with one pane per project — no hub. This lets users distribute projects
+    across multiple tmux sessions (e.g. per machine, per client) while
+    keeping a single orchestrator-friendly hub.
+    """
     messages: list[str] = []
-    if tmux.has_session(SESSION):
-        messages.append(f"session '{SESSION}' already exists — leaving as-is")
-        return False, messages
+    by_session = projects_by_session()
+    # Always create the hub session even if no project lives in it.
+    by_session.setdefault(HUB_SESSION, [])
 
-    projects = load_registry()
-    if not projects:
-        messages.append("registry.yaml has no projects — creating empty session")
+    any_created = False
+    for session_name, projects in by_session.items():
+        created = _ensure_one_session(session_name, projects, root, messages)
+        any_created = any_created or created
 
-    r = tmux.new_session(SESSION, HUB_WINDOW, str(root))
+    return any_created, messages
+
+
+def _ensure_one_session(
+    session_name: str,
+    projects: list[Project],
+    root: Path,
+    messages: list[str],
+) -> bool:
+    if tmux.has_session(session_name):
+        messages.append(f"session '{session_name}' already exists — leaving as-is")
+        return False
+
+    is_hub = session_name == HUB_SESSION
+    initial_window = HUB_WINDOW if is_hub else PROJECTS_WINDOW
+    initial_cwd = str(root) if is_hub else projects[0].path if projects else str(root)
+
+    r = tmux.new_session(session_name, initial_window, initial_cwd)
     if not r.ok:
-        messages.append(f"new-session failed: {r.stderr.strip()}")
-        return False, messages
-    messages.append(f"created session '{SESSION}' with window '{HUB_WINDOW}'")
+        messages.append(f"new-session {session_name} failed: {r.stderr.strip()}")
+        return False
+    messages.append(f"created session '{session_name}' with window '{initial_window}'")
 
-    _split_hub_for_logs(root, projects, messages)
-
-    if projects:
-        first, *rest = projects
-        r = tmux.new_window(SESSION, PROJECTS_WINDOW, first.path)
-        if not r.ok:
-            messages.append(f"new-window failed: {r.stderr.strip()}")
-            return True, messages
-        messages.append(f"projects.0 -> {first.name} ({first.path})")
-
-        target = f"{SESSION}:{PROJECTS_WINDOW}"
+    if is_hub:
+        _split_hub_for_logs(root, load_registry(), messages)
+        if projects:
+            _build_projects_window(session_name, projects, messages)
+        tmux._run(["select-window", "-t", f"{session_name}:{HUB_WINDOW}"])
+    else:
+        # Non-hub session: its initial window IS the projects window.
+        # First pane already exists in projects[0].path; split for the rest.
+        rest = projects[1:]
+        target = f"{session_name}:{PROJECTS_WINDOW}"
+        messages.append(f"{session_name}:{PROJECTS_WINDOW}.0 -> {projects[0].name}")
         for i, p in enumerate(rest, start=1):
             r = tmux.split_window(target, p.path)
-            if not r.ok:
-                messages.append(f"split-window for {p.name} failed: {r.stderr.strip()}")
-                continue
-            messages.append(f"projects.{i} -> {p.name} ({p.path})")
-
+            if r.ok:
+                messages.append(f"{session_name}:{PROJECTS_WINDOW}.{i} -> {p.name}")
         if rest:
             tmux.select_layout(target, "tiled")
-
         _assign_pane_indices(projects)
+    return True
 
-    tmux._run(["select-window", "-t", f"{SESSION}:{HUB_WINDOW}"])
-    return True, messages
+
+def _build_projects_window(
+    session_name: str,
+    projects: list[Project],
+    messages: list[str],
+) -> None:
+    first, *rest = projects
+    r = tmux.new_window(session_name, PROJECTS_WINDOW, first.path)
+    if not r.ok:
+        messages.append(f"new-window failed: {r.stderr.strip()}")
+        return
+    messages.append(f"projects.0 -> {first.name} ({first.path})")
+
+    target = f"{session_name}:{PROJECTS_WINDOW}"
+    for i, p in enumerate(rest, start=1):
+        r = tmux.split_window(target, p.path)
+        if not r.ok:
+            messages.append(f"split-window for {p.name} failed: {r.stderr.strip()}")
+            continue
+        messages.append(f"projects.{i} -> {p.name} ({p.path})")
+
+    if rest:
+        tmux.select_layout(target, "tiled")
+
+    _assign_pane_indices(projects)
 
 
 def _split_hub_for_logs(root: Path, projects: list[Project], messages: list[str]) -> None:
@@ -105,7 +150,7 @@ def _split_hub_for_logs(root: Path, projects: list[Project], messages: list[str]
         quoted = " ".join(tmux._shquote(p) for p in log_paths)
         tail_cmd = f"tail -F {quoted}"
 
-    hub_target = f"{SESSION}:{HUB_WINDOW}"
+    hub_target = f"{HUB_SESSION}:{HUB_WINDOW}"
     r = tmux._run([
         "split-window", flag, "-t", hub_target, "-c", str(root), tail_cmd,
     ])
@@ -142,7 +187,7 @@ def main() -> int:
         print(m)
     if created:
         print()
-        print(f"Attach with: tmux attach -t {SESSION}")
+        print(f"Attach with: tmux attach -t {HUB_SESSION}")
     return 0
 
 

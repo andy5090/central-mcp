@@ -13,6 +13,7 @@ authors = [{ name = "andy" }]
 dependencies = [
     "fastmcp>=0.2.0",
     "pyyaml>=6.0",
+    "ruamel.yaml>=0.18",
 ]
 
 [project.scripts]
