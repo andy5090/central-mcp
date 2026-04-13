@@ -1,36 +1,17 @@
 #!/usr/bin/env bash
 #
-# central-up.sh — bring up a tmux layout for central-mcp.
+# central-up.sh — thin shell wrapper around central_mcp.layout.
 #
-# Phase 0: hardcoded minimal layout.
-#   window "hub"      — one pane for the orchestrator (Claude Code / Codex / ...)
-#   window "projects" — one pane per project from registry.yaml (currently: gluecut-dawg)
-#
-# This is intentionally simple. Replace with a registry-driven generator once
-# the schema stabilizes.
+# Layout itself is registry-driven: central_mcp.layout reads registry.yaml
+# and creates one tmux pane per project. Idempotent — rerunning on an
+# existing session is a no-op.
 
 set -euo pipefail
 
-SESSION="central"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
 
-if tmux has-session -t "$SESSION" 2>/dev/null; then
-    echo "tmux session '$SESSION' already exists — attaching."
-    tmux attach -t "$SESSION"
-    exit 0
-fi
+uv run --directory "$ROOT" python -m central_mcp.layout
 
-# Window 1: orchestrator hub (starts in project-central root)
-tmux new-session -d -s "$SESSION" -n "hub" -c "$ROOT"
-
-# Window 2: projects — pane 0 = gluecut-dawg
-tmux new-window -t "$SESSION" -n "projects" -c "$HOME/Projects/gluecut-dawg"
-
-# Come back to the hub window on attach.
-tmux select-window -t "$SESSION:hub"
-
-echo "Session '$SESSION' created."
-echo "  hub      — launch your orchestrator here: claude | codex | cursor-agent ..."
-echo "  projects — pane 0: gluecut-dawg (launch the project's agent here)"
 echo
-echo "Attach with: tmux attach -t $SESSION"
+echo "Attach with: tmux attach -t central"
