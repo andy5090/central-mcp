@@ -11,6 +11,7 @@ is safe to rerun and never clobbers running agents.
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -20,6 +21,16 @@ from central_mcp.registry import Project, load_registry
 SESSION = "central"
 HUB_WINDOW = "hub"
 PROJECTS_WINDOW = "projects"
+
+# Hub pane layout. Override with CENTRAL_HUB_SPLIT=horizontal|vertical|none.
+#   horizontal → left: orchestrator, right: log tail (default)
+#   vertical   → top:  orchestrator, bottom: log tail
+#   none       → single pane, no auto log tail
+_SPLIT_ENV = "CENTRAL_HUB_SPLIT"
+_SPLIT_ALIASES = {
+    "horizontal": "-h", "h": "-h", "lr": "-h", "left-right": "-h",
+    "vertical": "-v", "v": "-v", "tb": "-v", "top-bottom": "-v",
+}
 
 
 def ensure_session(root: Path) -> tuple[bool, list[str]]:
@@ -38,6 +49,8 @@ def ensure_session(root: Path) -> tuple[bool, list[str]]:
         messages.append(f"new-session failed: {r.stderr.strip()}")
         return False, messages
     messages.append(f"created session '{SESSION}' with window '{HUB_WINDOW}'")
+
+    _split_hub_for_logs(root, projects, messages)
 
     if projects:
         first, *rest = projects
@@ -62,6 +75,48 @@ def ensure_session(root: Path) -> tuple[bool, list[str]]:
 
     tmux._run(["select-window", "-t", f"{SESSION}:{HUB_WINDOW}"])
     return True, messages
+
+
+def _split_hub_for_logs(root: Path, projects: list[Project], messages: list[str]) -> None:
+    """Split the hub window so the right/bottom pane live-tails all project logs.
+
+    Controlled by CENTRAL_HUB_SPLIT (horizontal|vertical|none). Pre-creates
+    empty log files so `tail -F` doesn't spam "file not found" on first run.
+    """
+    raw = os.environ.get(_SPLIT_ENV, "horizontal").strip().lower()
+    if raw in ("none", "off", "no", ""):
+        messages.append("hub split: disabled")
+        return
+    flag = _SPLIT_ALIASES.get(raw)
+    if flag is None:
+        messages.append(f"hub split: unknown value {raw!r}, falling back to horizontal")
+        flag = "-h"
+
+    log_paths: list[str] = []
+    for p in projects:
+        lp = root / "logs" / p.name / "pane.log"
+        lp.parent.mkdir(parents=True, exist_ok=True)
+        lp.touch(exist_ok=True)
+        log_paths.append(str(lp))
+
+    if not log_paths:
+        tail_cmd = "echo 'no projects registered — nothing to tail'; exec $SHELL"
+    else:
+        quoted = " ".join(tmux._shquote(p) for p in log_paths)
+        tail_cmd = f"tail -F {quoted}"
+
+    hub_target = f"{SESSION}:{HUB_WINDOW}"
+    r = tmux._run([
+        "split-window", flag, "-t", hub_target, "-c", str(root), tail_cmd,
+    ])
+    if not r.ok:
+        messages.append(f"hub split failed: {r.stderr.strip()}")
+        return
+
+    # Focus back on the orchestrator pane (index 0).
+    tmux._run(["select-pane", "-t", f"{hub_target}.0"])
+    direction = "left|right" if flag == "-h" else "top|bottom"
+    messages.append(f"hub split ({direction}): orchestrator | tail -F {len(log_paths)} log(s)")
 
 
 def _assign_pane_indices(projects: list[Project]) -> None:
