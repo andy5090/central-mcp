@@ -18,7 +18,31 @@ from central_mcp.registry import (
 from central_mcp.scrub import scrub
 
 
-mcp = FastMCP("central-mcp")
+_MCP_INSTRUCTIONS = """\
+You are connected to central-mcp, a multi-project orchestration hub for
+coding agents. This hub manages a registry of projects; each project runs
+in its own tmux pane, typically with a coding-agent CLI (Claude Code,
+Codex, Cursor, Gemini) attached.
+
+When the user asks anything about "my projects", status, dispatching work,
+fetching logs, or hub-wide activity, call these tools:
+
+  - list_projects       — enumerate the registry
+  - project_status      — pane liveness + recent output for one project
+  - project_activity    — busy / recent / idle state
+  - dispatch_query      — send a prompt into a project's pane as keystrokes
+  - fetch_logs          — retrieve recent output (pane or persisted file)
+  - start_project       — launch the configured agent CLI in a pane
+  - add_project / remove_project — edit the registry
+
+When the user says something like "what's running?", "send this to X",
+"how is gluecut-dawg doing?", assume they mean one of the registered
+projects and call list_projects first to see what is available. The
+orchestrator (you) is NOT the only agent — you dispatch work to other
+agents running in their own panes and observe their output.
+"""
+
+mcp = FastMCP("central-mcp", instructions=_MCP_INSTRUCTIONS)
 
 ROOT = Path(__file__).resolve().parents[2]
 LOG_ROOT = ROOT / "logs"

@@ -41,5 +41,11 @@
 
 ## 관측된 피드백
 
-_여기에 실제 마찰 기록_
+### [2026-04-14] tmux 의존은 장기적으로 탈피하고 싶음
+- **분류:** flaw / idea
+- **상황:** 초기 설계 리뷰
+- **기대:** 헤드리스 동작이 기본이고, tmux는 "눈으로 보고 싶을 때" 켜는 선택지
+- **실제:** 모든 어댑터가 tmux pane을 전제로 동작
+- **방향:** Phase 4 이후 `adapter.stream_dispatch()` 추상화 추가 — PTY(pexpect/ptyprocess) 또는 ACP JSON-RPC 경로를 tmux와 병렬로 제공. tmux는 선택적 "뷰 레이어"로 강등
+
 
