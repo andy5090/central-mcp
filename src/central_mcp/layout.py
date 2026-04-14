@@ -4,18 +4,20 @@ Creates a single tmux session with:
   - window "hub"      for the orchestrator
   - window "projects" with one pane per project in registry.yaml
 
-Each project pane starts in its project directory. Agent processes are NOT
-launched here — users or the `start_project` MCP tool do that — so central-up
-is safe to rerun and never clobbers running agents.
+On first creation (not rerun), each project pane auto-launches its configured
+agent CLI via the corresponding adapter. Opt out with CENTRAL_MCP_AUTOSTART=0.
+Reruns never re-launch: ensure_session bails out if the session already exists.
 """
 
 from __future__ import annotations
 
 import os
 import sys
+import time
 from pathlib import Path
 
 from central_mcp import tmux
+from central_mcp.adapters import get_adapter
 from central_mcp.registry import Project, load_registry, projects_by_session
 
 HUB_SESSION = "central"
@@ -31,6 +33,14 @@ _SPLIT_ALIASES = {
     "horizontal": "-h", "h": "-h", "lr": "-h", "left-right": "-h",
     "vertical": "-v", "v": "-v", "tb": "-v", "top-bottom": "-v",
 }
+
+# Auto-launch the configured agent in each project pane when the session
+# is first created. Set CENTRAL_MCP_AUTOSTART=0 to opt out.
+_AUTOSTART_ENV = "CENTRAL_MCP_AUTOSTART"
+
+
+def _autostart_enabled() -> bool:
+    return os.environ.get(_AUTOSTART_ENV, "1").strip().lower() not in ("0", "false", "no", "off")
 
 
 def ensure_session(root: Path) -> tuple[bool, list[str]]:
@@ -93,7 +103,33 @@ def _ensure_one_session(
         if rest:
             tmux.select_layout(target, "tiled")
         _assign_pane_indices(projects)
+
+    if projects and _autostart_enabled():
+        _autostart_agents(projects, messages)
     return True
+
+
+def _autostart_agents(projects: list[Project], messages: list[str]) -> None:
+    """Send the adapter-defined launch command to every project pane.
+
+    Skips projects whose adapter has no launch command (shell). Small delay
+    between sends so tmux has time to route keystrokes to the right pane on
+    freshly-created sessions.
+    """
+    launched = 0
+    for p in projects:
+        cmd = get_adapter(p.agent).launch_command()
+        if not cmd:
+            continue
+        target = p.tmux.target
+        if not tmux.pane_exists(target):
+            continue
+        r = tmux.send_keys(target, cmd, enter=True)
+        if r.ok:
+            launched += 1
+            time.sleep(0.05)
+    if launched:
+        messages.append(f"autostart: launched {launched} agent(s)")
 
 
 def _build_projects_window(
