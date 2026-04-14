@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --directory /Users/andy/Projects/project-central python -m central_mcp.brief"
+            "command": "central-mcp brief"
           }
         ]
       }

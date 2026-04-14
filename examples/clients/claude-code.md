@@ -1,35 +1,27 @@
 # Registering central-mcp with Claude Code
 
-## Recommended: `uv run` (local checkout)
+## Recommended: `central-mcp install claude`
 
-`uv run` resolves the virtualenv and installs dependencies on first launch —
-no manual `pip install` step, and no hardcoded `.venv` path.
-
-```bash
-claude mcp add central -- \
-    uv run --directory /Users/andy/Projects/project-central python -m central_mcp
-```
-
-With an explicit registry path:
+Let the CLI do it for you. After `uv tool install --editable .` (or `uv tool install central-mcp` post-publish):
 
 ```bash
-claude mcp add \
-    -e CENTRAL_MCP_REGISTRY=/Users/andy/Projects/project-central/registry.yaml \
-    central -- \
-    uv run --directory /Users/andy/Projects/project-central python -m central_mcp
+central-mcp install claude
 ```
 
-Add `-s project` to scope the server to the current project rather than user-global.
+This runs `claude mcp add central -- central-mcp serve` under the hood.
 
-## Future: `uvx` (once published to PyPI)
+## Manual
 
 ```bash
-claude mcp add central -- uvx central-mcp
+claude mcp add central -- central-mcp serve
 ```
 
-Zero install — `uvx` downloads and runs the package in an ephemeral environment.
+If `central-mcp` is not on your PATH (e.g. you're running from a bare checkout without `uv tool install`), fall back to running the module through `uv run`:
+
+```bash
+claude mcp add central -- uv run --directory ~/Projects/central-mcp python -m central_mcp serve
+```
 
 ## Verify
 
-Start a Claude Code session and run `/mcp` — you should see `central` listed.
-The exposed tools are `list_projects`, `project_status`, `dispatch_query`, `fetch_logs`.
+Start a Claude Code session and run `/mcp` — you should see `central` listed. The exposed tools are `list_projects`, `project_status`, `project_activity`, `dispatch_query`, `fetch_logs`, `start_project`, `add_project`, `remove_project`.

@@ -1,32 +1,38 @@
 # Registering central-mcp with Codex CLI
 
+## Recommended: `central-mcp install codex`
+
+Let the CLI do it — idempotent, backs up `~/.codex/config.toml` before writing:
+
+```bash
+central-mcp install codex
+```
+
+Preview without writing:
+
+```bash
+central-mcp install codex --dry-run
+```
+
+## Manual
+
 Add to `~/.codex/config.toml`:
 
-## Recommended: `uv run` (local checkout)
+```toml
+[mcp_servers.central]
+command = "central-mcp"
+args = ["serve"]
+startup_timeout_sec = 15.0
+```
+
+If `central-mcp` is not on PATH, fall back to running via `uv`:
 
 ```toml
 [mcp_servers.central]
 command = "uv"
-args = [
-    "run",
-    "--directory", "/Users/andy/Projects/project-central",
-    "python", "-m", "central_mcp",
-]
-
-[mcp_servers.central.env]
-CENTRAL_MCP_REGISTRY = "/Users/andy/Projects/project-central/registry.yaml"
-```
-
-## Future: `uvx` (once published to PyPI)
-
-```toml
-[mcp_servers.central]
-command = "uvx"
-args = ["central-mcp"]
+args = ["run", "--directory", "/Users/you/Projects/central-mcp", "python", "-m", "central_mcp", "serve"]
 ```
 
 ## Why this is the point
 
-The same MCP server binary is consumed by Claude Code and Codex with identical
-tool names and semantics. This is the core demonstration of orchestrator-
-agnosticism: one server, any client.
+Claude Code and Codex consume the same server binary with identical tool names. This is the core demonstration of orchestrator-agnosticism: one server, any client.
