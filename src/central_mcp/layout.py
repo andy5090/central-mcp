@@ -17,7 +17,7 @@ import time
 from pathlib import Path
 
 from central_mcp import tmux
-from central_mcp.adapters import get_adapter
+from central_mcp.adapters import get_adapter, has_history
 from central_mcp.registry import Project, load_registry, projects_by_session
 
 HUB_SESSION = "central"
@@ -117,8 +117,11 @@ def _autostart_agents(projects: list[Project], messages: list[str]) -> None:
     freshly-created sessions.
     """
     launched = 0
+    resumed = 0
     for p in projects:
-        cmd = get_adapter(p.agent).launch_command()
+        adapter = get_adapter(p.agent)
+        use_resume = has_history(p.agent, p.path)
+        cmd = adapter.launch_command(resume=use_resume)
         if not cmd:
             continue
         target = p.tmux.target
@@ -127,9 +130,14 @@ def _autostart_agents(projects: list[Project], messages: list[str]) -> None:
         r = tmux.send_keys(target, cmd, enter=True)
         if r.ok:
             launched += 1
+            if use_resume:
+                resumed += 1
             time.sleep(0.05)
     if launched:
-        messages.append(f"autostart: launched {launched} agent(s)")
+        note = f"autostart: launched {launched} agent(s)"
+        if resumed:
+            note += f" ({resumed} resumed from history)"
+        messages.append(note)
 
 
 def _build_projects_window(

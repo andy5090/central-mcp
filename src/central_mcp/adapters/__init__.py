@@ -5,6 +5,6 @@ is to keep the rest of central-mcp ignorant of per-agent quirks: everything
 else deals with `Project` and `Adapter.launch_command()`.
 """
 
-from central_mcp.adapters.base import Adapter, get_adapter
+from central_mcp.adapters.base import Adapter, get_adapter, has_history
 
-__all__ = ["Adapter", "get_adapter"]
+__all__ = ["Adapter", "get_adapter", "has_history"]

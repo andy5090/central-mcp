@@ -6,8 +6,8 @@ from typing import Any
 
 from fastmcp import FastMCP
 
-from central_mcp import tmux
-from central_mcp.adapters import get_adapter
+from central_mcp import layout, tmux
+from central_mcp.adapters import get_adapter, has_history
 from central_mcp.registry import (
     Project,
     add_project as _registry_add,
@@ -47,6 +47,42 @@ mcp = FastMCP("central-mcp", instructions=_MCP_INSTRUCTIONS)
 ROOT = Path(__file__).resolve().parents[2]
 LOG_ROOT = ROOT / "logs"
 _logging_enabled: set[str] = set()
+
+_SHELLS = {"zsh", "bash", "fish", "sh", "dash"}
+# Seconds to give a freshly-launched agent CLI to render its welcome banner
+# and start accepting keystrokes before we begin sending prompts. tmux's
+# pane_current_command is unreliable here (claude/codex run as node children
+# of the login shell and don't swap the foreground process), so we fall back
+# to a small fixed delay on first boot only.
+_FIRST_BOOT_SETTLE_SEC = 1.5
+
+
+def _ensure_pane_up(project: Project) -> dict[str, Any] | None:
+    """Lazy-boot the tmux layout if the project's pane is missing.
+
+    Called by mutating tools (dispatch_query, start_project) so callers never
+    need to run `central-mcp up` manually. Idempotent: no-op when the pane
+    already exists. On first boot, reuses layout.ensure_session which also
+    auto-launches each agent with resume-from-history when available.
+
+    Returns None on success, or an error dict ready to return from an MCP
+    tool.
+    """
+    target = project.tmux.target
+    if tmux.pane_exists(target):
+        return None
+
+    _, messages = layout.ensure_session(ROOT)
+    if not tmux.pane_exists(target):
+        detail = "; ".join(messages) if messages else "unknown failure"
+        return {
+            "ok": False,
+            "error": f"pane {target} still missing after ensure_session: {detail}",
+        }
+
+    if get_adapter(project.agent).launch:
+        time.sleep(_FIRST_BOOT_SETTLE_SEC)
+    return None
 
 
 def _ensure_logging(project: Project) -> None:
@@ -121,9 +157,10 @@ def dispatch_query(
     project, err = _require_project(name)
     if err:
         return err
+    boot_err = _ensure_pane_up(project)
+    if boot_err:
+        return boot_err
     target = project.tmux.target
-    if not tmux.pane_exists(target):
-        return {"ok": False, "error": f"tmux pane {target} not found — is the project running?"}
     if not force and tmux.pane_in_copy_mode(target):
         return {
             "ok": False,
@@ -178,28 +215,35 @@ def fetch_logs(
 
 
 @mcp.tool()
-def start_project(name: str) -> dict[str, Any]:
-    """Launch the project's configured agent CLI inside its tmux pane.
+def start_project(name: str, resume: bool = True) -> dict[str, Any]:
+    """Ensure the project's pane is up and its agent CLI is running.
 
-    Refuses if the pane is already running something other than a shell.
+    Idempotent. Creates the tmux layout on first call (same as lazy-boot
+    from dispatch_query). If an agent is already running in the pane,
+    returns a no-op success. `resume=True` (default) uses the adapter's
+    resume command when prior session history for the project's cwd is
+    detectable; pass `resume=False` to force a fresh launch.
     """
     project, err = _require_project(name)
     if err:
         return err
+    boot_err = _ensure_pane_up(project)
+    if boot_err:
+        return boot_err
     target = project.tmux.target
-    if not tmux.pane_exists(target):
-        return {"ok": False, "error": f"pane {target} not found — run bin/central-up.sh first"}
 
     current = tmux.pane_current_command(target)
-    shells = {"zsh", "bash", "fish", "sh", "dash"}
-    if current and current not in shells:
+    if current and current not in _SHELLS:
         return {
-            "ok": False,
-            "error": f"pane is running '{current}'; refuse to start a second agent on top",
+            "ok": True,
+            "target": target,
+            "already_running": current,
+            "note": "pane already has an agent running; no-op",
         }
 
     adapter = get_adapter(project.agent)
-    cmd = adapter.launch_command()
+    use_resume = resume and has_history(project.agent, project.path)
+    cmd = adapter.launch_command(resume=use_resume)
     if not cmd:
         return {"ok": True, "note": f"adapter '{project.agent}' has no launch command (shell)"}
 
@@ -209,6 +253,7 @@ def start_project(name: str) -> dict[str, Any]:
         "ok": r.ok,
         "target": target,
         "launched": cmd,
+        "resumed": use_resume,
         "stderr": r.stderr if not r.ok else "",
     }
 
