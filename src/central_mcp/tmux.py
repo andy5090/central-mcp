@@ -35,6 +35,25 @@ def has_session(name: str) -> bool:
 
 
 def pane_exists(target: str) -> bool:
+    """True if `target` resolves to an existing pane.
+
+    tmux is lenient about the `.N` suffix: asking for a non-existent pane
+    index silently falls back to the window's active pane, so a naive
+    display-message check would return True for any window that exists.
+    When `target` contains an explicit pane index we cross-check it against
+    list-panes output and require an exact match.
+    """
+    if ":" in target and "." in target.rsplit(":", 1)[-1]:
+        session_window, idx_str = target.rsplit(".", 1)
+        try:
+            want = int(idx_str)
+        except ValueError:
+            return False
+        r = _run(["list-panes", "-t", session_window, "-F", "#{pane_index}"])
+        if not r.ok:
+            return False
+        indices = {int(x) for x in r.stdout.split() if x.strip().isdigit()}
+        return want in indices
     return _run(["display-message", "-p", "-t", target, "#{pane_id}"]).ok
 
 

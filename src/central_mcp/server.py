@@ -58,18 +58,58 @@ _FIRST_BOOT_SETTLE_SEC = 1.5
 
 
 def _ensure_pane_up(project: Project) -> dict[str, Any] | None:
-    """Lazy-boot the tmux layout if the project's pane is missing.
+    """Idempotently ensure the project's tmux pane is alive with its agent.
 
-    Called by mutating tools (dispatch_query, start_project) so callers never
-    need to run `central-mcp up` manually. Idempotent: no-op when the pane
-    already exists. On first boot, reuses layout.ensure_session which also
-    auto-launches each agent with resume-from-history when available.
+    Three cases, in order:
+      1. Pane already exists — no-op.
+      2. Session exists but this pane doesn't — split-window (or new-window)
+         into the registry-declared window, then launch the agent.
+      3. No session at all — cold boot the full layout via ensure_session,
+         which handles all registered projects at once.
 
-    Returns None on success, or an error dict ready to return from an MCP
-    tool.
+    Used by every mutating tool (dispatch_query, start_project, add_project)
+    so callers never need to run `central-mcp up` manually. Returns None on
+    success, or an error dict ready to return from an MCP tool.
     """
     target = project.tmux.target
     if tmux.pane_exists(target):
+        return None
+
+    session = project.tmux.session
+    window = project.tmux.window
+    window_target = f"{session}:{window}"
+
+    if tmux.has_session(session):
+        if tmux.pane_exists(window_target):
+            r = tmux.split_window(window_target, project.path)
+            if not r.ok:
+                return {
+                    "ok": False,
+                    "error": f"split-window {window_target} failed: {r.stderr.strip()}",
+                }
+            tmux.select_layout(window_target, "tiled")
+        else:
+            r = tmux.new_window(session, window, project.path)
+            if not r.ok:
+                return {
+                    "ok": False,
+                    "error": f"new-window {session}:{window} failed: {r.stderr.strip()}",
+                }
+
+        if not tmux.pane_exists(target):
+            return {
+                "ok": False,
+                "error": (
+                    f"pane {target} still missing after split — registry pane index "
+                    f"(pane={project.tmux.pane}) disagrees with tmux creation order"
+                ),
+            }
+
+        adapter = get_adapter(project.agent)
+        cmd = adapter.launch_command(resume=has_history(project.agent, project.path))
+        if cmd:
+            tmux.send_keys(target, cmd, enter=True)
+            time.sleep(_FIRST_BOOT_SETTLE_SEC)
         return None
 
     _, messages = layout.ensure_session(ROOT)
@@ -79,7 +119,6 @@ def _ensure_pane_up(project: Project) -> dict[str, Any] | None:
             "ok": False,
             "error": f"pane {target} still missing after ensure_session: {detail}",
         }
-
     if get_adapter(project.agent).launch:
         time.sleep(_FIRST_BOOT_SETTLE_SEC)
     return None
@@ -311,10 +350,14 @@ def add_project(
     pane: int | None = None,
     description: str = "",
     tags: list[str] | None = None,
+    start: bool = True,
 ) -> dict[str, Any]:
-    """Append a project to registry.yaml. Does NOT create its tmux pane —
-    rerun bin/central-up.sh (after killing the old session) to materialize
-    the layout, or manually split the projects window.
+    """Append a project to registry.yaml and immediately boot its pane + agent.
+
+    The tmux layout is updated in place: if the target session is already
+    running, a new pane is split into the projects window; otherwise the
+    full layout is cold-booted. The agent CLI resumes from prior history
+    when available. Pass `start=False` to only update the registry.
     """
     try:
         proj = _registry_add(
@@ -323,11 +366,15 @@ def add_project(
         )
     except ValueError as e:
         return {"ok": False, "error": str(e)}
-    return {
-        "ok": True,
-        "project": proj.to_dict(),
-        "note": "registry.yaml updated; rerun central-up.sh to rebuild layout if needed",
-    }
+    result: dict[str, Any] = {"ok": True, "project": proj.to_dict()}
+    if start:
+        boot_err = _ensure_pane_up(proj)
+        if boot_err:
+            result["started"] = False
+            result["boot_warning"] = boot_err.get("error")
+        else:
+            result["started"] = True
+    return result
 
 
 @mcp.tool()

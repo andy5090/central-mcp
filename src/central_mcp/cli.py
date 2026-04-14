@@ -96,6 +96,16 @@ def _cmd_add(args: argparse.Namespace) -> int:
         print(f"error: {e}", file=sys.stderr)
         return 1
     print(f"added: {proj.name} -> {proj.tmux.target} (agent={proj.agent})")
+
+    if getattr(args, "no_start", False):
+        return 0
+    from central_mcp.server import _ensure_pane_up
+
+    err = _ensure_pane_up(proj)
+    if err:
+        print(f"warning: auto-start skipped: {err.get('error')}", file=sys.stderr)
+        return 0
+    print(f"started: {proj.tmux.target} (agent={proj.agent})")
     return 0
 
 
@@ -147,9 +157,9 @@ def _cmd_init(args: argparse.Namespace) -> int:
 
     print()
     print("Next steps:")
-    print("  1. central-mcp add <project-path> --agent claude")
-    print("  2. central-mcp install claude    # or codex, cursor")
-    print("  3. central-mcp up")
+    print("  1. central-mcp install claude    # or codex, cursor")
+    print("  2. central-mcp add <name> <path> --agent claude")
+    print("     (tmux pane + agent CLI auto-starts on add)")
     return 0
 
 
@@ -188,6 +198,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_add.add_argument("--pane", type=int, default=None)
     p_add.add_argument("--description", default="")
     p_add.add_argument("--tag", action="append")
+    p_add.add_argument(
+        "--no-start",
+        action="store_true",
+        help="only update registry.yaml; skip auto-booting the pane + agent",
+    )
     p_add.set_defaults(func=_cmd_add)
 
     p_remove = sub.add_parser("remove", help="unregister a project")
