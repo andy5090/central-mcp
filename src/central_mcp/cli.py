@@ -28,11 +28,16 @@ import tomlkit
 from central_mcp import brief as brief_mod
 from central_mcp import install as install_mod
 from central_mcp import layout
+from central_mcp import paths
 from central_mcp import preamble
 from central_mcp import tmux
+from central_mcp.registry import (
+    add_project as registry_add,
+    load_registry,
+    projects_by_session,
+    remove_project as registry_remove,
+)
 
-CENTRAL_HOME = Path.home() / ".central-mcp"
-CONFIG_FILE = CENTRAL_HOME / "config.toml"
 
 # Supported orchestrator agents, in the order they're offered in the picker.
 # (key used in config, binary name on PATH, human-readable label).
@@ -52,13 +57,6 @@ BYPASS_FLAGS: dict[str, list[str]] = {
     "gemini": ["--yolo"],
     # cursor-agent: not wired up — add when a stable flag exists.
 }
-from central_mcp.registry import (
-    DEFAULT_REGISTRY_PATH,
-    add_project as registry_add,
-    load_registry,
-    projects_by_session,
-    remove_project as registry_remove,
-)
 
 
 def _cmd_serve(args: argparse.Namespace) -> int:
@@ -68,8 +66,7 @@ def _cmd_serve(args: argparse.Namespace) -> int:
 
 
 def _cmd_up(args: argparse.Namespace) -> int:
-    root = Path(DEFAULT_REGISTRY_PATH).resolve().parent
-    created, messages = layout.ensure_session(root)
+    created, messages = layout.ensure_session()
     for m in messages:
         print(m)
     if created:
@@ -236,19 +233,19 @@ def _detect_installed() -> list[tuple[str, str, str]]:
 
 
 def _load_preference() -> str | None:
-    if not CONFIG_FILE.exists():
+    if not paths.config_file().exists():
         return None
     try:
-        data = tomlkit.parse(CONFIG_FILE.read_text())
+        data = tomlkit.parse(paths.config_file().read_text())
     except Exception:
         return None
     return (data.get("orchestrator") or {}).get("default")
 
 
 def _save_preference(key: str) -> None:
-    CENTRAL_HOME.mkdir(parents=True, exist_ok=True)
-    if CONFIG_FILE.exists():
-        data = tomlkit.parse(CONFIG_FILE.read_text())
+    paths.central_mcp_home().mkdir(parents=True, exist_ok=True)
+    if paths.config_file().exists():
+        data = tomlkit.parse(paths.config_file().read_text())
     else:
         data = tomlkit.document()
     orch = data.get("orchestrator")
@@ -256,7 +253,7 @@ def _save_preference(key: str) -> None:
         orch = tomlkit.table()
         data["orchestrator"] = orch
     orch["default"] = key
-    CONFIG_FILE.write_text(tomlkit.dumps(data))
+    paths.config_file().write_text(tomlkit.dumps(data))
 
 
 def _ensure_launch_dir(target: Path) -> None:
@@ -444,7 +441,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
             return 1
         choice = _prompt_choice(installed)
         _save_preference(choice[0])
-        print(f"saved default orchestrator: {choice[0]} → {CONFIG_FILE}")
+        print(f"saved default orchestrator: {choice[0]} → {paths.config_file()}")
         source = "--pick (saved)"
     else:
         pref = _load_preference()
@@ -468,7 +465,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
             elif sys.stdin.isatty():
                 choice = _prompt_choice(installed)
                 _save_preference(choice[0])
-                print(f"saved default orchestrator: {choice[0]} → {CONFIG_FILE}")
+                print(f"saved default orchestrator: {choice[0]} → {paths.config_file()}")
                 source = "first-run picker (saved)"
             else:
                 print(
@@ -484,7 +481,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
     key, binary, label = choice
 
     # 2. Launch directory with orchestrator preamble
-    launch_dir = Path(args.cwd).expanduser().resolve() if args.cwd else CENTRAL_HOME
+    launch_dir = Path(args.cwd).expanduser().resolve() if args.cwd else paths.central_mcp_home()
     _ensure_launch_dir(launch_dir)
 
     # 3. Assemble argv (optionally with permission-bypass flags)
@@ -615,7 +612,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_run.add_argument(
         "--cwd",
-        help=f"launch directory (default: {CENTRAL_HOME})",
+        help=f"launch directory (default: {paths.central_mcp_home()})",
     )
     p_run.add_argument(
         "--bypass",

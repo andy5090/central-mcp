@@ -16,7 +16,7 @@ import sys
 import time
 from pathlib import Path
 
-from central_mcp import tmux
+from central_mcp import paths, tmux
 from central_mcp.adapters import get_adapter, has_history
 from central_mcp.registry import Project, load_registry, projects_by_session
 
@@ -43,8 +43,13 @@ def _autostart_enabled() -> bool:
     return os.environ.get(_AUTOSTART_ENV, "1").strip().lower() not in ("0", "false", "no", "off")
 
 
-def ensure_session(root: Path) -> tuple[bool, list[str]]:
+def ensure_session(root: Path | None = None) -> tuple[bool, list[str]]:
     """Idempotently bring up every session referenced by the registry.
+
+    `root` is the initial cwd for the hub window. When omitted, we use
+    `paths.central_mcp_home()` — the launch directory where the
+    orchestrator preamble lives, so agents spawned there see CLAUDE.md /
+    AGENTS.md / .claude/settings.json automatically.
 
     The session literally named 'central' (HUB_SESSION) gets a 'hub' window
     with auto-split log tail. Other sessions only get a 'projects' window
@@ -52,6 +57,9 @@ def ensure_session(root: Path) -> tuple[bool, list[str]]:
     across multiple tmux sessions (e.g. per machine, per client) while
     keeping a single orchestrator-friendly hub.
     """
+    if root is None:
+        root = paths.central_mcp_home()
+        root.mkdir(parents=True, exist_ok=True)
     messages: list[str] = []
     by_session = projects_by_session()
     # Always create the hub session even if no project lives in it.
@@ -183,7 +191,7 @@ def _split_hub_for_logs(root: Path, projects: list[Project], messages: list[str]
 
     log_paths: list[str] = []
     for p in projects:
-        lp = root / "logs" / p.name / "pane.log"
+        lp = paths.project_log_path(p.name)
         lp.parent.mkdir(parents=True, exist_ok=True)
         lp.touch(exist_ok=True)
         log_paths.append(str(lp))
@@ -225,8 +233,7 @@ def _assign_pane_indices(projects: list[Project]) -> None:
 
 
 def main() -> int:
-    root = Path(__file__).resolve().parents[2]
-    created, messages = ensure_session(root)
+    created, messages = ensure_session()
     for m in messages:
         print(m)
     if created:

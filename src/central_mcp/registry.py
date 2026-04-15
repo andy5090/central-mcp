@@ -1,34 +1,22 @@
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from ruamel.yaml import YAML
 
-
-def _resolve_default_registry() -> Path:
-    """Pick the registry path using a three-level cascade.
-
-    1. $CENTRAL_MCP_REGISTRY (explicit override)
-    2. ./registry.yaml if it already exists in the current directory
-       (dev-mode / per-project override)
-    3. $HOME/.central-mcp/registry.yaml (global default for installed users)
-
-    The returned path is always absolute. It may or may not exist yet — callers
-    that write should `mkdir -p` its parent.
-    """
-    env = os.environ.get("CENTRAL_MCP_REGISTRY")
-    if env:
-        return Path(env).expanduser().resolve()
-    cwd_candidate = Path.cwd() / "registry.yaml"
-    if cwd_candidate.exists():
-        return cwd_candidate.resolve()
-    return (Path.home() / ".central-mcp" / "registry.yaml").resolve()
+from central_mcp import paths
 
 
-DEFAULT_REGISTRY_PATH = _resolve_default_registry()
+def _default_path() -> Path:
+    """Indirection so tests can monkey-patch `paths.registry_path`."""
+    return paths.registry_path()
+
+
+# Kept for backwards compatibility — importers may still read this constant,
+# but internal code should call `_default_path()` or pass an explicit path.
+DEFAULT_REGISTRY_PATH = _default_path()
 
 _yaml = YAML()
 _yaml.preserve_quotes = True
@@ -66,14 +54,18 @@ class Project:
         }
 
 
-def _read_raw(path: Path = DEFAULT_REGISTRY_PATH) -> dict[str, Any]:
+def _read_raw(path: Path | None = None) -> dict[str, Any]:
+    if path is None:
+        path = _default_path()
     if not path.exists():
         return {}
     with path.open() as f:
         return _yaml.load(f) or {}
 
 
-def _write_raw(data: dict[str, Any], path: Path = DEFAULT_REGISTRY_PATH) -> None:
+def _write_raw(data: dict[str, Any], path: Path | None = None) -> None:
+    if path is None:
+        path = _default_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w") as f:
         _yaml.dump(data, f)
@@ -95,12 +87,12 @@ def _project_from_raw(p: dict[str, Any]) -> Project:
     )
 
 
-def load_registry(path: Path = DEFAULT_REGISTRY_PATH) -> list[Project]:
+def load_registry(path: Path | None = None) -> list[Project]:
     data = _read_raw(path)
     return [_project_from_raw(p) for p in (data.get("projects") or [])]
 
 
-def find_project(name: str, path: Path = DEFAULT_REGISTRY_PATH) -> Project | None:
+def find_project(name: str, path: Path | None = None) -> Project | None:
     for p in load_registry(path):
         if p.name == name:
             return p
@@ -116,7 +108,7 @@ def add_project(
     pane: int | None = None,
     description: str = "",
     tags: list[str] | None = None,
-    registry_path: Path = DEFAULT_REGISTRY_PATH,
+    registry_path: Path | None = None,
 ) -> Project:
     """Append a project to registry.yaml. Returns the created Project.
 
@@ -154,7 +146,7 @@ def add_project(
 
 def remove_project(
     name: str,
-    registry_path: Path = DEFAULT_REGISTRY_PATH,
+    registry_path: Path | None = None,
 ) -> bool:
     """Remove a project from registry.yaml. Returns True if something was removed."""
     data = _read_raw(registry_path)
@@ -169,7 +161,7 @@ def remove_project(
 
 
 def projects_by_session(
-    path: Path = DEFAULT_REGISTRY_PATH,
+    path: Path | None = None,
 ) -> dict[str, list[Project]]:
     out: dict[str, list[Project]] = {}
     for p in load_registry(path):

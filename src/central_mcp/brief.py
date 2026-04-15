@@ -9,16 +9,13 @@ activity state. Safe to pipe straight into hook stdout.
 from __future__ import annotations
 
 import time
-from pathlib import Path
 
-from central_mcp import tmux
+from central_mcp import paths, tmux
 from central_mcp.registry import Project, load_registry
-
-_LOG_ROOT = Path(__file__).resolve().parents[2] / "logs"
 
 
 def _activity(p: Project) -> tuple[str, str | None]:
-    log_path = _LOG_ROOT / p.name / "pane.log"
+    log_path = paths.project_log_path(p.name)
     if not log_path.exists():
         return "unknown", None
     age = time.time() - log_path.stat().st_mtime

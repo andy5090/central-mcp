@@ -6,7 +6,7 @@ from typing import Any
 
 from fastmcp import FastMCP
 
-from central_mcp import layout, tmux
+from central_mcp import layout, paths, tmux
 from central_mcp.adapters import get_adapter, has_history
 from central_mcp.registry import (
     Project,
@@ -50,8 +50,8 @@ default (claude if unsure) and mention the choice in your reply.
 
 mcp = FastMCP("central-mcp", instructions=_MCP_INSTRUCTIONS)
 
-ROOT = Path(__file__).resolve().parents[2]
-LOG_ROOT = ROOT / "logs"
+def _log_root() -> Path:
+    return paths.log_root()
 _logging_enabled: set[str] = set()
 
 _SHELLS = {"zsh", "bash", "fish", "sh", "dash"}
@@ -118,7 +118,7 @@ def _ensure_pane_up(project: Project) -> dict[str, Any] | None:
             time.sleep(_FIRST_BOOT_SETTLE_SEC)
         return None
 
-    _, messages = layout.ensure_session(ROOT)
+    _, messages = layout.ensure_session()
     if not tmux.pane_exists(target):
         detail = "; ".join(messages) if messages else "unknown failure"
         return {
@@ -134,7 +134,7 @@ def _ensure_logging(project: Project) -> None:
     target = project.tmux.target
     if target in _logging_enabled:
         return
-    log_path = LOG_ROOT / project.name / "pane.log"
+    log_path = paths.project_log_path(project.name)
     r = tmux.pipe_pane_to_file(target, log_path)
     if r.ok:
         _logging_enabled.add(target)
@@ -148,7 +148,7 @@ def _require_project(name: str) -> tuple[Project | None, dict[str, Any] | None]:
 
 
 def _log_path(project: Project) -> Path:
-    return LOG_ROOT / project.name / "pane.log"
+    return paths.project_log_path(project.name)
 
 
 @mcp.tool()
