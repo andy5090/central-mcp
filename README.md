@@ -64,7 +64,40 @@ That's it. The chosen client starts in `~/.central-mcp/`, which `central-mcp run
 - *"What projects do I have? Send the latest design doc to my-app."*
 - *"How is gluecut-dawg doing right now?"*
 
-The orchestrator calls `add_project`, `dispatch_query`, `project_status`, etc. on your behalf. The hub auto-creates the tmux layout on the first mutating MCP call and auto-launches each project's configured agent. Run `tmux attach -t central` in a real terminal to watch the panes live whenever you want to look over its shoulder.
+The orchestrator calls `add_project`, `dispatch_query`, `project_status`, etc. on your behalf. The hub auto-creates the tmux layout on the first mutating MCP call and auto-launches each project's configured agent.
+
+## Watching the hub in tmux
+
+In any real terminal:
+
+```bash
+tmux attach -t central
+```
+
+The `central` session has two windows:
+
+- `hub` — where your orchestrator is running. The split-right (or split-bottom if `CENTRAL_HUB_SPLIT=vertical`) pane live-tails every project's pane log via `tail -F`.
+- `projects` — one pane per registered project. `Ctrl+b 1` to switch, arrow keys (or `Ctrl+b q <num>`) to move between panes, `Ctrl+b z` to zoom into one.
+
+You can type directly into a project's pane to take over from the orchestrator, scroll with `Ctrl+b [` (q to exit copy-mode), or let the orchestrator drive while you watch. `dispatch_query` refuses to interrupt a pane in copy-mode unless called with `force=true`.
+
+## Troubleshooting / reset
+
+```bash
+central-mcp list        # is the registry still what you expect?
+central-mcp brief       # per-project pane + activity snapshot
+central-mcp down        # kill every session the registry references
+central-mcp up          # re-create the layout (lazy-boot will also do this
+                        # on the next mutating MCP call)
+```
+
+If tmux is in a weird state and `down` doesn't clean it up:
+
+```bash
+tmux kill-server        # nuke everything, then `central-mcp up`
+```
+
+Per-user state (registry, config, logs, launch preamble) lives under `~/.central-mcp/`. Delete that directory and rerun `central-mcp init` for a clean slate.
 
 ## What the orchestrator can do
 
