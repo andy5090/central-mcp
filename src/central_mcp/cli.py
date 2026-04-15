@@ -18,13 +18,30 @@ what MCP clients invoke over stdio. All other subcommands are for humans.
 from __future__ import annotations
 
 import argparse
+import os
+import shutil
 import sys
 from pathlib import Path
+
+import tomlkit
 
 from central_mcp import brief as brief_mod
 from central_mcp import install as install_mod
 from central_mcp import layout
+from central_mcp import preamble
 from central_mcp import tmux
+
+CENTRAL_HOME = Path.home() / ".central-mcp"
+CONFIG_FILE = CENTRAL_HOME / "config.toml"
+
+# Supported orchestrator agents, in the order they're offered in the picker.
+# (key used in config, binary name on PATH, human-readable label).
+ORCHESTRATORS: list[tuple[str, str, str]] = [
+    ("claude", "claude", "Claude Code"),
+    ("codex", "codex", "Codex CLI"),
+    ("cursor", "cursor-agent", "Cursor Agent"),
+    ("gemini", "gemini", "Gemini CLI"),
+]
 from central_mcp.registry import (
     DEFAULT_REGISTRY_PATH,
     add_project as registry_add,
@@ -156,6 +173,146 @@ def _cmd_install(args: argparse.Namespace) -> int:
     return install_mod.install(args.client, dry_run=args.dry_run)
 
 
+def _detect_installed() -> list[tuple[str, str, str]]:
+    """Return every orchestrator whose binary is on PATH, in ORCHESTRATORS order."""
+    return [(k, b, label) for k, b, label in ORCHESTRATORS if shutil.which(b)]
+
+
+def _load_preference() -> str | None:
+    if not CONFIG_FILE.exists():
+        return None
+    try:
+        data = tomlkit.parse(CONFIG_FILE.read_text())
+    except Exception:
+        return None
+    return (data.get("orchestrator") or {}).get("default")
+
+
+def _save_preference(key: str) -> None:
+    CENTRAL_HOME.mkdir(parents=True, exist_ok=True)
+    if CONFIG_FILE.exists():
+        data = tomlkit.parse(CONFIG_FILE.read_text())
+    else:
+        data = tomlkit.document()
+    orch = data.get("orchestrator")
+    if orch is None:
+        orch = tomlkit.table()
+        data["orchestrator"] = orch
+    orch["default"] = key
+    CONFIG_FILE.write_text(tomlkit.dumps(data))
+
+
+def _ensure_launch_dir(target: Path) -> None:
+    """Scaffold preamble + SessionStart hook in the launch directory.
+
+    Idempotent: never overwrites existing files so users can customize.
+    """
+    target.mkdir(parents=True, exist_ok=True)
+    claude_md = target / "CLAUDE.md"
+    if not claude_md.exists():
+        claude_md.write_text(preamble.CLAUDE_MD)
+    agents_md = target / "AGENTS.md"
+    if not agents_md.exists():
+        agents_md.write_text(preamble.AGENTS_MD)
+    settings_dir = target / ".claude"
+    settings_dir.mkdir(exist_ok=True)
+    settings_file = settings_dir / "settings.json"
+    if not settings_file.exists():
+        settings_file.write_text(preamble.SETTINGS_JSON)
+
+
+def _prompt_choice(installed: list[tuple[str, str, str]]) -> tuple[str, str, str]:
+    """Interactive agent picker. Caller must verify stdin.isatty() first."""
+    print("Multiple coding agents detected — which should central-mcp launch?")
+    for i, (_key, binary, label) in enumerate(installed, 1):
+        print(f"  {i}. {label} ({binary})")
+    while True:
+        raw = input(f"Pick one [1-{len(installed)}] (default 1): ").strip()
+        if not raw:
+            return installed[0]
+        try:
+            idx = int(raw) - 1
+        except ValueError:
+            print("enter a number")
+            continue
+        if 0 <= idx < len(installed):
+            return installed[idx]
+        print("out of range")
+
+
+def _cmd_run(args: argparse.Namespace) -> int:
+    installed = _detect_installed()
+    if not installed:
+        print(
+            "error: no supported coding-agent CLI detected on PATH.\n"
+            "       install one of: claude, codex, cursor-agent, gemini",
+            file=sys.stderr,
+        )
+        return 1
+
+    # 1. Which agent?
+    choice: tuple[str, str, str] | None = None
+    if args.agent:
+        for entry in installed:
+            if entry[0] == args.agent:
+                choice = entry
+                break
+        if choice is None:
+            print(
+                f"error: {args.agent!r} is not installed (detected: "
+                f"{', '.join(e[0] for e in installed)})",
+                file=sys.stderr,
+            )
+            return 1
+    else:
+        pref = _load_preference()
+        if pref:
+            for entry in installed:
+                if entry[0] == pref:
+                    choice = entry
+                    break
+        if choice is None:
+            if len(installed) == 1:
+                choice = installed[0]
+                print(f"Only {choice[2]} detected — launching it.")
+                _save_preference(choice[0])
+            elif sys.stdin.isatty():
+                choice = _prompt_choice(installed)
+                _save_preference(choice[0])
+                print(f"saved default orchestrator: {choice[0]} → {CONFIG_FILE}")
+            else:
+                print(
+                    "error: multiple agents detected and no --agent specified "
+                    "in a non-interactive shell.\n       "
+                    f"detected: {', '.join(e[0] for e in installed)}",
+                    file=sys.stderr,
+                )
+                return 1
+
+    assert choice is not None
+    key, binary, label = choice
+
+    # 2. Launch directory with orchestrator preamble
+    launch_dir = Path(args.cwd).expanduser().resolve() if args.cwd else CENTRAL_HOME
+    _ensure_launch_dir(launch_dir)
+
+    # 3. Show what's going to happen
+    print(f"orchestrator : {label} ({binary})")
+    print(f"launch cwd   : {launch_dir}")
+
+    if args.dry_run:
+        print("(dry-run: not executing)")
+        return 0
+
+    # 4. Hand off the terminal
+    os.chdir(launch_dir)
+    try:
+        os.execvp(binary, [binary])
+    except FileNotFoundError:
+        print(f"error: {binary!r} vanished from PATH between detection and exec", file=sys.stderr)
+        return 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="central-mcp",
@@ -215,6 +372,22 @@ def build_parser() -> argparse.ArgumentParser:
     p_install.add_argument("client", choices=["claude", "codex", "cursor"])
     p_install.add_argument("--dry-run", action="store_true")
     p_install.set_defaults(func=_cmd_install)
+
+    p_run = sub.add_parser(
+        "run",
+        help="launch a coding-agent CLI as orchestrator (picks one on first run)",
+    )
+    p_run.add_argument(
+        "--agent",
+        choices=[o[0] for o in ORCHESTRATORS],
+        help="force a specific agent (otherwise: saved preference, auto-pick if one, interactive prompt if many)",
+    )
+    p_run.add_argument(
+        "--cwd",
+        help=f"launch directory (default: {CENTRAL_HOME})",
+    )
+    p_run.add_argument("--dry-run", action="store_true", help="print the plan without executing")
+    p_run.set_defaults(func=_cmd_run)
 
     return parser
 

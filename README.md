@@ -45,11 +45,18 @@ central-mcp init
 central-mcp install claude    # adds to Claude Code MCP config
 central-mcp install codex     # patches ~/.codex/config.toml
 central-mcp install cursor    # patches ~/.cursor/mcp.json
+
+# 4. Launch the orchestrator — on first run, central-mcp detects which
+#    coding-agent CLIs you have installed and asks which one to use.
+#    The choice is saved to ~/.central-mcp/config.toml for next time.
+central-mcp run
 ```
 
-That's it. Start your chosen client and manage the hub in natural
-language from there — you don't need to drop back to a shell to add
-projects or change anything. For example:
+That's it. The chosen client starts in `~/.central-mcp/`, which
+`central-mcp run` scaffolds with an orchestrator preamble
+(`CLAUDE.md` / `AGENTS.md`) and a SessionStart brief hook. You can
+manage the hub in natural language from there — no need to drop back
+to a shell to add projects or change anything. For example:
 
 - *"Add ~/Projects/my-app to the hub and run Claude Code on it."*
 - *"What projects do I have? Send the latest design doc to my-app."*
@@ -78,13 +85,14 @@ you can grow the hub during a session without tearing anything down.
 ```
 central-mcp                       # no-arg → run MCP server on stdio
 central-mcp serve                 # same, explicit
+central-mcp run [--agent X]       # launch a coding-agent CLI as orchestrator
 central-mcp up                    # create tmux sessions from registry.yaml
 central-mcp down                  # kill every session the registry references
 central-mcp list                  # one-line-per-project dump
 central-mcp brief                 # orchestrator-ready markdown snapshot
 central-mcp add NAME PATH [--agent claude|codex|gemini|cursor|shell] …
 central-mcp remove NAME
-central-mcp init [DIR]            # scaffold registry.yaml + .claude/settings.json
+central-mcp init [PATH]           # scaffold empty registry.yaml (default: ~/.central-mcp/)
 central-mcp install CLIENT [--dry-run]
 ```
 
