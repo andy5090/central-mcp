@@ -108,16 +108,32 @@ def _ensure_one_session(
         rest = projects[1:]
         target = f"{session_name}:{PROJECTS_WINDOW}"
         messages.append(f"{session_name}:{PROJECTS_WINDOW}.0 -> {projects[0].name}{_launch_suffix(projects[0])}")
+        _begin_pane_logging(projects[0])
         for i, p in enumerate(rest, start=1):
             cmd = _agent_pane_command(p) if _autostart_enabled() else None
             r = tmux.split_window(target, p.path, command=cmd)
             if r.ok:
                 messages.append(f"{session_name}:{PROJECTS_WINDOW}.{i} -> {p.name}{_launch_suffix(p)}")
+                _begin_pane_logging(p)
         if rest:
             tmux.select_layout(target, "tiled")
         _assign_pane_indices(projects)
 
     return True
+
+
+def _begin_pane_logging(p: Project) -> None:
+    """Eagerly wire up pipe-pane for a freshly-created project pane.
+
+    Without this the hub's `tail -F` would show stale/empty files until
+    the first MCP tool touched the project (which triggers lazy logging
+    inside server.py). Truncate the log file first so the tail view
+    starts from a clean slate every time layout recreates the session.
+    """
+    log_path = paths.project_log_path(p.name)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.write_text("")  # truncate
+    tmux.pipe_pane_to_file(p.tmux.target, log_path)
 
 
 def _agent_pane_command(p: Project) -> str | None:
@@ -156,6 +172,7 @@ def _build_projects_window(
         messages.append(f"new-window failed: {r.stderr.strip()}")
         return
     messages.append(f"projects.0 -> {first.name} ({first.path}){_launch_suffix(first)}")
+    _begin_pane_logging(first)
 
     target = f"{session_name}:{PROJECTS_WINDOW}"
     for i, p in enumerate(rest, start=1):
@@ -165,6 +182,7 @@ def _build_projects_window(
             messages.append(f"split-window for {p.name} failed: {r.stderr.strip()}")
             continue
         messages.append(f"projects.{i} -> {p.name} ({p.path}){_launch_suffix(p)}")
+        _begin_pane_logging(p)
 
     if rest:
         tmux.select_layout(target, "tiled")
