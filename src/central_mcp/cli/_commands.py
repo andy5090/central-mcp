@@ -1,18 +1,9 @@
-"""central-mcp command-line interface.
+"""Command implementations + shared helpers for the central-mcp CLI.
 
-Subcommands:
-  serve      run the MCP server on stdio (default when no subcommand given)
-  up         bring up the tmux layout from registry.yaml
-  down       kill all sessions referenced by registry.yaml
-  list       print the registry in a compact form
-  brief      print the orchestrator brief (same as SessionStart hook output)
-  add        register a new project in registry.yaml
-  remove     unregister a project
-  init       scaffold registry.yaml + .claude/settings.json in cwd
-  install    register this server with an MCP client (claude | codex | cursor)
-
-Running `central-mcp` with no subcommand starts the MCP server — this is
-what MCP clients invoke over stdio. All other subcommands are for humans.
+Every `_cmd_*` function is a leaf handler invoked by the parser wired up
+in `central_mcp.cli.__init__`. Helper functions that are only used by
+the commands live here too so that the parser module stays small and
+contains only argparse wiring.
 """
 
 from __future__ import annotations
@@ -59,13 +50,15 @@ BYPASS_FLAGS: dict[str, list[str]] = {
 }
 
 
-def _cmd_serve(args: argparse.Namespace) -> int:
+# ---------- thin command wrappers ----------
+
+def cmd_serve(args: argparse.Namespace) -> int:
     from central_mcp.server import main as server_main
     server_main()
     return 0
 
 
-def _cmd_up(args: argparse.Namespace) -> int:
+def cmd_up(args: argparse.Namespace) -> int:
     created, messages = layout.ensure_session()
     for m in messages:
         print(m)
@@ -75,7 +68,7 @@ def _cmd_up(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_down(args: argparse.Namespace) -> int:
+def cmd_down(args: argparse.Namespace) -> int:
     sessions = set(projects_by_session().keys())
     sessions.add(layout.HUB_SESSION)
     killed = 0
@@ -89,7 +82,7 @@ def _cmd_down(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_list(args: argparse.Namespace) -> int:
+def cmd_list(args: argparse.Namespace) -> int:
     projects = load_registry()
     if not projects:
         print("(registry is empty)")
@@ -99,12 +92,14 @@ def _cmd_list(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_brief(args: argparse.Namespace) -> int:
+def cmd_brief(args: argparse.Namespace) -> int:
     print(brief_mod.render())
     return 0
 
 
-def _cmd_add(args: argparse.Namespace) -> int:
+# ---------- registry mutation ----------
+
+def cmd_add(args: argparse.Namespace) -> int:
     try:
         proj = registry_add(
             name=args.name,
@@ -133,7 +128,7 @@ def _cmd_add(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_remove(args: argparse.Namespace) -> int:
+def cmd_remove(args: argparse.Namespace) -> int:
     ok = registry_remove(args.name)
     if not ok:
         print(f"error: no project named {args.name!r}", file=sys.stderr)
@@ -142,7 +137,7 @@ def _cmd_remove(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_init(args: argparse.Namespace) -> int:
+def cmd_init(args: argparse.Namespace) -> int:
     """Create an empty registry.yaml.
 
     Default target is $HOME/.central-mcp/registry.yaml — the same location
@@ -151,7 +146,7 @@ def _cmd_init(args: argparse.Namespace) -> int:
     path to be explicit.
     """
     if args.path is None:
-        reg = Path.home() / ".central-mcp" / "registry.yaml"
+        reg = paths.central_mcp_home() / "registry.yaml"
     else:
         p = Path(args.path).expanduser().resolve()
         reg = p if p.suffix in {".yaml", ".yml"} else p / "registry.yaml"
@@ -184,16 +179,39 @@ def _cmd_init(args: argparse.Namespace) -> int:
     return 0
 
 
+# ---------- install ----------
+
+def cmd_install(args: argparse.Namespace) -> int:
+    return install_mod.install(args.client, dry_run=args.dry_run)
+
+
+# ---------- alias ----------
+
+def _alias_bin_dir_and_target() -> tuple[Path | None, Path | None]:
+    """Return (user-facing bin dir, the central-mcp binary path).
+
+    We DO NOT resolve symlinks — managers like `uv tool` install their
+    binaries via a PATH-facing shim that links into an internal venv.
+    The alias belongs next to the shim, not inside the venv, so a
+    subsequent `uv tool uninstall` sweeps everything cleanly.
+    """
+    target = shutil.which("central-mcp")
+    if not target:
+        return None, None
+    target_path = Path(target)
+    return target_path.parent, target_path
+
+
 def _try_auto_alias(name: str) -> None:
-    """Best-effort: create the `cmcp` alias, swallow conflicts quietly.
+    """Best-effort: create a short-name alias, swallow conflicts quietly.
 
     Used by `init` so first-time setup ends with the short name available
     whenever it's safe. Prints a single info line so the user knows what
-    (did or did not) happen.
+    did (or did not) happen.
     """
     bin_dir, target = _alias_bin_dir_and_target()
     if bin_dir is None:
-        return  # central-mcp not on PATH — can't happen if we're running
+        return
 
     target_resolved = target.resolve()
     link = bin_dir / name
@@ -211,7 +229,6 @@ def _try_auto_alias(name: str) -> None:
         return
 
     if link.exists() or link.is_symlink():
-        # Dangling or otherwise — don't touch.
         print(f"alias: skipped {name!r} — {link} already exists")
         return
 
@@ -223,9 +240,86 @@ def _try_auto_alias(name: str) -> None:
     print(f"alias: created {link} -> {target} (run `central-mcp unalias` to remove)")
 
 
-def _cmd_install(args: argparse.Namespace) -> int:
-    return install_mod.install(args.client, dry_run=args.dry_run)
+def cmd_alias(args: argparse.Namespace) -> int:
+    """Create a symlink alias for `central-mcp`, conflict-checked."""
+    bin_dir, target = _alias_bin_dir_and_target()
+    if bin_dir is None:
+        print(
+            "error: `central-mcp` not on PATH — run `uv tool install --editable .` first",
+            file=sys.stderr,
+        )
+        return 1
 
+    target_resolved = target.resolve()
+    name = args.name
+    link = bin_dir / name
+
+    existing = shutil.which(name)
+    if existing:
+        existing_resolved = Path(existing).resolve()
+        if existing_resolved == target_resolved:
+            print(f"alias {name!r} already resolves to central-mcp ({existing}) — no change")
+            return 0
+        if link.is_symlink() and link.resolve() == target_resolved:
+            print(
+                f"warning: {link} points to central-mcp, but a different {name!r} "
+                f"on PATH wins: {existing}",
+                file=sys.stderr,
+            )
+            return 0
+        print(
+            f"error: {name!r} conflicts with existing command: {existing}",
+            file=sys.stderr,
+        )
+        print(
+            f"       refusing to shadow it. pick a different name with "
+            f"`central-mcp alias {{other-name}}`.",
+            file=sys.stderr,
+        )
+        return 1
+
+    if link.exists() or link.is_symlink():
+        print(f"error: {link} already exists — refusing to overwrite", file=sys.stderr)
+        return 1
+    link.symlink_to(target)
+    print(f"created alias: {link} -> {target}")
+    return 0
+
+
+def cmd_unalias(args: argparse.Namespace) -> int:
+    """Remove an alias previously created by `central-mcp alias`."""
+    bin_dir, target = _alias_bin_dir_and_target()
+    if bin_dir is None:
+        print("error: `central-mcp` not on PATH", file=sys.stderr)
+        return 1
+
+    name = args.name
+    link = bin_dir / name
+
+    if not link.exists() and not link.is_symlink():
+        print(f"no alias at {link}")
+        return 0
+    if not link.is_symlink():
+        print(f"error: {link} is not a symlink — refusing to remove", file=sys.stderr)
+        return 1
+    try:
+        resolved = link.resolve()
+    except OSError as e:
+        print(f"error: cannot resolve {link}: {e}", file=sys.stderr)
+        return 1
+    if resolved != target.resolve():
+        print(
+            f"error: {link} points to {resolved}, not central-mcp ({target.resolve()}) "
+            "— refusing to remove",
+            file=sys.stderr,
+        )
+        return 1
+    link.unlink()
+    print(f"removed alias: {link}")
+    return 0
+
+
+# ---------- run / orchestrator picker ----------
 
 def _detect_installed() -> list[tuple[str, str, str]]:
     """Return every orchestrator whose binary is on PATH, in ORCHESTRATORS order."""
@@ -257,10 +351,7 @@ def _save_preference(key: str) -> None:
 
 
 def _ensure_launch_dir(target: Path) -> None:
-    """Scaffold preamble + SessionStart hook in the launch directory.
-
-    Idempotent: never overwrites existing files so users can customize.
-    """
+    """Scaffold preamble + SessionStart hook in the launch directory."""
     target.mkdir(parents=True, exist_ok=True)
     claude_md = target / "CLAUDE.md"
     if not claude_md.exists():
@@ -294,114 +385,7 @@ def _prompt_choice(installed: list[tuple[str, str, str]]) -> tuple[str, str, str
         print("out of range")
 
 
-def _alias_bin_dir_and_target() -> tuple[Path | None, Path | None]:
-    """Return (user-facing bin dir, the central-mcp binary path).
-
-    We DO NOT resolve symlinks — managers like `uv tool` install their
-    binaries via a PATH-facing shim that links into an internal venv.
-    The alias belongs next to the shim, not inside the venv, so a
-    subsequent `uv tool uninstall` sweeps everything cleanly.
-    """
-    target = shutil.which("central-mcp")
-    if not target:
-        return None, None
-    target_path = Path(target)
-    return target_path.parent, target_path
-
-
-def _cmd_alias(args: argparse.Namespace) -> int:
-    """Create a symlink alias for `central-mcp`, conflict-checked.
-
-    Default name is `cmcp`. The link lives in the same directory as the
-    installed central-mcp binary so it's automatically on PATH and tracked
-    alongside the tool installation. If a file already exists at that name
-    and is NOT our own symlink, we refuse.
-    """
-    bin_dir, target = _alias_bin_dir_and_target()
-    if bin_dir is None:
-        print(
-            "error: `central-mcp` not on PATH — run `uv tool install --editable .` first",
-            file=sys.stderr,
-        )
-        return 1
-
-    target_resolved = target.resolve()
-    name = args.name
-    link = bin_dir / name
-
-    # Anywhere-on-PATH conflict check (not just our bin_dir).
-    existing = shutil.which(name)
-    if existing:
-        existing_resolved = Path(existing).resolve()
-        if existing_resolved == target_resolved:
-            print(f"alias {name!r} already resolves to central-mcp ({existing}) — no change")
-            return 0
-        if link.is_symlink() and link.resolve() == target_resolved:
-            # Symlink points at us but something else shadows it on PATH.
-            print(
-                f"warning: {link} points to central-mcp, but a different {name!r} "
-                f"on PATH wins: {existing}",
-                file=sys.stderr,
-            )
-            return 0
-        print(
-            f"error: {name!r} conflicts with existing command: {existing}",
-            file=sys.stderr,
-        )
-        print(
-            f"       refusing to shadow it. pick a different name with "
-            f"`central-mcp alias {{other-name}}`.",
-            file=sys.stderr,
-        )
-        return 1
-
-    # No conflict on PATH — create the symlink.
-    if link.exists() or link.is_symlink():
-        # Path shutil.which missed — e.g. dir not on PATH, or broken symlink.
-        print(f"error: {link} already exists — refusing to overwrite", file=sys.stderr)
-        return 1
-    link.symlink_to(target)
-    print(f"created alias: {link} -> {target}")
-    return 0
-
-
-def _cmd_unalias(args: argparse.Namespace) -> int:
-    """Remove an alias previously created by `central-mcp alias`.
-
-    Only removes the link if it actually points to our central-mcp binary.
-    """
-    bin_dir, target = _alias_bin_dir_and_target()
-    if bin_dir is None:
-        print("error: `central-mcp` not on PATH", file=sys.stderr)
-        return 1
-
-    name = args.name
-    link = bin_dir / name
-
-    if not link.exists() and not link.is_symlink():
-        print(f"no alias at {link}")
-        return 0
-    if not link.is_symlink():
-        print(f"error: {link} is not a symlink — refusing to remove", file=sys.stderr)
-        return 1
-    try:
-        resolved = link.resolve()
-    except OSError as e:
-        print(f"error: cannot resolve {link}: {e}", file=sys.stderr)
-        return 1
-    if resolved != target.resolve():
-        print(
-            f"error: {link} points to {resolved}, not central-mcp ({target.resolve()}) "
-            "— refusing to remove",
-            file=sys.stderr,
-        )
-        return 1
-    link.unlink()
-    print(f"removed alias: {link}")
-    return 0
-
-
-def _cmd_run(args: argparse.Namespace) -> int:
+def cmd_run(args: argparse.Namespace) -> int:
     installed = _detect_installed()
     if not installed:
         print(
@@ -411,7 +395,6 @@ def _cmd_run(args: argparse.Namespace) -> int:
         )
         return 1
 
-    # 1. Which agent? Track the resolution source for the user-facing log.
     choice: tuple[str, str, str] | None = None
     source = ""
 
@@ -434,10 +417,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         source = "--agent (one-off, not saved)"
     elif args.pick:
         if not sys.stdin.isatty():
-            print(
-                "error: --pick requires an interactive terminal",
-                file=sys.stderr,
-            )
+            print("error: --pick requires an interactive terminal", file=sys.stderr)
             return 1
         choice = _prompt_choice(installed)
         _save_preference(choice[0])
@@ -480,11 +460,9 @@ def _cmd_run(args: argparse.Namespace) -> int:
     assert choice is not None
     key, binary, label = choice
 
-    # 2. Launch directory with orchestrator preamble
     launch_dir = Path(args.cwd).expanduser().resolve() if args.cwd else paths.central_mcp_home()
     _ensure_launch_dir(launch_dir)
 
-    # 3. Assemble argv (optionally with permission-bypass flags)
     argv: list[str] = [binary]
     if args.bypass:
         bypass = BYPASS_FLAGS.get(key)
@@ -493,11 +471,10 @@ def _cmd_run(args: argparse.Namespace) -> int:
         else:
             print(
                 f"warning: --bypass: {key!r} has no known permission-bypass flag in "
-                "central-mcp; launching without it. Add one to BYPASS_FLAGS in cli.py.",
+                "central-mcp; launching without it. Add one to BYPASS_FLAGS.",
                 file=sys.stderr,
             )
 
-    # 4. Show what's going to happen
     source_suffix = f"  [{source}]" if source else ""
     print(f"orchestrator : {label} ({binary}){source_suffix}")
     print(f"launch cwd   : {launch_dir}")
@@ -508,142 +485,9 @@ def _cmd_run(args: argparse.Namespace) -> int:
         print("(dry-run: not executing)")
         return 0
 
-    # 5. Hand off the terminal
     os.chdir(launch_dir)
     try:
         os.execvp(binary, argv)
     except FileNotFoundError:
         print(f"error: {binary!r} vanished from PATH between detection and exec", file=sys.stderr)
         return 1
-
-
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="central-mcp",
-        description="Orchestrator-agnostic MCP hub for coding agents.",
-    )
-    sub = parser.add_subparsers(dest="command")
-
-    p_serve = sub.add_parser("serve", help="run the MCP server on stdio")
-    p_serve.set_defaults(func=_cmd_serve)
-
-    p_up = sub.add_parser("up", help="bring up the tmux layout")
-    p_up.set_defaults(func=_cmd_up)
-
-    p_down = sub.add_parser("down", help="kill every session referenced by the registry")
-    p_down.set_defaults(func=_cmd_down)
-
-    p_list = sub.add_parser("list", help="print the registry")
-    p_list.set_defaults(func=_cmd_list)
-
-    p_brief = sub.add_parser("brief", help="print the orchestrator brief")
-    p_brief.set_defaults(func=_cmd_brief)
-
-    p_add = sub.add_parser("add", help="register a new project")
-    p_add.add_argument("name", help="short project identifier")
-    p_add.add_argument("path", help="absolute project path")
-    p_add.add_argument("--agent", default="shell", help="adapter name (claude|codex|gemini|cursor|shell)")
-    p_add.add_argument("--session", default="central")
-    p_add.add_argument("--window", default="projects")
-    p_add.add_argument("--pane", type=int, default=None)
-    p_add.add_argument("--description", default="")
-    p_add.add_argument("--tag", action="append")
-    p_add.add_argument(
-        "--no-start",
-        action="store_true",
-        help="only update registry.yaml; skip auto-booting the pane + agent",
-    )
-    p_add.set_defaults(func=_cmd_add)
-
-    p_remove = sub.add_parser("remove", help="unregister a project")
-    p_remove.add_argument("name")
-    p_remove.set_defaults(func=_cmd_remove)
-
-    p_init = sub.add_parser(
-        "init",
-        help="scaffold an empty registry.yaml (default: ~/.central-mcp/registry.yaml)",
-    )
-    p_init.add_argument(
-        "path",
-        nargs="?",
-        default=None,
-        help="directory or .yaml file (default: $HOME/.central-mcp/registry.yaml)",
-    )
-    p_init.add_argument("--force", action="store_true")
-    p_init.add_argument(
-        "--no-alias",
-        action="store_true",
-        help="skip the automatic `cmcp` alias creation (opt out if you manage PATH shims yourself)",
-    )
-    p_init.set_defaults(func=_cmd_init)
-
-    p_install = sub.add_parser("install", help="register central-mcp with an MCP client")
-    p_install.add_argument("client", choices=["claude", "codex", "cursor"])
-    p_install.add_argument("--dry-run", action="store_true")
-    p_install.set_defaults(func=_cmd_install)
-
-    p_alias = sub.add_parser(
-        "alias",
-        help="create a short-name symlink to central-mcp (conflict-checked, default: cmcp)",
-    )
-    p_alias.add_argument("name", nargs="?", default="cmcp")
-    p_alias.set_defaults(func=_cmd_alias)
-
-    p_unalias = sub.add_parser(
-        "unalias",
-        help="remove an alias previously created by `central-mcp alias`",
-    )
-    p_unalias.add_argument("name", nargs="?", default="cmcp")
-    p_unalias.set_defaults(func=_cmd_unalias)
-
-    p_run = sub.add_parser(
-        "run",
-        help="launch a coding-agent CLI as orchestrator (picks one on first run)",
-    )
-    p_run.add_argument(
-        "--agent",
-        choices=[o[0] for o in ORCHESTRATORS],
-        help="one-off agent override (does NOT update the saved preference)",
-    )
-    p_run.add_argument(
-        "--pick",
-        action="store_true",
-        help="re-run the interactive picker and update the saved preference",
-    )
-    p_run.add_argument(
-        "--cwd",
-        help=f"launch directory (default: {paths.central_mcp_home()})",
-    )
-    p_run.add_argument(
-        "--bypass",
-        action="store_true",
-        help=(
-            "launch the agent in its permission-bypass / yolo mode when supported "
-            "(claude: --dangerously-skip-permissions, codex: "
-            "--dangerously-bypass-approvals-and-sandbox, gemini: --yolo)"
-        ),
-    )
-    p_run.add_argument("--dry-run", action="store_true", help="print the plan without executing")
-    p_run.set_defaults(func=_cmd_run)
-
-    return parser
-
-
-def main() -> None:
-    # No args → run MCP server (this is what MCP clients invoke over stdio).
-    if len(sys.argv) == 1:
-        from central_mcp.server import main as server_main
-        server_main()
-        return
-
-    parser = build_parser()
-    args = parser.parse_args()
-    if not hasattr(args, "func"):
-        parser.print_help()
-        return
-    rc = args.func(args)
-    raise SystemExit(rc or 0)
-
-
-if __name__ == "__main__":
-    main()
