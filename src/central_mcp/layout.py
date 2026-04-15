@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import os
 import sys
-import time
 from pathlib import Path
 
 from central_mcp import paths, tmux
@@ -87,7 +86,14 @@ def _ensure_one_session(
     initial_window = HUB_WINDOW if is_hub else PROJECTS_WINDOW
     initial_cwd = str(root) if is_hub else projects[0].path if projects else str(root)
 
-    r = tmux.new_session(session_name, initial_window, initial_cwd)
+    # Hub session's first pane is always a shell (user's orchestrator seat);
+    # non-hub sessions' first pane is projects[0], which should auto-start
+    # if autostart is enabled.
+    initial_cmd = None
+    if not is_hub and projects and _autostart_enabled():
+        initial_cmd = _agent_pane_command(projects[0])
+
+    r = tmux.new_session(session_name, initial_window, initial_cwd, command=initial_cmd)
     if not r.ok:
         messages.append(f"new-session {session_name} failed: {r.stderr.strip()}")
         return False
@@ -99,53 +105,43 @@ def _ensure_one_session(
             _build_projects_window(session_name, projects, messages)
         tmux._run(["select-window", "-t", f"{session_name}:{HUB_WINDOW}"])
     else:
-        # Non-hub session: its initial window IS the projects window.
-        # First pane already exists in projects[0].path; split for the rest.
         rest = projects[1:]
         target = f"{session_name}:{PROJECTS_WINDOW}"
-        messages.append(f"{session_name}:{PROJECTS_WINDOW}.0 -> {projects[0].name}")
+        messages.append(f"{session_name}:{PROJECTS_WINDOW}.0 -> {projects[0].name}{_launch_suffix(projects[0])}")
         for i, p in enumerate(rest, start=1):
-            r = tmux.split_window(target, p.path)
+            cmd = _agent_pane_command(p) if _autostart_enabled() else None
+            r = tmux.split_window(target, p.path, command=cmd)
             if r.ok:
-                messages.append(f"{session_name}:{PROJECTS_WINDOW}.{i} -> {p.name}")
+                messages.append(f"{session_name}:{PROJECTS_WINDOW}.{i} -> {p.name}{_launch_suffix(p)}")
         if rest:
             tmux.select_layout(target, "tiled")
         _assign_pane_indices(projects)
 
-    if projects and _autostart_enabled():
-        _autostart_agents(projects, messages)
     return True
 
 
-def _autostart_agents(projects: list[Project], messages: list[str]) -> None:
-    """Send the adapter-defined launch command to every project pane.
+def _agent_pane_command(p: Project) -> str | None:
+    """Build the shell command that should be the pane's initial exec.
 
-    Skips projects whose adapter has no launch command (shell). Small delay
-    between sends so tmux has time to route keystrokes to the right pane on
-    freshly-created sessions.
+    Wraps the adapter launch command in `sh -c '<cmd>; exec $SHELL'` so
+    the pane falls back to an interactive shell if the agent exits or
+    fails, instead of the pane closing. Returns None for the `shell`
+    adapter (no launch wanted).
     """
-    launched = 0
-    resumed = 0
-    for p in projects:
-        adapter = get_adapter(p.agent)
-        use_resume = has_history(p.agent, p.path)
-        cmd = adapter.launch_command(resume=use_resume)
-        if not cmd:
-            continue
-        target = p.tmux.target
-        if not tmux.pane_exists(target):
-            continue
-        r = tmux.send_keys(target, cmd, enter=True)
-        if r.ok:
-            launched += 1
-            if use_resume:
-                resumed += 1
-            time.sleep(0.05)
-    if launched:
-        note = f"autostart: launched {launched} agent(s)"
-        if resumed:
-            note += f" ({resumed} resumed from history)"
-        messages.append(note)
+    adapter = get_adapter(p.agent)
+    use_resume = has_history(p.agent, p.path)
+    cmd = adapter.launch_command(resume=use_resume)
+    if not cmd:
+        return None
+    return f"sh -c '{cmd}; exec $SHELL'"
+
+
+def _launch_suffix(p: Project) -> str:
+    if not _autostart_enabled():
+        return ""
+    adapter = get_adapter(p.agent)
+    cmd = adapter.launch_command(resume=has_history(p.agent, p.path))
+    return f"  [exec: {cmd}]" if cmd else "  [shell]"
 
 
 def _build_projects_window(
@@ -154,19 +150,21 @@ def _build_projects_window(
     messages: list[str],
 ) -> None:
     first, *rest = projects
-    r = tmux.new_window(session_name, PROJECTS_WINDOW, first.path)
+    first_cmd = _agent_pane_command(first) if _autostart_enabled() else None
+    r = tmux.new_window(session_name, PROJECTS_WINDOW, first.path, command=first_cmd)
     if not r.ok:
         messages.append(f"new-window failed: {r.stderr.strip()}")
         return
-    messages.append(f"projects.0 -> {first.name} ({first.path})")
+    messages.append(f"projects.0 -> {first.name} ({first.path}){_launch_suffix(first)}")
 
     target = f"{session_name}:{PROJECTS_WINDOW}"
     for i, p in enumerate(rest, start=1):
-        r = tmux.split_window(target, p.path)
+        cmd = _agent_pane_command(p) if _autostart_enabled() else None
+        r = tmux.split_window(target, p.path, command=cmd)
         if not r.ok:
             messages.append(f"split-window for {p.name} failed: {r.stderr.strip()}")
             continue
-        messages.append(f"projects.{i} -> {p.name} ({p.path})")
+        messages.append(f"projects.{i} -> {p.name} ({p.path}){_launch_suffix(p)}")
 
     if rest:
         tmux.select_layout(target, "tiled")

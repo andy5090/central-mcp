@@ -80,16 +80,27 @@ def capture_pane(target: str, lines: int = 200) -> TmuxResult:
     return _run(["capture-pane", "-p", "-t", target, "-S", f"-{lines}"])
 
 
-def new_session(name: str, window: str, cwd: str) -> TmuxResult:
-    return _run(["new-session", "-d", "-s", name, "-n", window, "-c", cwd])
+def new_session(name: str, window: str, cwd: str, command: str | None = None) -> TmuxResult:
+    args = ["new-session", "-d", "-s", name, "-n", window, "-c", cwd]
+    if command:
+        args.append(command)
+    return _run(args)
 
 
-def new_window(session: str, window: str, cwd: str) -> TmuxResult:
-    return _run(["new-window", "-t", session, "-n", window, "-c", cwd])
+def new_window(
+    session: str, window: str, cwd: str, command: str | None = None
+) -> TmuxResult:
+    args = ["new-window", "-t", session, "-n", window, "-c", cwd]
+    if command:
+        args.append(command)
+    return _run(args)
 
 
-def split_window(target: str, cwd: str) -> TmuxResult:
-    return _run(["split-window", "-t", target, "-c", cwd])
+def split_window(target: str, cwd: str, command: str | None = None) -> TmuxResult:
+    args = ["split-window", "-t", target, "-c", cwd]
+    if command:
+        args.append(command)
+    return _run(args)
 
 
 def select_layout(target: str, layout: str = "tiled") -> TmuxResult:
