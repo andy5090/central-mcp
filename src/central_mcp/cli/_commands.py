@@ -175,23 +175,32 @@ def cmd_watch(args: argparse.Namespace) -> int:
             return True
         return all(c in noise_chars for c in t)
 
-    entries: list[dict] = []
-    for i, p in enumerate(projects):
-        log_path = paths.project_log_path(p.name)
+    entries: dict[str, dict] = {}
+    next_color_index = 0
+
+    def _open_entry(name: str) -> None:
+        nonlocal next_color_index
+        log_path = paths.project_log_path(name)
         log_path.parent.mkdir(parents=True, exist_ok=True)
         log_path.touch(exist_ok=True)
         f = open(log_path, "rb")
         f.seek(0, 2)
-        entries.append(
-            {
-                "name": p.name,
-                "color": colors[i % len(colors)],
-                "file": f,
-                "path": log_path,
-                "pos": f.tell(),
-                "buf": b"",
-            }
+        entries[name] = {
+            "name": name,
+            "color": colors[next_color_index % len(colors)],
+            "file": f,
+            "path": log_path,
+            "pos": f.tell(),
+            "buf": b"",
+        }
+        next_color_index += 1
+        print(
+            f"[central-mcp watch] now tailing '{name}' ({log_path})",
+            flush=True,
         )
+
+    for p in projects:
+        _open_entry(p.name)
 
     print(
         f"[central-mcp watch] tailing {len(entries)} project(s). Ctrl-C to stop.",
@@ -199,11 +208,29 @@ def cmd_watch(args: argparse.Namespace) -> int:
     )
 
     split_re = re.compile(rb"[\r\n]")
+    last_registry_scan = 0.0
+    registry_scan_interval = 2.0  # seconds
 
     try:
         while True:
+            # Periodically re-sync against the registry so projects added or
+            # removed after watch started get picked up / dropped.
+            now = time.time()
+            if now - last_registry_scan >= registry_scan_interval:
+                last_registry_scan = now
+                current = {p.name for p in load_registry()}
+                for new_name in current - set(entries.keys()):
+                    _open_entry(new_name)
+                for stale in set(entries.keys()) - current:
+                    entries[stale]["file"].close()
+                    entries.pop(stale)
+                    print(
+                        f"[central-mcp watch] stopped tailing '{stale}' (removed from registry)",
+                        flush=True,
+                    )
+
             idle = True
-            for e in entries:
+            for e in entries.values():
                 try:
                     size = e["path"].stat().st_size
                 except FileNotFoundError:
@@ -240,7 +267,7 @@ def cmd_watch(args: argparse.Namespace) -> int:
     except KeyboardInterrupt:
         pass
     finally:
-        for e in entries:
+        for e in entries.values():
             e["file"].close()
     return 0
 
