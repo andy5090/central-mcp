@@ -19,7 +19,6 @@ dependencies = [
 
 [project.scripts]
 central-mcp = "central_mcp.cli:main"
-cmcp = "central_mcp.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/central_mcp"]

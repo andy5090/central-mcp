@@ -240,6 +240,113 @@ def _prompt_choice(installed: list[tuple[str, str, str]]) -> tuple[str, str, str
         print("out of range")
 
 
+def _alias_bin_dir_and_target() -> tuple[Path | None, Path | None]:
+    """Return (user-facing bin dir, the central-mcp binary path).
+
+    We DO NOT resolve symlinks — managers like `uv tool` install their
+    binaries via a PATH-facing shim that links into an internal venv.
+    The alias belongs next to the shim, not inside the venv, so a
+    subsequent `uv tool uninstall` sweeps everything cleanly.
+    """
+    target = shutil.which("central-mcp")
+    if not target:
+        return None, None
+    target_path = Path(target)
+    return target_path.parent, target_path
+
+
+def _cmd_alias(args: argparse.Namespace) -> int:
+    """Create a symlink alias for `central-mcp`, conflict-checked.
+
+    Default name is `cmcp`. The link lives in the same directory as the
+    installed central-mcp binary so it's automatically on PATH and tracked
+    alongside the tool installation. If a file already exists at that name
+    and is NOT our own symlink, we refuse.
+    """
+    bin_dir, target = _alias_bin_dir_and_target()
+    if bin_dir is None:
+        print(
+            "error: `central-mcp` not on PATH — run `uv tool install --editable .` first",
+            file=sys.stderr,
+        )
+        return 1
+
+    target_resolved = target.resolve()
+    name = args.name
+    link = bin_dir / name
+
+    # Anywhere-on-PATH conflict check (not just our bin_dir).
+    existing = shutil.which(name)
+    if existing:
+        existing_resolved = Path(existing).resolve()
+        if existing_resolved == target_resolved:
+            print(f"alias {name!r} already resolves to central-mcp ({existing}) — no change")
+            return 0
+        if link.is_symlink() and link.resolve() == target_resolved:
+            # Symlink points at us but something else shadows it on PATH.
+            print(
+                f"warning: {link} points to central-mcp, but a different {name!r} "
+                f"on PATH wins: {existing}",
+                file=sys.stderr,
+            )
+            return 0
+        print(
+            f"error: {name!r} conflicts with existing command: {existing}",
+            file=sys.stderr,
+        )
+        print(
+            f"       refusing to shadow it. pick a different name with "
+            f"`central-mcp alias {{other-name}}`.",
+            file=sys.stderr,
+        )
+        return 1
+
+    # No conflict on PATH — create the symlink.
+    if link.exists() or link.is_symlink():
+        # Path shutil.which missed — e.g. dir not on PATH, or broken symlink.
+        print(f"error: {link} already exists — refusing to overwrite", file=sys.stderr)
+        return 1
+    link.symlink_to(target)
+    print(f"created alias: {link} -> {target}")
+    return 0
+
+
+def _cmd_unalias(args: argparse.Namespace) -> int:
+    """Remove an alias previously created by `central-mcp alias`.
+
+    Only removes the link if it actually points to our central-mcp binary.
+    """
+    bin_dir, target = _alias_bin_dir_and_target()
+    if bin_dir is None:
+        print("error: `central-mcp` not on PATH", file=sys.stderr)
+        return 1
+
+    name = args.name
+    link = bin_dir / name
+
+    if not link.exists() and not link.is_symlink():
+        print(f"no alias at {link}")
+        return 0
+    if not link.is_symlink():
+        print(f"error: {link} is not a symlink — refusing to remove", file=sys.stderr)
+        return 1
+    try:
+        resolved = link.resolve()
+    except OSError as e:
+        print(f"error: cannot resolve {link}: {e}", file=sys.stderr)
+        return 1
+    if resolved != target.resolve():
+        print(
+            f"error: {link} points to {resolved}, not central-mcp ({target.resolve()}) "
+            "— refusing to remove",
+            file=sys.stderr,
+        )
+        return 1
+    link.unlink()
+    print(f"removed alias: {link}")
+    return 0
+
+
 def _cmd_run(args: argparse.Namespace) -> int:
     installed = _detect_installed()
     if not installed:
@@ -372,6 +479,20 @@ def build_parser() -> argparse.ArgumentParser:
     p_install.add_argument("client", choices=["claude", "codex", "cursor"])
     p_install.add_argument("--dry-run", action="store_true")
     p_install.set_defaults(func=_cmd_install)
+
+    p_alias = sub.add_parser(
+        "alias",
+        help="create a short-name symlink to central-mcp (conflict-checked, default: cmcp)",
+    )
+    p_alias.add_argument("name", nargs="?", default="cmcp")
+    p_alias.set_defaults(func=_cmd_alias)
+
+    p_unalias = sub.add_parser(
+        "unalias",
+        help="remove an alias previously created by `central-mcp alias`",
+    )
+    p_unalias.add_argument("name", nargs="?", default="cmcp")
+    p_unalias.set_defaults(func=_cmd_unalias)
 
     p_run = sub.add_parser(
         "run",

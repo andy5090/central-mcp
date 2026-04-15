@@ -30,9 +30,7 @@ Pre-release — not yet on PyPI. Install from a local checkout with `uv tool ins
 
 ## Quickstart
 
-Requires [`uv`](https://docs.astral.sh/uv/) and `tmux`. The CLI is installed
-as both `central-mcp` and the shorter alias `cmcp` — examples below use
-`cmcp`, but they're interchangeable.
+Requires [`uv`](https://docs.astral.sh/uv/) and `tmux`.
 
 ```bash
 # 1. Clone and install (editable, dev mode)
@@ -40,21 +38,29 @@ git clone <repo> ~/Projects/central-mcp
 cd ~/Projects/central-mcp
 uv tool install --editable .
 
+# 1a. (optional) Register a shorter command name. By default this tries to
+#     create a `cmcp` symlink next to `central-mcp`, but it refuses if any
+#     other `cmcp` is already on your PATH (e.g. from a different tool) —
+#     pass a custom name if needed: `central-mcp alias mcph`.
+central-mcp alias        # creates ~/.local/bin/cmcp -> central-mcp, or refuses
+# central-mcp unalias    # undo whenever you want
+
 # 2. Scaffold an empty registry at ~/.central-mcp/registry.yaml
-cmcp init
+central-mcp init
 
 # 3. Register central-mcp with your MCP client(s) — once per client
-cmcp install claude    # adds to Claude Code MCP config
-cmcp install codex     # patches ~/.codex/config.toml
-cmcp install cursor    # patches ~/.cursor/mcp.json
+central-mcp install claude    # adds to Claude Code MCP config
+central-mcp install codex     # patches ~/.codex/config.toml
+central-mcp install cursor    # patches ~/.cursor/mcp.json
 
-# 4. Launch the orchestrator. On first run cmcp detects which coding-agent
-#    CLIs you have installed and — if there's more than one — prompts you to
-#    pick one. The choice is saved to ~/.central-mcp/config.toml for next time.
-cmcp run
+# 4. Launch the orchestrator. On first run central-mcp detects which
+#    coding-agent CLIs you have installed and — if there's more than one —
+#    prompts you to pick one. The choice is saved to
+#    ~/.central-mcp/config.toml for next time.
+central-mcp run
 ```
 
-That's it. The chosen client starts in `~/.central-mcp/`, which `cmcp run` scaffolds with an orchestrator preamble (`CLAUDE.md` / `AGENTS.md`) and a SessionStart hook that injects a live project brief. Manage the hub in natural language from there — no need to drop back to a shell:
+That's it. The chosen client starts in `~/.central-mcp/`, which `central-mcp run` scaffolds with an orchestrator preamble (`CLAUDE.md` / `AGENTS.md`) and a SessionStart hook that injects a live project brief. Manage the hub in natural language from there — no need to drop back to a shell:
 
 - *"Add ~/Projects/my-app to the hub and run Claude Code on it."*
 - *"What projects do I have? Send the latest design doc to my-app."*
@@ -82,20 +88,25 @@ All tools honor ANSI stripping and secret-regex redaction by default — both ca
 ## CLI reference
 
 ```
-cmcp                          # no-arg → run MCP server on stdio (what clients invoke)
-cmcp serve                    # same, explicit
-cmcp run [--agent X]          # launch a coding-agent CLI as orchestrator
-cmcp install CLIENT           # register central-mcp with claude | codex | cursor
-cmcp init [PATH]              # scaffold empty registry.yaml (default: ~/.central-mcp)
-cmcp add NAME PATH [--agent …]  # register a project from the shell
-cmcp remove NAME
-cmcp list                     # one-line-per-project dump
-cmcp brief                    # orchestrator-ready markdown snapshot
-cmcp up                       # eagerly create tmux sessions (optional — lazy-boot handles it)
-cmcp down                     # kill every session the registry references
+central-mcp                          # no-arg → run MCP server on stdio (what clients invoke)
+central-mcp serve                    # same, explicit
+central-mcp run [--agent X]          # launch a coding-agent CLI as orchestrator
+central-mcp install CLIENT           # register central-mcp with claude | codex | cursor
+central-mcp alias [NAME]             # create a short-name symlink (default: cmcp), conflict-checked
+central-mcp unalias [NAME]           # remove an alias previously created by `alias`
+central-mcp init [PATH]              # scaffold empty registry.yaml (default: ~/.central-mcp)
+central-mcp add NAME PATH [--agent …]  # register a project from the shell
+central-mcp remove NAME
+central-mcp list                     # one-line-per-project dump
+central-mcp brief                    # orchestrator-ready markdown snapshot
+central-mcp up                       # eagerly create tmux sessions (optional — lazy-boot handles it)
+central-mcp down                     # kill every session the registry references
 ```
 
-Every command also works as `central-mcp …` if you prefer the long form.
+After running `central-mcp alias`, every command above also works as `cmcp …`.
+The alias is an opt-in symlink, not a forced entry point — so users who already
+have a different `cmcp` on their PATH (e.g. the unrelated PyPI package of the
+same name) won't have it silently shadowed by installing central-mcp.
 
 ## Registry resolution
 
