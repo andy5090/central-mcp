@@ -8,10 +8,27 @@ from typing import Any
 from ruamel.yaml import YAML
 
 
-DEFAULT_REGISTRY_PATH = Path(
-    os.environ.get("CENTRAL_MCP_REGISTRY")
-    or Path(__file__).resolve().parents[2] / "registry.yaml"
-)
+def _resolve_default_registry() -> Path:
+    """Pick the registry path using a three-level cascade.
+
+    1. $CENTRAL_MCP_REGISTRY (explicit override)
+    2. ./registry.yaml if it already exists in the current directory
+       (dev-mode / per-project override)
+    3. $HOME/.central-mcp/registry.yaml (global default for installed users)
+
+    The returned path is always absolute. It may or may not exist yet — callers
+    that write should `mkdir -p` its parent.
+    """
+    env = os.environ.get("CENTRAL_MCP_REGISTRY")
+    if env:
+        return Path(env).expanduser().resolve()
+    cwd_candidate = Path.cwd() / "registry.yaml"
+    if cwd_candidate.exists():
+        return cwd_candidate.resolve()
+    return (Path.home() / ".central-mcp" / "registry.yaml").resolve()
+
+
+DEFAULT_REGISTRY_PATH = _resolve_default_registry()
 
 _yaml = YAML()
 _yaml.preserve_quotes = True
@@ -57,6 +74,7 @@ def _read_raw(path: Path = DEFAULT_REGISTRY_PATH) -> dict[str, Any]:
 
 
 def _write_raw(data: dict[str, Any], path: Path = DEFAULT_REGISTRY_PATH) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w") as f:
         _yaml.dump(data, f)
 

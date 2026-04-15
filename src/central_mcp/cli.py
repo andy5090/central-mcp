@@ -119,46 +119,33 @@ def _cmd_remove(args: argparse.Namespace) -> int:
 
 
 def _cmd_init(args: argparse.Namespace) -> int:
-    target = Path(args.path).expanduser().resolve()
-    target.mkdir(parents=True, exist_ok=True)
+    """Create an empty registry.yaml.
 
-    reg = target / "registry.yaml"
+    Default target is $HOME/.central-mcp/registry.yaml — the same location
+    the cascade falls back to when no env var or ./registry.yaml is set.
+    Pass a directory to scaffold ./registry.yaml inside it, or a .yaml file
+    path to be explicit.
+    """
+    if args.path is None:
+        reg = Path.home() / ".central-mcp" / "registry.yaml"
+    else:
+        p = Path(args.path).expanduser().resolve()
+        reg = p if p.suffix in {".yaml", ".yml"} else p / "registry.yaml"
+
     if reg.exists() and not args.force:
         print(f"error: {reg} already exists (use --force to overwrite)", file=sys.stderr)
         return 1
+
+    reg.parent.mkdir(parents=True, exist_ok=True)
     reg.write_text(
-        "# central-mcp project registry — edit to describe your projects.\n"
-        "# See `central-mcp add --help` for the CLI equivalent.\n\n"
+        "# central-mcp project registry — edit via `central-mcp add` or by hand.\n\n"
         "projects: []\n"
     )
     print(f"wrote {reg}")
-
-    settings_dir = target / ".claude"
-    settings_dir.mkdir(exist_ok=True)
-    settings_file = settings_dir / "settings.json"
-    if not settings_file.exists():
-        settings_file.write_text(
-            '{\n'
-            '  "hooks": {\n'
-            '    "SessionStart": [\n'
-            '      {\n'
-            '        "hooks": [\n'
-            '          {\n'
-            '            "type": "command",\n'
-            f'            "command": "central-mcp brief"\n'
-            '          }\n'
-            '        ]\n'
-            '      }\n'
-            '    ]\n'
-            '  }\n'
-            '}\n'
-        )
-        print(f"wrote {settings_file}")
-
     print()
     print("Next steps:")
-    print("  1. central-mcp install claude    # or codex, cursor")
-    print("  2. central-mcp add <name> <path> --agent claude")
+    print("  1. central-mcp install claude     # or codex, cursor")
+    print("  2. central-mcp add NAME PATH --agent claude")
     print("     (tmux pane + agent CLI auto-starts on add)")
     return 0
 
@@ -209,8 +196,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_remove.add_argument("name")
     p_remove.set_defaults(func=_cmd_remove)
 
-    p_init = sub.add_parser("init", help="scaffold registry.yaml in a directory")
-    p_init.add_argument("path", nargs="?", default=".")
+    p_init = sub.add_parser(
+        "init",
+        help="scaffold an empty registry.yaml (default: ~/.central-mcp/registry.yaml)",
+    )
+    p_init.add_argument(
+        "path",
+        nargs="?",
+        default=None,
+        help="directory or .yaml file (default: $HOME/.central-mcp/registry.yaml)",
+    )
     p_init.add_argument("--force", action="store_true")
     p_init.set_defaults(func=_cmd_init)
 

@@ -38,7 +38,7 @@ git clone <repo> ~/Projects/central-mcp
 cd ~/Projects/central-mcp
 uv tool install --editable .
 
-# 2. Scaffold a registry
+# 2. Scaffold an empty registry (writes to ~/.central-mcp/registry.yaml)
 central-mcp init
 
 # 3. Register the projects you want the hub to know about
@@ -82,9 +82,20 @@ central-mcp init [DIR]            # scaffold registry.yaml + .claude/settings.js
 central-mcp install CLIENT [--dry-run]
 ```
 
+## Registry resolution
+
+`central-mcp` resolves the registry path with a three-level cascade:
+
+1. `$CENTRAL_MCP_REGISTRY` if set
+2. `./registry.yaml` if it exists in the current directory (per-project override)
+3. `$HOME/.central-mcp/registry.yaml` (the global default; created by `central-mcp init`)
+
+The registry file is per-user state — never commit it. This repo's `.gitignore`
+already excludes it.
+
 ## Environment variables
 
-- `CENTRAL_MCP_REGISTRY` — override the registry.yaml path (default: `./registry.yaml`)
+- `CENTRAL_MCP_REGISTRY` — override the registry path (takes precedence over the cascade)
 - `CENTRAL_HUB_SPLIT` — `horizontal` (default) | `vertical` | `none` — hub window split direction
 - `CENTRAL_MCP_AUTOSTART` — `1` (default) | `0` — auto-launch each project's agent when `up` creates a session
 

@@ -9,3 +9,7 @@ build/
 logs/
 *.log
 .omc/
+
+# Per-user state — registry is scaffolded by `central-mcp init`, never committed.
+registry.yaml
+feedback.md
