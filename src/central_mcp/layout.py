@@ -205,18 +205,19 @@ def _split_hub_for_logs(root: Path, projects: list[Project], messages: list[str]
         messages.append(f"hub split: unknown value {raw!r}, falling back to horizontal")
         flag = "-h"
 
-    log_paths: list[str] = []
+    # Pre-touch every project log so `central-mcp watch` has something to
+    # open on first pass. The watch subcommand handles prefix/coloring/ANSI
+    # stripping — see cmd_watch in cli/_commands.py.
     for p in projects:
         lp = paths.project_log_path(p.name)
         lp.parent.mkdir(parents=True, exist_ok=True)
         lp.touch(exist_ok=True)
-        log_paths.append(str(lp))
 
-    if not log_paths:
-        tail_cmd = "echo 'no projects registered — nothing to tail'; exec $SHELL"
+    if not projects:
+        tail_cmd = "echo 'no projects registered — nothing to watch'; exec $SHELL"
     else:
-        quoted = " ".join(tmux._shquote(p) for p in log_paths)
-        tail_cmd = f"tail -F {quoted}"
+        # Fall back to $SHELL when watch exits so the pane stays alive.
+        tail_cmd = "sh -c 'central-mcp watch; exec $SHELL'"
 
     hub_target = f"{HUB_SESSION}:{HUB_WINDOW}"
     r = tmux._run([

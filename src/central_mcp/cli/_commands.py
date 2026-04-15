@@ -124,6 +124,97 @@ def cmd_brief(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_watch(args: argparse.Namespace) -> int:
+    """Tail every project's pipe-pane log with a colored per-project prefix.
+
+    Unlike `tail -F logs/*.log`, this command:
+      - Emits each line prefixed with a colored `[project-name]` tag, so
+        output from different projects is immediately distinguishable.
+      - Strips ANSI escape sequences from the source bytes (the pipe-pane
+        log captures raw claude TUI redraws), leaving only printable text.
+      - Discards incomplete lines (claude's cursor-movement bytes that
+        never end with \\n) so you see conversation content, not redraws.
+      - Handles log truncation — when `central-mcp up` recreates a session
+        and resets each log to zero bytes, watch seeks back to 0 and
+        continues without exiting.
+
+    Layout uses this as the hub window's split-pane command so that the
+    live view on the right of the orchestrator is readable.
+    """
+    import time
+
+    from central_mcp import scrub as scrub_mod
+
+    projects = load_registry()
+    if not projects:
+        print("(no projects registered — nothing to watch)", flush=True)
+        return 0
+
+    colors = ["36", "33", "35", "32", "31", "34", "96", "93", "95", "92"]
+    entries: list[dict] = []
+    for i, p in enumerate(projects):
+        log_path = paths.project_log_path(p.name)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.touch(exist_ok=True)
+        f = open(log_path, "rb")
+        f.seek(0, 2)  # tail from the current end
+        entries.append(
+            {
+                "name": p.name,
+                "color": colors[i % len(colors)],
+                "file": f,
+                "path": log_path,
+                "pos": f.tell(),
+                "buf": b"",
+            }
+        )
+
+    print(
+        f"[central-mcp watch] tailing {len(entries)} project(s). Ctrl-C to stop.",
+        flush=True,
+    )
+
+    try:
+        while True:
+            idle = True
+            for e in entries:
+                try:
+                    size = e["path"].stat().st_size
+                except FileNotFoundError:
+                    continue
+                # Truncation detection — if the file got smaller, reseek.
+                if size < e["pos"]:
+                    e["file"].seek(0)
+                    e["pos"] = 0
+                    e["buf"] = b""
+                e["file"].seek(e["pos"])
+                chunk = e["file"].read()
+                if not chunk:
+                    continue
+                idle = False
+                e["pos"] = e["file"].tell()
+                e["buf"] += chunk
+                while b"\n" in e["buf"]:
+                    line_bytes, _, rest = e["buf"].partition(b"\n")
+                    e["buf"] = rest
+                    text = line_bytes.decode("utf-8", errors="replace")
+                    clean = scrub_mod.scrub_ansi(text).rstrip()
+                    if not clean.strip():
+                        continue
+                    print(
+                        f"\033[1;{e['color']}m[{e['name']}]\033[0m {clean}",
+                        flush=True,
+                    )
+            if idle:
+                time.sleep(0.25)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        for e in entries:
+            e["file"].close()
+    return 0
+
+
 # ---------- registry mutation ----------
 
 def cmd_add(args: argparse.Namespace) -> int:

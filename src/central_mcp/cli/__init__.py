@@ -27,6 +27,7 @@ from central_mcp.cli._commands import (
     cmd_serve,
     cmd_unalias,
     cmd_up,
+    cmd_watch,
 )
 
 
@@ -51,6 +52,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_brief = sub.add_parser("brief", help="print the orchestrator brief")
     p_brief.set_defaults(func=cmd_brief)
+
+    p_watch = sub.add_parser(
+        "watch",
+        help="follow every project's pane log with a colored [project] prefix",
+    )
+    p_watch.set_defaults(func=cmd_watch)
 
     p_add = sub.add_parser("add", help="register a new project")
     p_add.add_argument("name", help="short project identifier")
