@@ -38,14 +38,12 @@ git clone <repo> ~/Projects/central-mcp
 cd ~/Projects/central-mcp
 uv tool install --editable .
 
-# 1a. (optional) Register a shorter command name. By default this tries to
-#     create a `cmcp` symlink next to `central-mcp`, but it refuses if any
-#     other `cmcp` is already on your PATH (e.g. from a different tool) —
-#     pass a custom name if needed: `central-mcp alias mcph`.
-central-mcp alias        # creates ~/.local/bin/cmcp -> central-mcp, or refuses
-# central-mcp unalias    # undo whenever you want
-
-# 2. Scaffold an empty registry at ~/.central-mcp/registry.yaml
+# 2. Scaffold an empty registry at ~/.central-mcp/registry.yaml.
+#    This also tries to create a `cmcp` short-name symlink next to
+#    central-mcp, unless something else with that name is already on PATH
+#    (e.g. the unrelated PyPI package of the same name). Pass --no-alias
+#    to skip, or run `central-mcp alias OTHER_NAME` later to pick a
+#    different short name.
 central-mcp init
 
 # 3. Register central-mcp with your MCP client(s) — once per client

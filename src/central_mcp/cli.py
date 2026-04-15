@@ -159,6 +159,14 @@ def _cmd_init(args: argparse.Namespace) -> int:
         "projects: []\n"
     )
     print(f"wrote {reg}")
+
+    # Opportunistically install the `cmcp` short-name alias. Silent skip on
+    # any conflict — the user can always run `central-mcp alias` later or
+    # pick a different name. This is why we do NOT declare a second
+    # console_script entry point in pyproject.toml.
+    if not args.no_alias:
+        _try_auto_alias("cmcp")
+
     print()
     print("Next steps:")
     print("  1. central-mcp install claude     # or codex, cursor")
@@ -167,6 +175,45 @@ def _cmd_init(args: argparse.Namespace) -> int:
     print("     (The orchestrator will call add_project; shell fallback is")
     print("      `central-mcp add NAME PATH --agent claude`.)")
     return 0
+
+
+def _try_auto_alias(name: str) -> None:
+    """Best-effort: create the `cmcp` alias, swallow conflicts quietly.
+
+    Used by `init` so first-time setup ends with the short name available
+    whenever it's safe. Prints a single info line so the user knows what
+    (did or did not) happen.
+    """
+    bin_dir, target = _alias_bin_dir_and_target()
+    if bin_dir is None:
+        return  # central-mcp not on PATH — can't happen if we're running
+
+    target_resolved = target.resolve()
+    link = bin_dir / name
+    existing = shutil.which(name)
+
+    if existing:
+        existing_resolved = Path(existing).resolve()
+        if existing_resolved == target_resolved:
+            print(f"alias: {name!r} already points here — skipped")
+            return
+        print(
+            f"alias: skipped {name!r} — conflicts with {existing}. "
+            f"Use `central-mcp alias OTHER_NAME` if you want a short name."
+        )
+        return
+
+    if link.exists() or link.is_symlink():
+        # Dangling or otherwise — don't touch.
+        print(f"alias: skipped {name!r} — {link} already exists")
+        return
+
+    try:
+        link.symlink_to(target)
+    except OSError as e:
+        print(f"alias: could not create {link} ({e})")
+        return
+    print(f"alias: created {link} -> {target} (run `central-mcp unalias` to remove)")
 
 
 def _cmd_install(args: argparse.Namespace) -> int:
@@ -473,6 +520,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="directory or .yaml file (default: $HOME/.central-mcp/registry.yaml)",
     )
     p_init.add_argument("--force", action="store_true")
+    p_init.add_argument(
+        "--no-alias",
+        action="store_true",
+        help="skip the automatic `cmcp` alias creation (opt out if you manage PATH shims yourself)",
+    )
     p_init.set_defaults(func=_cmd_init)
 
     p_install = sub.add_parser("install", help="register central-mcp with an MCP client")
