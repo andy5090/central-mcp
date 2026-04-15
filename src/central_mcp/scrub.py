@@ -9,8 +9,15 @@ from __future__ import annotations
 
 import re
 
-# Matches CSI, OSC and other common terminal escape sequences.
-_ANSI_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+# CSI (Control Sequence Introducer): ESC [ params command-byte
+_ANSI_CSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+# OSC (Operating System Command): ESC ] ... (BEL | ESC \)
+# Used for terminal title setting, e.g. `ESC ] 0 ; Claude Code BEL`.
+_ANSI_OSC_RE = re.compile(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
+# DCS (Device Control String): ESC P ... ESC \
+_ANSI_DCS_RE = re.compile(r"\x1bP[^\x1b]*\x1b\\")
+# Stray simple escapes that don't match the above structured forms.
+_ANSI_OTHER_RE = re.compile(r"\x1b[@-Z\\-_]")
 
 _REDACT = "***REDACTED***"
 
@@ -30,7 +37,12 @@ _KV_RE = re.compile(
 
 
 def scrub_ansi(text: str) -> str:
-    return _ANSI_RE.sub("", text)
+    """Strip common terminal escape sequences: CSI, OSC, DCS, and strays."""
+    text = _ANSI_OSC_RE.sub("", text)
+    text = _ANSI_DCS_RE.sub("", text)
+    text = _ANSI_CSI_RE.sub("", text)
+    text = _ANSI_OTHER_RE.sub("", text)
+    return text
 
 
 def scrub_secrets(text: str) -> str:

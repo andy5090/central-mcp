@@ -130,10 +130,12 @@ def cmd_watch(args: argparse.Namespace) -> int:
     Unlike `tail -F logs/*.log`, this command:
       - Emits each line prefixed with a colored `[project-name]` tag, so
         output from different projects is immediately distinguishable.
-      - Strips ANSI escape sequences from the source bytes (the pipe-pane
-        log captures raw claude TUI redraws), leaving only printable text.
-      - Discards incomplete lines (claude's cursor-movement bytes that
-        never end with \\n) so you see conversation content, not redraws.
+      - Strips ANSI escape sequences (CSI, OSC title, DCS) from the source
+        bytes (the pipe-pane log captures raw claude TUI redraws).
+      - Treats carriage returns (\\r) as line terminators so TUI animations
+        that repaint with \\r don't overwrite the `[project]` prefix.
+      - Filters spinner-frame / pure-decoration lines (single unicode
+        glyph, box-drawing, border dashes) so the view isn't spammed.
       - Handles log truncation — when `central-mcp up` recreates a session
         and resets each log to zero bytes, watch seeks back to 0 and
         continues without exiting.
@@ -141,6 +143,7 @@ def cmd_watch(args: argparse.Namespace) -> int:
     Layout uses this as the hub window's split-pane command so that the
     live view on the right of the orchestrator is readable.
     """
+    import re
     import time
 
     from central_mcp import scrub as scrub_mod
@@ -151,13 +154,34 @@ def cmd_watch(args: argparse.Namespace) -> int:
         return 0
 
     colors = ["36", "33", "35", "32", "31", "34", "96", "93", "95", "92"]
+
+    # Characters that, on their own, count as "noise" — box drawing,
+    # spinner frames, pipe separators, unicode dots/stars. A line made
+    # entirely of these (plus whitespace) gets suppressed.
+    noise_chars = set(
+        " \t│─━┃┄┅┆┇┈┉┊┋┌┍┎┏┐┑┒┓└┕┖┗┘┙┚┛├┝┞┟┠┡┢┣┤┥┦┧┨┩┪┫┬┭┮┯┰┱┲┳┴┵┶┷┸┹┺┻"
+        "┼┽┾┿╀╁╂╃╄╅╆╇╈╉╊╋═║╒╓╔╕╖╗╘╙╚╛╜╝╞╟╠╡╢╣╤╥╦╧╨╩╪╫╬"
+        "●◐◑◒◓◔◕◖◗◆◇◈◉◊○◌◍◎◦◯◰◱◲◳◴◵◶◷◸◹◺◻◼◽◾◿"
+        "▐▌▀▄█▁▂▃▄▅▆▇▉▊▋▍▎▏░▒▓▔▕"
+        "⠀⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋⠌⠍⠎⠏⠐⠑⠒⠓⠔⠕⠖⠗⠘⠙⠚⠛⠜⠝⠞⠟"
+        "⠠⠡⠢⠣⠤⠥⠦⠧⠨⠩⠪⠫⠬⠭⠮⠯⠰⠱⠲⠳⠴⠵⠶⠷⠸⠹⠺⠻⠼⠽⠾⠿"
+        "✢✣✤✥✦✧✩✪✫✬✭✮✯✰✱✲✳✴✵✶✷✸✹✺✻✼✽✾✿"
+        ".-=~"
+    )
+
+    def is_noise(s: str) -> bool:
+        t = s.strip()
+        if not t:
+            return True
+        return all(c in noise_chars for c in t)
+
     entries: list[dict] = []
     for i, p in enumerate(projects):
         log_path = paths.project_log_path(p.name)
         log_path.parent.mkdir(parents=True, exist_ok=True)
         log_path.touch(exist_ok=True)
         f = open(log_path, "rb")
-        f.seek(0, 2)  # tail from the current end
+        f.seek(0, 2)
         entries.append(
             {
                 "name": p.name,
@@ -174,6 +198,8 @@ def cmd_watch(args: argparse.Namespace) -> int:
         flush=True,
     )
 
+    split_re = re.compile(rb"[\r\n]")
+
     try:
         while True:
             idle = True
@@ -182,7 +208,6 @@ def cmd_watch(args: argparse.Namespace) -> int:
                     size = e["path"].stat().st_size
                 except FileNotFoundError:
                     continue
-                # Truncation detection — if the file got smaller, reseek.
                 if size < e["pos"]:
                     e["file"].seek(0)
                     e["pos"] = 0
@@ -194,12 +219,17 @@ def cmd_watch(args: argparse.Namespace) -> int:
                 idle = False
                 e["pos"] = e["file"].tell()
                 e["buf"] += chunk
-                while b"\n" in e["buf"]:
-                    line_bytes, _, rest = e["buf"].partition(b"\n")
-                    e["buf"] = rest
+                # Split on both \n and \r so that TUI \r-repaints start
+                # fresh lines rather than overwriting the printed prefix.
+                while True:
+                    m = split_re.search(e["buf"])
+                    if not m:
+                        break
+                    line_bytes = e["buf"][: m.start()]
+                    e["buf"] = e["buf"][m.end() :]
                     text = line_bytes.decode("utf-8", errors="replace")
-                    clean = scrub_mod.scrub_ansi(text).rstrip()
-                    if not clean.strip():
+                    clean = scrub_mod.scrub_ansi(text).strip()
+                    if not clean or is_noise(clean):
                         continue
                     print(
                         f"\033[1;{e['color']}m[{e['name']}]\033[0m {clean}",
