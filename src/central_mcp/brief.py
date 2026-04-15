@@ -1,51 +1,37 @@
-"""Compact registry + activity brief — meant to be consumed by Claude Code
-SessionStart hooks (or any other tool) as additional context.
+"""Compact registry snapshot for SessionStart hooks and `central-mcp brief`.
 
-Prints a short markdown block that any orchestrator can read at a glance:
-project list with pane status, current foreground command, and rough
-activity state. Safe to pipe straight into hook stdout.
+Prints a short markdown block listing every registered project so the
+orchestrator knows the hub surface at a glance. No pane state, no log
+tailing — dispatch is subprocess-based now, so there's no long-lived
+agent process to report on.
 """
 
 from __future__ import annotations
 
-import time
-
-from central_mcp import paths, tmux
-from central_mcp.registry import Project, load_registry
-
-
-def _activity(p: Project) -> tuple[str, str | None]:
-    log_path = paths.project_log_path(p.name)
-    if not log_path.exists():
-        return "unknown", None
-    age = time.time() - log_path.stat().st_mtime
-    if age < 2:
-        return "busy", round(age, 1)
-    if age < 30:
-        return "recent", round(age, 1)
-    return "idle", round(age, 1)
-
-
-def _row(p: Project) -> str:
-    target = p.tmux.target
-    alive = tmux.pane_exists(target)
-    if not alive:
-        return f"- **{p.name}** — pane `{target}` ❌ not running"
-    state, age = _activity(p)
-    cmd = tmux.pane_current_command(target) or "-"
-    age_str = f"{age}s ago" if age is not None else "never"
-    return f"- **{p.name}** — `{target}` · {state} · cmd=`{cmd}` · last={age_str}"
+from central_mcp.registry import load_registry
 
 
 def render() -> str:
     projects = load_registry()
     if not projects:
-        return "## central-mcp\n\n_(registry.yaml is empty)_"
+        return (
+            "## central-mcp\n\n"
+            "_(registry is empty — add a project with `central-mcp add NAME PATH --agent claude` "
+            "or ask the orchestrator to call `add_project` for you)_"
+        )
     lines = ["## central-mcp", "", f"_{len(projects)} project(s) registered_", ""]
     for p in projects:
-        lines.append(_row(p))
-    lines.append("")
-    lines.append("Use MCP tools: `list_projects`, `project_status`, `dispatch_query`, `fetch_logs`, `project_activity`, `start_project`, `add_project`, `remove_project`.")
+        tags = f" [{', '.join(p.tags)}]" if p.tags else ""
+        desc = f" — {p.description}" if p.description else ""
+        lines.append(f"- **{p.name}** (`{p.agent}`) — `{p.path}`{desc}{tags}")
+    lines += [
+        "",
+        "MCP tools: `list_projects`, `project_status`, `dispatch_query`, "
+        "`add_project`, `remove_project`.",
+        "",
+        "dispatch_query runs the agent non-interactively in the project's cwd "
+        "and returns its full stdout as `output`.",
+    ]
     return "\n".join(lines)
 
 

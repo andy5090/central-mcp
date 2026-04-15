@@ -1,10 +1,4 @@
-"""Command implementations + shared helpers for the central-mcp CLI.
-
-Every `_cmd_*` function is a leaf handler invoked by the parser wired up
-in `central_mcp.cli.__init__`. Helper functions that are only used by
-the commands live here too so that the parser module stays small and
-contains only argparse wiring.
-"""
+"""Command implementations + shared helpers for the central-mcp CLI."""
 
 from __future__ import annotations
 
@@ -21,13 +15,14 @@ from central_mcp import brief as brief_mod
 from central_mcp import install as install_mod
 from central_mcp import layout
 from central_mcp import paths
-from central_mcp import tmux
+from central_mcp.registry import (
+    add_project as registry_add,
+    load_registry,
+    remove_project as registry_remove,
+)
 
 
-# Inline default for the SessionStart hook — small enough that package-data
-# lookup would be overkill. Writing `central-mcp brief` means the hook
-# resolves through PATH, which works regardless of how the package was
-# installed.
+# Inline default for the SessionStart hook.
 _SETTINGS_JSON = """\
 {
   "hooks": {
@@ -47,18 +42,10 @@ _SETTINGS_JSON = """\
 
 
 def _read_packaged(name: str) -> str:
-    """Load a file from `central_mcp/data/` as shipped in the wheel."""
     return files("central_mcp").joinpath("data", name).read_text(encoding="utf-8")
-from central_mcp.registry import (
-    add_project as registry_add,
-    load_registry,
-    projects_by_session,
-    remove_project as registry_remove,
-)
 
 
-# Supported orchestrator agents, in the order they're offered in the picker.
-# (key used in config, binary name on PATH, human-readable label).
+# Supported orchestrators for `central-mcp run`, in picker order.
 ORCHESTRATORS: list[tuple[str, str, str]] = [
     ("claude", "claude", "Claude Code"),
     ("codex", "codex", "Codex CLI"),
@@ -66,46 +53,19 @@ ORCHESTRATORS: list[tuple[str, str, str]] = [
     ("gemini", "gemini", "Gemini CLI"),
 ]
 
-# Known "skip all permission prompts" / yolo flags per orchestrator.
-# Unset entries mean the agent has no documented bypass mode (as far as
-# central-mcp knows) — `--bypass` will warn and launch without any extra flag.
+# Known permission-bypass flags for `central-mcp run --bypass`.
 BYPASS_FLAGS: dict[str, list[str]] = {
     "claude": ["--dangerously-skip-permissions"],
     "codex": ["--dangerously-bypass-approvals-and-sandbox"],
     "gemini": ["--yolo"],
-    # cursor-agent: not wired up — add when a stable flag exists.
 }
 
 
-# ---------- thin command wrappers ----------
+# ---------- server / listing ----------
 
 def cmd_serve(args: argparse.Namespace) -> int:
     from central_mcp.server import main as server_main
     server_main()
-    return 0
-
-
-def cmd_up(args: argparse.Namespace) -> int:
-    created, messages = layout.ensure_session()
-    for m in messages:
-        print(m)
-    if created:
-        print()
-        print("Attach with: tmux attach -t central")
-    return 0
-
-
-def cmd_down(args: argparse.Namespace) -> int:
-    sessions = set(projects_by_session().keys())
-    sessions.add(layout.HUB_SESSION)
-    killed = 0
-    for s in sessions:
-        if tmux.has_session(s):
-            tmux._run(["kill-session", "-t", s])
-            print(f"killed session: {s}")
-            killed += 1
-    if not killed:
-        print("no sessions to kill")
     return 0
 
 
@@ -115,7 +75,7 @@ def cmd_list(args: argparse.Namespace) -> int:
         print("(registry is empty)")
         return 0
     for p in projects:
-        print(f"{p.name:20}  {p.tmux.target:25}  agent={p.agent:8}  {p.path}")
+        print(f"{p.name:20}  agent={p.agent:8}  {p.path}")
     return 0
 
 
@@ -124,152 +84,21 @@ def cmd_brief(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_watch(args: argparse.Namespace) -> int:
-    """Tail every project's pipe-pane log with a colored per-project prefix.
+# ---------- observation layer (optional tmux) ----------
 
-    Unlike `tail -F logs/*.log`, this command:
-      - Emits each line prefixed with a colored `[project-name]` tag, so
-        output from different projects is immediately distinguishable.
-      - Strips ANSI escape sequences (CSI, OSC title, DCS) from the source
-        bytes (the pipe-pane log captures raw claude TUI redraws).
-      - Treats carriage returns (\\r) as line terminators so TUI animations
-        that repaint with \\r don't overwrite the `[project]` prefix.
-      - Filters spinner-frame / pure-decoration lines (single unicode
-        glyph, box-drawing, border dashes) so the view isn't spammed.
-      - Handles log truncation — when `central-mcp up` recreates a session
-        and resets each log to zero bytes, watch seeks back to 0 and
-        continues without exiting.
-
-    Layout uses this as the hub window's split-pane command so that the
-    live view on the right of the orchestrator is readable.
-    """
-    import re
-    import time
-
-    from central_mcp import scrub as scrub_mod
-
-    projects = load_registry()
-    if not projects:
-        print("(no projects registered — nothing to watch)", flush=True)
-        return 0
-
-    colors = ["36", "33", "35", "32", "31", "34", "96", "93", "95", "92"]
-
-    # Characters that, on their own, count as "noise" — box drawing,
-    # spinner frames, pipe separators, unicode dots/stars. A line made
-    # entirely of these (plus whitespace) gets suppressed.
-    noise_chars = set(
-        " \t│─━┃┄┅┆┇┈┉┊┋┌┍┎┏┐┑┒┓└┕┖┗┘┙┚┛├┝┞┟┠┡┢┣┤┥┦┧┨┩┪┫┬┭┮┯┰┱┲┳┴┵┶┷┸┹┺┻"
-        "┼┽┾┿╀╁╂╃╄╅╆╇╈╉╊╋═║╒╓╔╕╖╗╘╙╚╛╜╝╞╟╠╡╢╣╤╥╦╧╨╩╪╫╬"
-        "●◐◑◒◓◔◕◖◗◆◇◈◉◊○◌◍◎◦◯◰◱◲◳◴◵◶◷◸◹◺◻◼◽◾◿"
-        "▐▌▀▄█▁▂▃▄▅▆▇▉▊▋▍▎▏░▒▓▔▕"
-        "⠀⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋⠌⠍⠎⠏⠐⠑⠒⠓⠔⠕⠖⠗⠘⠙⠚⠛⠜⠝⠞⠟"
-        "⠠⠡⠢⠣⠤⠥⠦⠧⠨⠩⠪⠫⠬⠭⠮⠯⠰⠱⠲⠳⠴⠵⠶⠷⠸⠹⠺⠻⠼⠽⠾⠿"
-        "✢✣✤✥✦✧✩✪✫✬✭✮✯✰✱✲✳✴✵✶✷✸✹✺✻✼✽✾✿"
-        ".-=~"
-    )
-
-    def is_noise(s: str) -> bool:
-        t = s.strip()
-        if not t:
-            return True
-        return all(c in noise_chars for c in t)
-
-    entries: dict[str, dict] = {}
-    next_color_index = 0
-
-    def _open_entry(name: str) -> None:
-        nonlocal next_color_index
-        log_path = paths.project_log_path(name)
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        log_path.touch(exist_ok=True)
-        f = open(log_path, "rb")
-        f.seek(0, 2)
-        entries[name] = {
-            "name": name,
-            "color": colors[next_color_index % len(colors)],
-            "file": f,
-            "path": log_path,
-            "pos": f.tell(),
-            "buf": b"",
-        }
-        next_color_index += 1
-        print(
-            f"[central-mcp watch] now tailing '{name}' ({log_path})",
-            flush=True,
-        )
-
-    for p in projects:
-        _open_entry(p.name)
-
-    print(
-        f"[central-mcp watch] tailing {len(entries)} project(s). Ctrl-C to stop.",
-        flush=True,
-    )
-
-    split_re = re.compile(rb"[\r\n]")
-    last_registry_scan = 0.0
-    registry_scan_interval = 2.0  # seconds
-
-    try:
-        while True:
-            # Periodically re-sync against the registry so projects added or
-            # removed after watch started get picked up / dropped.
-            now = time.time()
-            if now - last_registry_scan >= registry_scan_interval:
-                last_registry_scan = now
-                current = {p.name for p in load_registry()}
-                for new_name in current - set(entries.keys()):
-                    _open_entry(new_name)
-                for stale in set(entries.keys()) - current:
-                    entries[stale]["file"].close()
-                    entries.pop(stale)
-                    print(
-                        f"[central-mcp watch] stopped tailing '{stale}' (removed from registry)",
-                        flush=True,
-                    )
-
-            idle = True
-            for e in entries.values():
-                try:
-                    size = e["path"].stat().st_size
-                except FileNotFoundError:
-                    continue
-                if size < e["pos"]:
-                    e["file"].seek(0)
-                    e["pos"] = 0
-                    e["buf"] = b""
-                e["file"].seek(e["pos"])
-                chunk = e["file"].read()
-                if not chunk:
-                    continue
-                idle = False
-                e["pos"] = e["file"].tell()
-                e["buf"] += chunk
-                # Split on both \n and \r so that TUI \r-repaints start
-                # fresh lines rather than overwriting the printed prefix.
-                while True:
-                    m = split_re.search(e["buf"])
-                    if not m:
-                        break
-                    line_bytes = e["buf"][: m.start()]
-                    e["buf"] = e["buf"][m.end() :]
-                    text = line_bytes.decode("utf-8", errors="replace")
-                    clean = scrub_mod.scrub_ansi(text).strip()
-                    if not clean or is_noise(clean):
-                        continue
-                    print(
-                        f"\033[1;{e['color']}m[{e['name']}]\033[0m {clean}",
-                        flush=True,
-                    )
-            if idle:
-                time.sleep(0.25)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        for e in entries.values():
-            e["file"].close()
+def cmd_up(args: argparse.Namespace) -> int:
+    created, messages = layout.ensure_session()
+    for m in messages:
+        print(m)
+    if not created:
+        print(f"(already running — attach with: tmux attach -t {layout.SESSION})")
     return 0
+
+
+def cmd_down(args: argparse.Namespace) -> int:
+    killed, message = layout.kill_all()
+    print(message)
+    return 0 if killed or "no session" in message else 1
 
 
 # ---------- registry mutation ----------
@@ -280,26 +109,13 @@ def cmd_add(args: argparse.Namespace) -> int:
             name=args.name,
             path_=str(Path(args.path).expanduser().resolve()),
             agent=args.agent,
-            session=args.session,
-            window=args.window,
-            pane=args.pane,
             description=args.description or "",
             tags=args.tag or None,
         )
     except ValueError as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
-    print(f"added: {proj.name} -> {proj.tmux.target} (agent={proj.agent})")
-
-    if getattr(args, "no_start", False):
-        return 0
-    from central_mcp.server import _ensure_pane_up
-
-    err = _ensure_pane_up(proj)
-    if err:
-        print(f"warning: auto-start skipped: {err.get('error')}", file=sys.stderr)
-        return 0
-    print(f"started: {proj.tmux.target} (agent={proj.agent})")
+    print(f"added: {proj.name} -> {proj.path} (agent={proj.agent})")
     return 0
 
 
@@ -313,13 +129,6 @@ def cmd_remove(args: argparse.Namespace) -> int:
 
 
 def cmd_init(args: argparse.Namespace) -> int:
-    """Create an empty registry.yaml.
-
-    Default target is $HOME/.central-mcp/registry.yaml — the same location
-    the cascade falls back to when no env var or ./registry.yaml is set.
-    Pass a directory to scaffold ./registry.yaml inside it, or a .yaml file
-    path to be explicit.
-    """
     if args.path is None:
         reg = paths.central_mcp_home() / "registry.yaml"
     else:
@@ -337,10 +146,6 @@ def cmd_init(args: argparse.Namespace) -> int:
     )
     print(f"wrote {reg}")
 
-    # Opportunistically install the `cmcp` short-name alias. Silent skip on
-    # any conflict — the user can always run `central-mcp alias` later or
-    # pick a different name. This is why we do NOT declare a second
-    # console_script entry point in pyproject.toml.
     if not args.no_alias:
         _try_auto_alias("cmcp")
 
@@ -348,9 +153,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     print("Next steps:")
     print("  1. central-mcp install claude     # or codex, cursor")
     print("  2. Start that client and add projects in natural language, e.g.:")
-    print('     "Add ~/Projects/my-app to the hub and run Claude on it."')
-    print("     (The orchestrator will call add_project; shell fallback is")
-    print("      `central-mcp add NAME PATH --agent claude`.)")
+    print('     "Add ~/Projects/my-app to the hub, agent=claude."')
     return 0
 
 
@@ -363,13 +166,6 @@ def cmd_install(args: argparse.Namespace) -> int:
 # ---------- alias ----------
 
 def _alias_bin_dir_and_target() -> tuple[Path | None, Path | None]:
-    """Return (user-facing bin dir, the central-mcp binary path).
-
-    We DO NOT resolve symlinks — managers like `uv tool` install their
-    binaries via a PATH-facing shim that links into an internal venv.
-    The alias belongs next to the shim, not inside the venv, so a
-    subsequent `uv tool uninstall` sweeps everything cleanly.
-    """
     target = shutil.which("central-mcp")
     if not target:
         return None, None
@@ -378,12 +174,6 @@ def _alias_bin_dir_and_target() -> tuple[Path | None, Path | None]:
 
 
 def _try_auto_alias(name: str) -> None:
-    """Best-effort: create a short-name alias, swallow conflicts quietly.
-
-    Used by `init` so first-time setup ends with the short name available
-    whenever it's safe. Prints a single info line so the user knows what
-    did (or did not) happen.
-    """
     bin_dir, target = _alias_bin_dir_and_target()
     if bin_dir is None:
         return
@@ -416,7 +206,6 @@ def _try_auto_alias(name: str) -> None:
 
 
 def cmd_alias(args: argparse.Namespace) -> int:
-    """Create a symlink alias for `central-mcp`, conflict-checked."""
     bin_dir, target = _alias_bin_dir_and_target()
     if bin_dir is None:
         print(
@@ -442,10 +231,7 @@ def cmd_alias(args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
             return 0
-        print(
-            f"error: {name!r} conflicts with existing command: {existing}",
-            file=sys.stderr,
-        )
+        print(f"error: {name!r} conflicts with existing command: {existing}", file=sys.stderr)
         print(
             f"       refusing to shadow it. pick a different name with "
             f"`central-mcp alias {{other-name}}`.",
@@ -462,7 +248,6 @@ def cmd_alias(args: argparse.Namespace) -> int:
 
 
 def cmd_unalias(args: argparse.Namespace) -> int:
-    """Remove an alias previously created by `central-mcp alias`."""
     bin_dir, target = _alias_bin_dir_and_target()
     if bin_dir is None:
         print("error: `central-mcp` not on PATH", file=sys.stderr)
@@ -497,7 +282,6 @@ def cmd_unalias(args: argparse.Namespace) -> int:
 # ---------- run / orchestrator picker ----------
 
 def _detect_installed() -> list[tuple[str, str, str]]:
-    """Return every orchestrator whose binary is on PATH, in ORCHESTRATORS order."""
     return [(k, b, label) for k, b, label in ORCHESTRATORS if shutil.which(b)]
 
 
@@ -526,13 +310,6 @@ def _save_preference(key: str) -> None:
 
 
 def _ensure_launch_dir(target: Path) -> None:
-    """Scaffold preamble + SessionStart hook in the launch directory.
-
-    CLAUDE.md / AGENTS.md content is shipped as package data under
-    `central_mcp/data/` so editable and non-editable installs both
-    resolve to the same canonical text. Existing files are never
-    overwritten so users can customize.
-    """
     target.mkdir(parents=True, exist_ok=True)
     claude_md = target / "CLAUDE.md"
     if not claude_md.exists():
@@ -548,7 +325,6 @@ def _ensure_launch_dir(target: Path) -> None:
 
 
 def _prompt_choice(installed: list[tuple[str, str, str]]) -> tuple[str, str, str]:
-    """Interactive agent picker. Caller must verify stdin.isatty() first."""
     print("Multiple coding agents detected — which should central-mcp launch?")
     for i, (_key, binary, label) in enumerate(installed, 1):
         print(f"  {i}. {label} ({binary})")
@@ -651,8 +427,8 @@ def cmd_run(args: argparse.Namespace) -> int:
             argv.extend(bypass)
         else:
             print(
-                f"warning: --bypass: {key!r} has no known permission-bypass flag in "
-                "central-mcp; launching without it. Add one to BYPASS_FLAGS.",
+                f"warning: --bypass: {key!r} has no known permission-bypass flag; "
+                "launching without it.",
                 file=sys.stderr,
             )
 

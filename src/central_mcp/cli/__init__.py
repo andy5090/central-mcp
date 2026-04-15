@@ -27,7 +27,6 @@ from central_mcp.cli._commands import (
     cmd_serve,
     cmd_unalias,
     cmd_up,
-    cmd_watch,
 )
 
 
@@ -41,10 +40,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_serve = sub.add_parser("serve", help="run the MCP server on stdio")
     p_serve.set_defaults(func=cmd_serve)
 
-    p_up = sub.add_parser("up", help="bring up the tmux layout")
+    p_up = sub.add_parser(
+        "up",
+        help="create the optional tmux observation session (one pane per project)",
+    )
     p_up.set_defaults(func=cmd_up)
 
-    p_down = sub.add_parser("down", help="kill every session referenced by the registry")
+    p_down = sub.add_parser("down", help="kill the observation tmux session")
     p_down.set_defaults(func=cmd_down)
 
     p_list = sub.add_parser("list", help="print the registry")
@@ -53,30 +55,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_brief = sub.add_parser("brief", help="print the orchestrator brief")
     p_brief.set_defaults(func=cmd_brief)
 
-    p_watch = sub.add_parser(
-        "watch",
-        help="follow every project's pane log with a colored [project] prefix",
-    )
-    p_watch.set_defaults(func=cmd_watch)
-
     p_add = sub.add_parser("add", help="register a new project")
     p_add.add_argument("name", help="short project identifier")
     p_add.add_argument("path", help="absolute project path")
     p_add.add_argument(
         "--agent",
-        default="shell",
+        default="claude",
         help="adapter name (claude|codex|gemini|cursor|shell)",
     )
-    p_add.add_argument("--session", default="central")
-    p_add.add_argument("--window", default="projects")
-    p_add.add_argument("--pane", type=int, default=None)
     p_add.add_argument("--description", default="")
     p_add.add_argument("--tag", action="append")
-    p_add.add_argument(
-        "--no-start",
-        action="store_true",
-        help="only update registry.yaml; skip auto-booting the pane + agent",
-    )
     p_add.set_defaults(func=cmd_add)
 
     p_remove = sub.add_parser("remove", help="unregister a project")

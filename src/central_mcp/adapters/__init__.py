@@ -1,10 +1,10 @@
 """Agent adapters — one per coding-agent CLI.
 
-Each adapter describes how to launch a given agent in a tmux pane. The goal
-is to keep the rest of central-mcp ignorant of per-agent quirks: everything
-else deals with `Project` and `Adapter.launch_command()`.
+Each adapter describes both the interactive launch command (for tmux
+panes via `central-mcp up`) and the one-shot `exec_argv` used by
+`dispatch_query` to collect responses over stdout.
 """
 
-from central_mcp.adapters.base import Adapter, get_adapter, has_history
+from central_mcp.adapters.base import Adapter, get_adapter
 
-__all__ = ["Adapter", "get_adapter", "has_history"]
+__all__ = ["Adapter", "get_adapter"]

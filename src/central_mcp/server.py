@@ -1,13 +1,29 @@
+"""central-mcp MCP server.
+
+Every mutating tool runs through a plain subprocess call — no tmux pane
+observation, no pipe-pane scraping, no send-keys. Each dispatch spawns
+the configured agent CLI in the project's cwd using its non-interactive
+mode (`claude -p --continue`, `codex exec`, `gemini -p`), captures stdout
+and stderr, and returns them to the orchestrator over MCP.
+
+An optional tmux "observation" layer exists separately — see
+`central_mcp.layout` and the `up` / `down` CLI subcommands. It creates a
+single window with one interactive pane per project so humans can peek
+at each agent in real time, but that layer is not on any MCP tool's
+critical path and can be absent entirely.
+"""
+
 from __future__ import annotations
 
+import subprocess
 import time
 from pathlib import Path
 from typing import Any
 
 from fastmcp import FastMCP
 
-from central_mcp import layout, paths, tmux
-from central_mcp.adapters import get_adapter, has_history
+from central_mcp import paths
+from central_mcp.adapters import get_adapter
 from central_mcp.registry import (
     Project,
     add_project as _registry_add,
@@ -20,181 +36,33 @@ from central_mcp.scrub import scrub
 
 _MCP_INSTRUCTIONS = """\
 You are connected to central-mcp, a multi-project orchestration hub for
-coding agents. This hub manages a registry of projects; each project runs
-in its own tmux pane, typically with a coding-agent CLI (Claude Code,
-Codex, Cursor, Gemini) attached.
+coding agents. Each registered project has a coding-agent CLI
+(Claude Code, Codex, Gemini, …) associated with it in the registry.
 
-When the user asks anything about "my projects", status, dispatching work,
-fetching logs, or hub-wide activity, call these tools:
+When the user asks anything about "my projects", status, or dispatching
+work, call these MCP tools — do not read files or run shell commands
+instead:
 
-  - list_projects       — enumerate the registry
-  - project_status      — pane liveness + recent output for one project
-  - project_activity    — busy / recent / idle state
-  - dispatch_query      — send a prompt into a project's pane as keystrokes
-  - fetch_logs          — retrieve recent output (pane or persisted file)
-  - start_project       — launch the configured agent CLI in a pane
-  - add_project / remove_project — edit the registry
+  - list_projects    — enumerate the registry
+  - project_status   — registry info for one project
+  - dispatch_query   — run a one-shot non-interactive agent in the
+                       project's cwd and return its full stdout
+  - add_project      — register a new project
+  - remove_project   — unregister a project
 
-When the user says something like "what's running?", "send this to X",
-"how is gluecut-dawg doing?", assume they mean one of the registered
-projects and call list_projects first to see what is available. The
-orchestrator (you) is NOT the only agent — you dispatch work to other
-agents running in their own panes and observe their output.
+dispatch_query is SYNCHRONOUS: it spawns the agent as a subprocess
+(for example `claude -p "..." --continue` inside the project directory),
+waits for the process to exit, and returns its entire stdout as the
+`output` field of the MCP response. READ that output and summarize or
+quote it back to the user in the same turn — do not say "dispatched"
+and stop. If `ok` is false, report stderr and the exit code.
 
-When the user wants to add a new project to the hub ("add ~/Projects/foo",
-"track this repo too"), call add_project directly. DO NOT tell the user
-to run `central-mcp add` in a shell — the in-agent flow is the preferred
-UX, and add_project auto-boots the tmux pane. Pick a sensible agent
-default (claude if unsure) and mention the choice in your reply.
-
-`dispatch_query` waits for the sub-agent to finish responding by default
-(wait_for_idle=true) and returns a `tail` field with the scrubbed pane
-output. Read that tail and SUMMARIZE or QUOTE the result back to the
-user — do NOT claim the work is done without checking the tail, and do
-NOT call fetch_logs for the same information right after (dispatch's
-own return value already contains it). If `timed_out` is true, tell the
-user the agent was still working when the watchdog fired; if
-`activity_seen` is false, the agent never produced output and you
-should report that too.
+If the user mentions a project path that is not yet registered
+("add ~/Projects/foo"), call add_project yourself; do not tell the user
+to drop to a shell.
 """
 
 mcp = FastMCP("central-mcp", instructions=_MCP_INSTRUCTIONS)
-
-def _log_root() -> Path:
-    return paths.log_root()
-_logging_enabled: set[str] = set()
-
-_SHELLS = {"zsh", "bash", "fish", "sh", "dash"}
-# Seconds to give a freshly-launched agent CLI to render its welcome banner
-# and start accepting keystrokes before we begin sending prompts. tmux's
-# pane_current_command is unreliable here (claude/codex run as node children
-# of the login shell and don't swap the foreground process), so we fall back
-# to a small fixed delay on first boot only.
-_FIRST_BOOT_SETTLE_SEC = 1.5
-
-
-def _ensure_pane_up(project: Project) -> dict[str, Any] | None:
-    """Idempotently ensure the project's tmux pane is alive with its agent.
-
-    Four cases, in order:
-      1. Pane already exists AND configured agent is running — no-op.
-      2. Pane exists but the agent process is gone (crashed / exited back
-         into the sh wrapper's fallback shell) — attempt one restart by
-         re-sending the launch command. Refuse with a clear error if the
-         restart does not settle.
-      3. Session exists but this pane doesn't — split-window (or
-         new-window) into the registry-declared window, then launch the
-         agent.
-      4. No session at all — cold boot the full layout via ensure_session,
-         which handles all registered projects at once.
-
-    Used by every mutating tool (dispatch_query, start_project, add_project)
-    so callers never need to run `central-mcp up` manually. Returns None on
-    success, or an error dict ready to return from an MCP tool.
-    """
-    target = project.tmux.target
-    if tmux.pane_exists(target):
-        return _ensure_agent_alive(project, target)
-
-    session = project.tmux.session
-    window = project.tmux.window
-    window_target = f"{session}:{window}"
-
-    if tmux.has_session(session):
-        if tmux.pane_exists(window_target):
-            r = tmux.split_window(window_target, project.path)
-            if not r.ok:
-                return {
-                    "ok": False,
-                    "error": f"split-window {window_target} failed: {r.stderr.strip()}",
-                }
-            tmux.select_layout(window_target, "tiled")
-        else:
-            r = tmux.new_window(session, window, project.path)
-            if not r.ok:
-                return {
-                    "ok": False,
-                    "error": f"new-window {session}:{window} failed: {r.stderr.strip()}",
-                }
-
-        if not tmux.pane_exists(target):
-            return {
-                "ok": False,
-                "error": (
-                    f"pane {target} still missing after split — registry pane index "
-                    f"(pane={project.tmux.pane}) disagrees with tmux creation order"
-                ),
-            }
-
-        adapter = get_adapter(project.agent)
-        cmd = adapter.launch_command(resume=has_history(project.agent, project.path))
-        if cmd:
-            tmux.send_keys(target, cmd, enter=True)
-            time.sleep(_FIRST_BOOT_SETTLE_SEC)
-        return None
-
-    _, messages = layout.ensure_session()
-    if not tmux.pane_exists(target):
-        detail = "; ".join(messages) if messages else "unknown failure"
-        return {
-            "ok": False,
-            "error": f"pane {target} still missing after ensure_session: {detail}",
-        }
-    if get_adapter(project.agent).launch:
-        time.sleep(_FIRST_BOOT_SETTLE_SEC)
-    return None
-
-
-def _ensure_agent_alive(project: Project, target: str) -> dict[str, Any] | None:
-    """Verify the expected agent binary is attached to the pane's tty.
-
-    If the pane exists but the agent process is missing, try exactly one
-    restart (re-send the launch command). The sh wrapper's `exec $SHELL`
-    fallback leaves the pane as a bare shell when the agent crashed, so
-    send_keys into it runs the launch command in the shell, restoring
-    the agent. If the restart also fails to land the expected binary on
-    the tty within a settle window, surface an error that tells the
-    orchestrator to investigate with fetch_logs instead of silently
-    sending a prompt into a shell prompt.
-    """
-    adapter = get_adapter(project.agent)
-    if not adapter.launch:
-        return None  # shell adapter — no process to check for
-    binary = adapter.launch.split()[0]
-    if tmux.pane_has_process(target, binary):
-        return None
-
-    cmd = adapter.launch_command(resume=has_history(project.agent, project.path))
-    if not cmd:
-        return None
-    tmux.send_keys(target, cmd, enter=True)
-    deadline = time.time() + 5.0
-    while time.time() < deadline:
-        time.sleep(0.4)
-        if tmux.pane_has_process(target, binary):
-            time.sleep(_FIRST_BOOT_SETTLE_SEC)
-            return None
-    return {
-        "ok": False,
-        "error": (
-            f"pane {target} is not running {binary!r} — the configured agent "
-            f"for project {project.name!r} appears to have crashed or exited. "
-            "Restart attempt did not settle. Inspect with "
-            f"`fetch_logs(name={project.name!r}, source='file')` to see the "
-            "original startup errors, then fix the underlying issue (often a "
-            "broken MCP server entry in the agent's own config file)."
-        ),
-    }
-
-
-def _ensure_logging(project: Project) -> None:
-    target = project.tmux.target
-    if target in _logging_enabled:
-        return
-    log_path = paths.project_log_path(project.name)
-    r = tmux.pipe_pane_to_file(target, log_path)
-    if r.ok:
-        _logging_enabled.add(target)
 
 
 def _require_project(name: str) -> tuple[Project | None, dict[str, Any] | None]:
@@ -204,10 +72,6 @@ def _require_project(name: str) -> tuple[Project | None, dict[str, Any] | None]:
     return project, None
 
 
-def _log_path(project: Project) -> Path:
-    return paths.project_log_path(project.name)
-
-
 @mcp.tool()
 def list_projects() -> list[dict[str, Any]]:
     """List every project registered in registry.yaml."""
@@ -215,292 +79,100 @@ def list_projects() -> list[dict[str, Any]]:
 
 
 @mcp.tool()
-def project_status(
-    name: str,
-    lines: int = 60,
-    scrub_ansi: bool = True,
-    scrub_secrets: bool = True,
-) -> dict[str, Any]:
-    """Return registry info plus the last `lines` of the pane output."""
+def project_status(name: str) -> dict[str, Any]:
+    """Return the registry entry for one project.
+
+    This is metadata only — the working directory, adapter, description,
+    and tags. Dispatch work via dispatch_query to actually hit the agent.
+    """
     project, err = _require_project(name)
     if err:
         return err
-    target = project.tmux.target
-    alive = tmux.pane_exists(target)
-    log_tail = ""
-    current_cmd = ""
-    if alive:
-        _ensure_logging(project)
-        cap = tmux.capture_pane(target, lines=lines)
-        log_tail = cap.stdout if cap.ok else cap.stderr
-        log_tail = scrub(log_tail, ansi=scrub_ansi, secrets=scrub_secrets)
-        current_cmd = tmux.pane_current_command(target)
-    return {
-        "ok": True,
-        "project": project.to_dict(),
-        "pane_alive": alive,
-        "pane_current_command": current_cmd,
-        "log_tail": log_tail,
-    }
+    return {"ok": True, "project": project.to_dict()}
 
 
 @mcp.tool()
 def dispatch_query(
     name: str,
     prompt: str,
-    enter: bool = True,
-    force: bool = False,
-    wait_for_idle: bool = True,
-    idle_seconds: float = 3.0,
-    initial_wait: float = 8.0,
-    timeout: float = 180.0,
-    tail_lines: int = 80,
+    resume: bool = True,
+    timeout: float = 600.0,
 ) -> dict[str, Any]:
-    """Send a prompt into the project's tmux pane and (by default) wait
-    for the agent to finish responding, then return the resulting tail.
+    """Run the project's agent non-interactively and return its response.
 
-    Flow:
-      1. Boot the pane if needed, then send the prompt as keystrokes.
-      2. If `wait_for_idle` (default True), watch the project's pane log:
-         - Phase A (initial_wait seconds): wait for any byte to be written,
-           so we don't mistake a still-warming-up agent for "done".
-         - Phase B: wait until the log has not been touched for
-           `idle_seconds`, meaning the agent finished writing.
-         - Hard cap at `timeout` seconds end-to-end.
-      3. Read the last `tail_lines` lines of the pane log, scrubbed,
-         and return them so the orchestrator can quote or summarize the
-         agent's response without calling fetch_logs separately.
+    Spawns a one-shot subprocess using the adapter's `exec_argv`:
+      - claude: `claude -p <prompt> [--continue]`
+      - codex:  `codex exec <prompt>`
+      - gemini: `gemini -p <prompt>`
 
-    Set `wait_for_idle=False` for fire-and-forget behavior (old semantics).
-    Guards against copy-mode; override with `force=True`.
+    Runs with `cwd` set to the project path so Claude's `--continue`
+    picks up the most recent conversation for that directory. Captures
+    stdout and stderr, then returns the result to the orchestrator. The
+    orchestrator should read `output` and relay it to the user.
+
+    Parameters:
+      - name: registry identifier of the target project
+      - prompt: the natural-language request for the sub-agent
+      - resume: if True (default), resume prior session state when the
+                adapter supports it (claude's --continue flag). Set
+                False to force a fresh context.
+      - timeout: seconds to wait before killing the subprocess
     """
-    import time as _time
-
     project, err = _require_project(name)
     if err:
         return err
-    boot_err = _ensure_pane_up(project)
-    if boot_err:
-        return boot_err
-    target = project.tmux.target
-    if not force and tmux.pane_in_copy_mode(target):
+
+    adapter = get_adapter(project.agent)
+    argv = adapter.exec_argv(prompt, resume=resume)
+    if argv is None:
         return {
             "ok": False,
             "error": (
-                f"pane {target} is in copy-mode (user appears to be scrolling). "
-                "Retry with force=true to override."
+                f"adapter {project.agent!r} has no non-interactive exec mode; "
+                "dispatch_query needs an adapter that supports one-shot mode "
+                "(claude/codex/gemini)"
             ),
         }
-    _ensure_logging(project)
-    result = tmux.send_keys(target, prompt, enter=enter)
-    if not result.ok:
-        return {"ok": False, "target": target, "stderr": result.stderr}
 
-    response: dict[str, Any] = {"ok": True, "target": target}
-    if not wait_for_idle:
-        return response
-
-    log_path = _log_path(project)
-    waited, timed_out, activity_seen = _wait_for_response(
-        log_path,
-        idle_seconds=idle_seconds,
-        initial_wait=initial_wait,
-        timeout=timeout,
-    )
-
-    tail_text = ""
-    if log_path.exists():
-        raw = log_path.read_text(errors="replace")
-        tail_text = "\n".join(raw.splitlines()[-tail_lines:])
-        tail_text = scrub(tail_text, ansi=True, secrets=True)
-
-    response.update(
-        {
-            "waited_seconds": round(waited, 1),
-            "timed_out": timed_out,
-            "activity_seen": activity_seen,
-            "tail": tail_text,
-        }
-    )
-    return response
-
-
-def _wait_for_response(
-    log_path: Path,
-    *,
-    idle_seconds: float,
-    initial_wait: float,
-    timeout: float,
-    poll_interval: float = 0.4,
-) -> tuple[float, bool, bool]:
-    """Two-phase poll on `log_path`'s mtime.
-
-    Returns `(elapsed, timed_out, activity_seen)`:
-      * activity_seen = False means phase A timed out — the agent never
-        wrote anything after the prompt was sent.
-      * timed_out = True means the overall deadline fired in either phase.
-    """
-    import time as _t
-
-    def _mtime() -> float | None:
-        try:
-            return log_path.stat().st_mtime
-        except FileNotFoundError:
-            return None
-
-    start = _t.time()
-    baseline = _mtime()
-
-    # Phase A — wait for any activity.
-    phase_a_deadline = start + initial_wait
-    activity_seen = False
-    while _t.time() < phase_a_deadline:
-        if _t.time() - start >= timeout:
-            return _t.time() - start, True, False
-        current = _mtime()
-        if current is not None and current != baseline:
-            activity_seen = True
-            break
-        _t.sleep(poll_interval)
-    if not activity_seen:
-        return _t.time() - start, False, False
-
-    # Phase B — wait for idle.
-    last_mtime = _mtime()
-    last_change = _t.time()
-    while True:
-        now = _t.time()
-        if now - start >= timeout:
-            return now - start, True, True
-        current = _mtime()
-        if current is not None and current != last_mtime:
-            last_mtime = current
-            last_change = now
-        elif now - last_change >= idle_seconds:
-            return now - start, False, True
-        _t.sleep(poll_interval)
-
-
-@mcp.tool()
-def fetch_logs(
-    name: str,
-    lines: int = 500,
-    source: str = "pane",
-    scrub_ansi: bool = True,
-    scrub_secrets: bool = True,
-) -> dict[str, Any]:
-    """Retrieve recent output from a project.
-
-    source="pane": live scrollback via capture-pane (bounded by scrollback size).
-    source="file": full pipe-pane log at logs/<name>/pane.log — survives scrollback loss.
-    """
-    project, err = _require_project(name)
-    if err:
-        return err
-    target = project.tmux.target
-
-    if source == "file":
-        log_path = _log_path(project)
-        if not log_path.exists():
-            return {"ok": False, "error": f"no log file at {log_path}"}
-        text = log_path.read_text(errors="replace")
-        tail = "\n".join(text.splitlines()[-lines:])
-        tail = scrub(tail, ansi=scrub_ansi, secrets=scrub_secrets)
-        return {"ok": True, "source": "file", "path": str(log_path), "log": tail}
-
-    if not tmux.pane_exists(target):
-        return {"ok": False, "error": f"pane {target} not found"}
-    _ensure_logging(project)
-    cap = tmux.capture_pane(target, lines=lines)
-    log = cap.stdout if cap.ok else cap.stderr
-    log = scrub(log, ansi=scrub_ansi, secrets=scrub_secrets)
-    return {"ok": cap.ok, "source": "pane", "target": target, "log": log}
-
-
-@mcp.tool()
-def start_project(name: str, resume: bool = True) -> dict[str, Any]:
-    """Ensure the project's pane is up and its agent CLI is running.
-
-    Idempotent. Creates the tmux layout on first call (same as lazy-boot
-    from dispatch_query). If an agent is already running in the pane,
-    returns a no-op success. `resume=True` (default) uses the adapter's
-    resume command when prior session history for the project's cwd is
-    detectable; pass `resume=False` to force a fresh launch.
-    """
-    project, err = _require_project(name)
-    if err:
-        return err
-    boot_err = _ensure_pane_up(project)
-    if boot_err:
-        return boot_err
-    target = project.tmux.target
-
-    current = tmux.pane_current_command(target)
-    if current and current not in _SHELLS:
+    cwd = Path(project.path)
+    if not cwd.is_dir():
         return {
-            "ok": True,
-            "target": target,
-            "already_running": current,
-            "note": "pane already has an agent running; no-op",
+            "ok": False,
+            "error": f"project cwd {project.path!r} does not exist or is not a directory",
         }
 
-    adapter = get_adapter(project.agent)
-    use_resume = resume and has_history(project.agent, project.path)
-    cmd = adapter.launch_command(resume=use_resume)
-    if not cmd:
-        return {"ok": True, "note": f"adapter '{project.agent}' has no launch command (shell)"}
-
-    _ensure_logging(project)
-    r = tmux.send_keys(target, cmd, enter=True)
-    return {
-        "ok": r.ok,
-        "target": target,
-        "launched": cmd,
-        "resumed": use_resume,
-        "stderr": r.stderr if not r.ok else "",
-    }
-
-
-@mcp.tool()
-def project_activity(name: str) -> dict[str, Any]:
-    """Estimate how active a project pane is.
-
-    Uses (a) the current foreground process and (b) the mtime of the
-    pipe-pane log file. Returns one of:
-      busy   — log updated within last 2s
-      recent — log updated within last 30s
-      idle   — older than 30s or no log yet
-    """
-    project, err = _require_project(name)
-    if err:
-        return err
-    target = project.tmux.target
-    alive = tmux.pane_exists(target)
-    current = tmux.pane_current_command(target) if alive else ""
-
-    log_path = _log_path(project)
-    if not log_path.exists():
+    started = time.time()
+    try:
+        completed = subprocess.run(
+            argv,
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except FileNotFoundError:
         return {
-            "ok": True, "name": name, "pane_alive": alive,
-            "current_command": current, "state": "unknown",
-            "last_activity_sec": None,
+            "ok": False,
+            "error": f"agent binary {argv[0]!r} not found on PATH",
+        }
+    except subprocess.TimeoutExpired as exc:
+        return {
+            "ok": False,
+            "error": f"timeout after {timeout}s",
+            "partial_output": scrub(exc.stdout or "", ansi=True, secrets=True),
+            "partial_stderr": scrub(exc.stderr or "", ansi=True, secrets=True),
         }
 
-    _ensure_logging(project)  # make sure logging is on so future polls see updates
-    age = time.time() - log_path.stat().st_mtime
-    if age < 2:
-        state = "busy"
-    elif age < 30:
-        state = "recent"
-    else:
-        state = "idle"
+    duration = round(time.time() - started, 1)
     return {
-        "ok": True,
-        "name": name,
-        "pane_alive": alive,
-        "current_command": current,
-        "state": state,
-        "last_activity_sec": round(age, 1),
+        "ok": completed.returncode == 0,
+        "project": project.name,
+        "agent": project.agent,
+        "exit_code": completed.returncode,
+        "duration_sec": duration,
+        "output": scrub(completed.stdout, ansi=True, secrets=True),
+        "stderr": scrub(completed.stderr, ansi=True, secrets=True),
+        "command": " ".join(argv),
     }
 
 
@@ -508,42 +180,32 @@ def project_activity(name: str) -> dict[str, Any]:
 def add_project(
     name: str,
     path: str,
-    agent: str = "shell",
-    session: str = "central",
-    window: str = "projects",
-    pane: int | None = None,
+    agent: str = "claude",
     description: str = "",
     tags: list[str] | None = None,
-    start: bool = True,
 ) -> dict[str, Any]:
-    """Append a project to registry.yaml and immediately boot its pane + agent.
+    """Append a project to registry.yaml.
 
-    The tmux layout is updated in place: if the target session is already
-    running, a new pane is split into the projects window; otherwise the
-    full layout is cold-booted. The agent CLI resumes from prior history
-    when available. Pass `start=False` to only update the registry.
+    Registration is immediate. The agent is not spawned until the next
+    `dispatch_query` — there is no tmux pane to boot, no background
+    process to supervise.
     """
     try:
         proj = _registry_add(
-            name=name, path_=path, agent=agent, session=session,
-            window=window, pane=pane, description=description, tags=tags,
+            name=name,
+            path_=path,
+            agent=agent,
+            description=description,
+            tags=tags,
         )
     except ValueError as e:
         return {"ok": False, "error": str(e)}
-    result: dict[str, Any] = {"ok": True, "project": proj.to_dict()}
-    if start:
-        boot_err = _ensure_pane_up(proj)
-        if boot_err:
-            result["started"] = False
-            result["boot_warning"] = boot_err.get("error")
-        else:
-            result["started"] = True
-    return result
+    return {"ok": True, "project": proj.to_dict()}
 
 
 @mcp.tool()
 def remove_project(name: str) -> dict[str, Any]:
-    """Remove a project from registry.yaml. Leaves tmux panes untouched."""
+    """Remove a project from registry.yaml."""
     removed = _registry_remove(name)
     if not removed:
         return {"ok": False, "error": f"project {name!r} not found in registry"}

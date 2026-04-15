@@ -4,25 +4,23 @@ This directory is **central-mcp**, a multi-project orchestration hub. If you are
 
 ## What central-mcp is
 
-An MCP server that manages a registry of coding-agent projects. Each project runs in its own tmux pane, typically with its own agent CLI. You dispatch work to those panes and observe their output — you do not do the project work yourself unless explicitly told to.
+An MCP server that manages a registry of coding-agent projects. Every `dispatch_query` call spawns the configured agent CLI as a one-shot non-interactive subprocess in the project's working directory and returns its full stdout to you over MCP. There is no long-lived pane to watch or keep alive — each dispatch is a fresh process that runs, writes its response, and exits.
 
 ## How to use it
 
-When the user mentions "my projects", status, dispatching, logs, or anything hub-related, call the `central` MCP tools — **do not** read files or run shell commands instead:
+When the user mentions "my projects", status, or dispatching work, call the `central` MCP tools — **do not** read files or run shell commands instead:
 
 - `list_projects` — see what projects this hub manages
-- `project_status` / `project_activity` — inspect a specific project
-- `dispatch_query` — send a prompt into a project's pane
-- `fetch_logs` — retrieve recent output
-- `start_project` — launch the configured agent
+- `project_status` — the registry entry for one project (metadata only)
+- `dispatch_query` — **run the agent non-interactively** in the project's cwd and get its response
 - `add_project` / `remove_project` — edit the registry
 
-Call `list_projects` at the start of any hub-related conversation so you know what exists. If the user names a project ("send this to gluecut-dawg"), dispatch to it via `dispatch_query` without asking for confirmation on the routing — that's the whole point of the hub.
+`dispatch_query` is SYNCHRONOUS. It blocks until the subprocess exits (or the timeout fires) and returns `{ok, output, stderr, exit_code, duration_sec, project, agent, command}`. READ the `output` field and summarize or quote the response to the user in the same turn. Do not say "dispatched" and stop — the response is already in your return value.
 
-If the user mentions a project path that is NOT yet in the registry ("add ~/Projects/new-app"), call `add_project` yourself — don't tell the user to run `central-mcp add` in a shell. The CLI and the MCP tool write to the same registry; the in-agent flow is the preferred UX, and auto-boot will spin up the pane immediately. Offer a sensible default for `agent` based on context (claude if unsure) and ask only if it would actually change behavior.
+If the user names a project that is not yet registered ("add ~/Projects/new-app"), call `add_project` yourself. Default `agent` to `claude` unless the user specifies otherwise.
 
-`dispatch_query` blocks until the sub-agent is idle (wait_for_idle=true by default) and returns the resulting `tail` inline. READ the `tail` field and summarize the response to the user in the same turn — do not tell them "dispatched" and stop. If `timed_out` is true, the watchdog fired mid-run and the tail is a partial snapshot; say so. If `activity_seen` is false, the sub-agent never wrote anything back and the user should know.
+Claude dispatches resume the most recent conversation in the project's cwd automatically (via `--continue`). Codex and Gemini dispatches are stateless — each call is a fresh context.
 
 ## When you are working INSIDE central-mcp's own source
 
-If the user asks you to edit central-mcp's code itself (files under `src/central_mcp/`, `bin/`, etc.), switch modes: now you are a normal engineer working on this Python project. Use the file tools directly; the MCP hub tools are for managing *other* projects, not this one.
+If the user asks you to edit central-mcp's code itself (files under `src/central_mcp/`, etc.), switch modes: now you are a normal engineer working on this Python project. Use the file tools directly; the MCP hub tools are for managing *other* projects, not this one.

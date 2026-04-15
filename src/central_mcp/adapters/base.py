@@ -1,57 +1,83 @@
+"""Per-agent adapters.
+
+An `Adapter` describes how to talk to a coding-agent CLI in two modes:
+
+- `launch` — the argv to spawn when a human wants an interactive session
+  (used by `central-mcp up` to populate each project's tmux pane).
+- `exec_argv(prompt, resume=True)` — a one-shot non-interactive argv
+  that writes the response to stdout and exits. This is what the
+  `dispatch_query` MCP tool invokes for every dispatch, so the
+  orchestrator can collect the full response as the subprocess's
+  standard output rather than scraping pane bytes.
+
+Adapters that have no non-interactive mode return `None` from
+`exec_argv` — the caller surfaces a clear error instead of silently
+doing nothing.
+"""
+
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Callable
+from typing import Sequence
 
 
 @dataclass
 class Adapter:
-    """Describes how to start a particular agent CLI in a tmux pane."""
-
     name: str
-    launch: str           # fresh-start shell command
-    resume: str = ""      # resume-last-session command; empty = not supported
+    launch: Sequence[str] = ()     # interactive-mode argv for tmux panes
+    has_exec: bool = False         # whether exec_argv returns non-None
 
-    def launch_command(self, *, resume: bool = False) -> str:
-        if resume and self.resume:
-            return self.resume
-        return self.launch
+    def launch_command(self) -> str:
+        """Shell-joined interactive launch command for tmux panes.
+
+        Empty string means "this adapter has no launch command" — used by
+        the `shell` adapter so the pane just shows a plain shell.
+        """
+        return " ".join(self.launch)
+
+    def exec_argv(self, prompt: str, *, resume: bool = True) -> list[str] | None:
+        """Return argv for a one-shot non-interactive invocation.
+
+        Override in subclasses. Return None if this adapter does not
+        support non-interactive dispatch.
+        """
+        return None
+
+
+class _Claude(Adapter):
+    def exec_argv(self, prompt: str, *, resume: bool = True) -> list[str] | None:
+        argv = ["claude", "-p", prompt]
+        if resume:
+            # --continue resumes the most recent conversation in the
+            # subprocess's working directory, which for us is always the
+            # project's own cwd. This keeps multi-turn context implicit
+            # without forcing the registry to track a session-id per project.
+            argv.append("--continue")
+        return argv
+
+
+class _Codex(Adapter):
+    def exec_argv(self, prompt: str, *, resume: bool = True) -> list[str] | None:
+        # `codex exec` is codex's one-shot mode. Codex's resume semantics
+        # require explicit session IDs and don't compose cleanly with
+        # `exec`, so dispatches are stateless for now — each call starts
+        # a fresh codex context in the project's cwd.
+        return ["codex", "exec", prompt]
+
+
+class _Gemini(Adapter):
+    def exec_argv(self, prompt: str, *, resume: bool = True) -> list[str] | None:
+        return ["gemini", "-p", prompt]
 
 
 _ADAPTERS: dict[str, Adapter] = {
-    "claude": Adapter("claude", "claude", resume="claude -c"),
-    "codex": Adapter("codex", "codex", resume="codex resume --last"),
-    "gemini": Adapter("gemini", "gemini"),
-    "cursor": Adapter("cursor", "cursor-agent"),
-    "shell": Adapter("shell", ""),
+    "claude": _Claude("claude", launch=("claude",), has_exec=True),
+    "codex": _Codex("codex", launch=("codex",), has_exec=True),
+    "gemini": _Gemini("gemini", launch=("gemini",), has_exec=True),
+    "cursor": Adapter("cursor", launch=("cursor-agent",), has_exec=False),
+    "shell": Adapter("shell", launch=(), has_exec=False),
 }
 
 
 def get_adapter(name: str) -> Adapter:
     return _ADAPTERS.get(name, _ADAPTERS["shell"])
-
-
-def _claude_has_history(cwd: str) -> bool:
-    slug = re.sub(r"[^A-Za-z0-9]", "-", cwd)
-    d = Path.home() / ".claude" / "projects" / slug
-    if not d.exists():
-        return False
-    try:
-        return any(d.glob("*.jsonl"))
-    except OSError:
-        return False
-
-
-_HISTORY_CHECKS: dict[str, Callable[[str], bool]] = {
-    "claude": _claude_has_history,
-}
-
-
-def has_history(agent: str, cwd: str) -> bool:
-    """True if there is prior session data for (agent, cwd) that the resume
-    command could pick up. Used by lazy-boot to prefer `resume` over `launch`.
-    """
-    check = _HISTORY_CHECKS.get(agent)
-    return bool(check and check(cwd))

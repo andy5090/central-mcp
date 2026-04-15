@@ -20,23 +20,23 @@ def test_add_then_load_round_trip(fake_home: Path) -> None:
         tags=["a", "b"],
     )
     assert proj.name == "test-proj"
-    assert proj.tmux.session == "central"
-    assert proj.tmux.window == "projects"
-    assert proj.tmux.pane == 0
+    assert proj.path == "/tmp/test-proj"
+    assert proj.agent == "claude"
 
     loaded = registry.load_registry()
     assert len(loaded) == 1
     assert loaded[0].name == "test-proj"
     assert loaded[0].agent == "claude"
     assert loaded[0].tags == ["a", "b"]
+    assert loaded[0].description == "hello"
 
 
-def test_add_auto_increments_pane(fake_home: Path) -> None:
+def test_add_preserves_insertion_order(fake_home: Path) -> None:
     registry.add_project("one", "/tmp/one")
     registry.add_project("two", "/tmp/two")
     registry.add_project("three", "/tmp/three")
     loaded = registry.load_registry()
-    assert [p.tmux.pane for p in loaded] == [0, 1, 2]
+    assert [p.name for p in loaded] == ["one", "two", "three"]
 
 
 def test_add_duplicate_raises(fake_home: Path) -> None:
@@ -63,14 +63,9 @@ def test_find_project(fake_home: Path) -> None:
     assert registry.find_project("missing") is None
 
 
-def test_projects_by_session_groups(fake_home: Path) -> None:
-    registry.add_project("a", "/a", session="central")
-    registry.add_project("b", "/b", session="work")
-    registry.add_project("c", "/c", session="central")
-    groups = registry.projects_by_session()
-    assert sorted(groups.keys()) == ["central", "work"]
-    assert [p.name for p in groups["central"]] == ["a", "c"]
-    assert [p.name for p in groups["work"]] == ["b"]
+def test_add_default_agent_is_claude(fake_home: Path) -> None:
+    proj = registry.add_project("p", "/p")
+    assert proj.agent == "claude"
 
 
 def test_write_creates_parent_dir(fake_home: Path) -> None:

@@ -1,43 +1,36 @@
 # central-mcp — agent handbook
 
-This directory is **central-mcp**, a multi-project orchestration hub for coding agents. If you are an agent running a session from here (Codex, Claude Code, Cursor, Gemini, or any other MCP-capable CLI), read this first.
+This directory is **central-mcp**, a multi-project orchestration hub. Each registered project is a directory on disk with an agent kind (claude / codex / gemini / cursor) recorded in the registry. When you call `dispatch_query`, central-mcp spawns that agent's CLI as a one-shot non-interactive subprocess in the project's cwd, captures its stdout, and returns it to you.
 
 ## Your role
 
-You are the **orchestrator**. Other coding agents are running in tmux panes managed by this hub. Your job is to understand user intent, route work to the right pane, and report back — not to do the project work yourself unless the user explicitly asks for local edits.
+You are the **orchestrator**. You don't do the sub-project work yourself — you dispatch to each project's agent via MCP and report back to the user.
 
 ## The toolbox
 
-central-mcp exposes these MCP tools under the server name `central`:
+`central` exposes these MCP tools:
 
 | Tool | Use for |
 |---|---|
 | `list_projects` | Enumerate every project in the registry. Call this first. |
-| `project_status` | Registry info + recent pane output for one project. |
-| `project_activity` | `busy` / `recent` / `idle` state + current process. |
-| `dispatch_query` | Send a prompt into a project's pane as keystrokes. |
-| `fetch_logs` | Retrieve recent output (live pane or persisted log file). |
-| `start_project` | Launch the configured agent CLI in its pane. |
-| `add_project` | Register a new project in `registry.yaml`. |
+| `project_status` | Registry entry (path, agent, description, tags) for one project. |
+| `dispatch_query` | Run the project's agent non-interactively. Returns `output` (stdout), `stderr`, `exit_code`, `duration_sec`. |
+| `add_project` | Register a new project. |
 | `remove_project` | Unregister a project. |
 
 ## Heuristics
 
-- "What's running?" / "Show me my projects." → `list_projects`
-- "How is X doing?" → `project_status(X)` then `fetch_logs(X)` if deeper look needed
-- "Send this to X: <prompt>" → `dispatch_query(X, "<prompt>")` — this
-  blocks until X is idle and returns the response `tail` inline. Read
-  the tail and summarize it back to the user in the same turn; do not
-  claim completion without checking the tail.
-- "Get the latest from X" → `fetch_logs(X)`
-- "Add ~/path/to/project to the hub" → call `add_project` directly. Do not
-  tell the user to drop to a shell. Pick a sensible `agent` default
-  (claude if unsure) and mention the choice in your reply so the user
-  can correct it. `add_project` auto-boots the tmux pane.
-- Anything "hub-wide" (search, summary, multi-project) → start with `list_projects`, then iterate per-project
+- "What projects do I have?" → `list_projects`
+- "Send this to X: <prompt>" → `dispatch_query(X, "<prompt>")`. Read the `output` field and summarize to the user in the same turn.
+- "Add ~/path to the hub" → `add_project(name, path, agent='claude')`. Do not tell the user to drop to a shell.
+- "How is X doing?" → central-mcp has no live pane state, so this usually means dispatching a status prompt. Call `dispatch_query(X, "status check — what's in flight?")` and return the response.
 
-Do not paste entire logs back to the user unless asked. Summarize what happened.
+## Important
+
+- `dispatch_query` is synchronous and can take a while (often tens of seconds). Wait for it; the return value IS the response.
+- The subprocess runs with `cwd=project.path`, so the agent sees that directory as its working context. For Claude, `--continue` is passed automatically to resume prior conversation state for that cwd.
+- If `ok` is false, `exit_code` and `stderr` explain why. Report both to the user.
 
 ## Source-edit mode
 
-If the user asks you to edit central-mcp itself (Python package under `src/central_mcp/`, scripts under `bin/`, etc.), switch to normal file-editing mode. The MCP hub tools are for managing *other* projects, not this repo.
+If the user asks you to edit central-mcp itself (files under `src/central_mcp/`), switch to normal file-editing mode. The MCP tools are for managing *other* projects.
