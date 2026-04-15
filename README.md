@@ -88,7 +88,7 @@ All tools honor ANSI stripping and secret-regex redaction by default — both ca
 ```
 central-mcp                          # no-arg → run MCP server on stdio (what clients invoke)
 central-mcp serve                    # same, explicit
-central-mcp run [--agent X] [--bypass]  # launch a coding-agent CLI as orchestrator
+central-mcp run [--agent X] [--pick] [--bypass]  # launch a coding-agent CLI as orchestrator
 central-mcp install CLIENT           # register central-mcp with claude | codex | cursor
 central-mcp alias [NAME]             # create a short-name symlink (default: cmcp), conflict-checked
 central-mcp unalias [NAME]           # remove an alias previously created by `alias`
@@ -115,6 +115,29 @@ same name) won't have it silently shadowed by installing central-mcp.
 3. `$HOME/.central-mcp/registry.yaml` (the global default; created by `cmcp init`)
 
 The registry file is per-user state — never commit it. This repo's `.gitignore` already excludes it.
+
+## Changing the orchestrator agent
+
+The first time you run `central-mcp run`, the CLI detects every coding
+agent on your PATH, prompts you to pick one (if there's more than one),
+and saves the choice to `~/.central-mcp/config.toml`. Every later launch
+uses that preference silently — but prints the source of the choice so
+you can always see what you're running:
+
+```
+orchestrator : Claude Code (claude)  [saved preference]
+```
+
+Three ways to change it:
+
+```bash
+central-mcp run --pick         # re-run the interactive picker, overwrite saved
+central-mcp run --agent codex  # one-off override — does NOT touch the saved value
+$EDITOR ~/.central-mcp/config.toml   # edit the file by hand
+```
+
+If the saved binary ever disappears from PATH, `run` prints a warning
+and falls through to re-pick automatically.
 
 ## Permission bypass mode
 
