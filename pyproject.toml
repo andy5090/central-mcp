@@ -20,5 +20,14 @@ dependencies = [
 [project.scripts]
 central-mcp = "central_mcp.cli:main"
 
+[dependency-groups]
+dev = [
+    "pytest>=8",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/central_mcp"]
