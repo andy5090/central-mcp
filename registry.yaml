@@ -25,3 +25,12 @@ projects:
       pane: 0
     description: "First test project for central-mcp dispatch."
     tags: [test, phase0]
+  - name: andineering
+    path: /Users/andy/Projects/andineering
+    agent: claude
+    tmux:
+      session: central
+      window: projects
+      pane: 1
+    description: ''
+    tags: []

@@ -38,24 +38,34 @@ git clone <repo> ~/Projects/central-mcp
 cd ~/Projects/central-mcp
 uv tool install --editable .
 
-# 2. Scaffold a registry in the directory you want to manage projects from
-#    (or just use the repo directory for now)
+# 2. Scaffold a registry
 central-mcp init
 
 # 3. Register the projects you want the hub to know about
 central-mcp add gluecut-dawg ~/Projects/gluecut-dawg --agent claude
 
-# 4. Bring up the tmux layout (creates panes, auto-launches agents)
-central-mcp up
-tmux attach -t central   # in a real terminal
-
-# 5. Connect your orchestrator client ONCE (pick whichever you prefer)
+# 4. Connect your orchestrator client ONCE (pick whichever you prefer)
 central-mcp install claude    # adds to Claude Code MCP config
 central-mcp install codex     # patches ~/.codex/config.toml
 central-mcp install cursor    # patches ~/.cursor/mcp.json
 ```
 
-Now start any of those clients and ask natural-language questions about your projects — the hub server will expose `list_projects`, `dispatch_query`, `fetch_logs`, `project_activity`, etc.
+That's it. Start any of those clients and ask natural-language questions
+about your projects — the hub auto-creates the tmux layout on the first
+mutating MCP call and auto-launches each project's configured agent. In a
+real terminal, run `tmux attach -t central` to watch the panes live.
+
+### Optional manual controls
+
+```bash
+central-mcp up      # eagerly create tmux sessions (not required — lazy-boot handles it)
+central-mcp down    # kill every session the registry references
+central-mcp list    # one-line dump
+central-mcp brief   # orchestrator-ready markdown snapshot
+```
+
+`add_project` (via MCP or CLI) also auto-boots the new pane on the fly, so
+you can grow the hub during a session without tearing anything down.
 
 ## CLI reference
 
