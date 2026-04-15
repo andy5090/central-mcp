@@ -46,6 +46,16 @@ When the user wants to add a new project to the hub ("add ~/Projects/foo",
 to run `central-mcp add` in a shell — the in-agent flow is the preferred
 UX, and add_project auto-boots the tmux pane. Pick a sensible agent
 default (claude if unsure) and mention the choice in your reply.
+
+`dispatch_query` waits for the sub-agent to finish responding by default
+(wait_for_idle=true) and returns a `tail` field with the scrubbed pane
+output. Read that tail and SUMMARIZE or QUOTE the result back to the
+user — do NOT claim the work is done without checking the tail, and do
+NOT call fetch_logs for the same information right after (dispatch's
+own return value already contains it). If `timed_out` is true, tell the
+user the agent was still working when the watchdog fired; if
+`activity_seen` is false, the agent never produced output and you
+should report that too.
 """
 
 mcp = FastMCP("central-mcp", instructions=_MCP_INSTRUCTIONS)
@@ -193,12 +203,32 @@ def dispatch_query(
     prompt: str,
     enter: bool = True,
     force: bool = False,
+    wait_for_idle: bool = True,
+    idle_seconds: float = 3.0,
+    initial_wait: float = 8.0,
+    timeout: float = 180.0,
+    tail_lines: int = 80,
 ) -> dict[str, Any]:
-    """Send a prompt into the project's tmux pane as keystrokes.
+    """Send a prompt into the project's tmux pane and (by default) wait
+    for the agent to finish responding, then return the resulting tail.
 
-    Guards against copy-mode (user scrolling). Override with force=True.
-    Does NOT wait for completion — poll project_status / fetch_logs afterwards.
+    Flow:
+      1. Boot the pane if needed, then send the prompt as keystrokes.
+      2. If `wait_for_idle` (default True), watch the project's pane log:
+         - Phase A (initial_wait seconds): wait for any byte to be written,
+           so we don't mistake a still-warming-up agent for "done".
+         - Phase B: wait until the log has not been touched for
+           `idle_seconds`, meaning the agent finished writing.
+         - Hard cap at `timeout` seconds end-to-end.
+      3. Read the last `tail_lines` lines of the pane log, scrubbed,
+         and return them so the orchestrator can quote or summarize the
+         agent's response without calling fetch_logs separately.
+
+    Set `wait_for_idle=False` for fire-and-forget behavior (old semantics).
+    Guards against copy-mode; override with `force=True`.
     """
+    import time as _time
+
     project, err = _require_project(name)
     if err:
         return err
@@ -216,11 +246,92 @@ def dispatch_query(
         }
     _ensure_logging(project)
     result = tmux.send_keys(target, prompt, enter=enter)
-    return {
-        "ok": result.ok,
-        "target": target,
-        "stderr": result.stderr if not result.ok else "",
-    }
+    if not result.ok:
+        return {"ok": False, "target": target, "stderr": result.stderr}
+
+    response: dict[str, Any] = {"ok": True, "target": target}
+    if not wait_for_idle:
+        return response
+
+    log_path = _log_path(project)
+    waited, timed_out, activity_seen = _wait_for_response(
+        log_path,
+        idle_seconds=idle_seconds,
+        initial_wait=initial_wait,
+        timeout=timeout,
+    )
+
+    tail_text = ""
+    if log_path.exists():
+        raw = log_path.read_text(errors="replace")
+        tail_text = "\n".join(raw.splitlines()[-tail_lines:])
+        tail_text = scrub(tail_text, ansi=True, secrets=True)
+
+    response.update(
+        {
+            "waited_seconds": round(waited, 1),
+            "timed_out": timed_out,
+            "activity_seen": activity_seen,
+            "tail": tail_text,
+        }
+    )
+    return response
+
+
+def _wait_for_response(
+    log_path: Path,
+    *,
+    idle_seconds: float,
+    initial_wait: float,
+    timeout: float,
+    poll_interval: float = 0.4,
+) -> tuple[float, bool, bool]:
+    """Two-phase poll on `log_path`'s mtime.
+
+    Returns `(elapsed, timed_out, activity_seen)`:
+      * activity_seen = False means phase A timed out — the agent never
+        wrote anything after the prompt was sent.
+      * timed_out = True means the overall deadline fired in either phase.
+    """
+    import time as _t
+
+    def _mtime() -> float | None:
+        try:
+            return log_path.stat().st_mtime
+        except FileNotFoundError:
+            return None
+
+    start = _t.time()
+    baseline = _mtime()
+
+    # Phase A — wait for any activity.
+    phase_a_deadline = start + initial_wait
+    activity_seen = False
+    while _t.time() < phase_a_deadline:
+        if _t.time() - start >= timeout:
+            return _t.time() - start, True, False
+        current = _mtime()
+        if current is not None and current != baseline:
+            activity_seen = True
+            break
+        _t.sleep(poll_interval)
+    if not activity_seen:
+        return _t.time() - start, False, False
+
+    # Phase B — wait for idle.
+    last_mtime = _mtime()
+    last_change = _t.time()
+    while True:
+        now = _t.time()
+        if now - start >= timeout:
+            return now - start, True, True
+        current = _mtime()
+        if current is not None and current != last_mtime:
+            last_mtime = current
+            last_change = now
+        elif now - last_change >= idle_seconds:
+            return now - start, False, True
+        _t.sleep(poll_interval)
 
 
 @mcp.tool()

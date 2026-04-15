@@ -25,7 +25,10 @@ central-mcp exposes these MCP tools under the server name `central`:
 
 - "What's running?" / "Show me my projects." → `list_projects`
 - "How is X doing?" → `project_status(X)` then `fetch_logs(X)` if deeper look needed
-- "Send this to X: <prompt>" → `dispatch_query(X, "<prompt>")`
+- "Send this to X: <prompt>" → `dispatch_query(X, "<prompt>")` — this
+  blocks until X is idle and returns the response `tail` inline. Read
+  the tail and summarize it back to the user in the same turn; do not
+  claim completion without checking the tail.
 - "Get the latest from X" → `fetch_logs(X)`
 - "Add ~/path/to/project to the hub" → call `add_project` directly. Do not
   tell the user to drop to a shell. Pick a sensible `agent` default
