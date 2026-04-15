@@ -414,8 +414,14 @@ def _cmd_run(args: argparse.Namespace) -> int:
         )
         return 1
 
-    # 1. Which agent?
+    # 1. Which agent? Track the resolution source for the user-facing log.
     choice: tuple[str, str, str] | None = None
+    source = ""
+
+    if args.agent and args.pick:
+        print("error: --agent and --pick are mutually exclusive", file=sys.stderr)
+        return 1
+
     if args.agent:
         for entry in installed:
             if entry[0] == args.agent:
@@ -428,27 +434,48 @@ def _cmd_run(args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
             return 1
+        source = "--agent (one-off, not saved)"
+    elif args.pick:
+        if not sys.stdin.isatty():
+            print(
+                "error: --pick requires an interactive terminal",
+                file=sys.stderr,
+            )
+            return 1
+        choice = _prompt_choice(installed)
+        _save_preference(choice[0])
+        print(f"saved default orchestrator: {choice[0]} → {CONFIG_FILE}")
+        source = "--pick (saved)"
     else:
         pref = _load_preference()
         if pref:
             for entry in installed:
                 if entry[0] == pref:
                     choice = entry
+                    source = "saved preference"
                     break
+            if choice is None:
+                print(
+                    f"warning: saved preference {pref!r} no longer on PATH — re-picking",
+                    file=sys.stderr,
+                )
         if choice is None:
             if len(installed) == 1:
                 choice = installed[0]
                 print(f"Only {choice[2]} detected — launching it.")
                 _save_preference(choice[0])
+                source = "only detected (saved)"
             elif sys.stdin.isatty():
                 choice = _prompt_choice(installed)
                 _save_preference(choice[0])
                 print(f"saved default orchestrator: {choice[0]} → {CONFIG_FILE}")
+                source = "first-run picker (saved)"
             else:
                 print(
                     "error: multiple agents detected and no --agent specified "
                     "in a non-interactive shell.\n       "
-                    f"detected: {', '.join(e[0] for e in installed)}",
+                    f"detected: {', '.join(e[0] for e in installed)}\n"
+                    "       use --agent NAME or run interactively with --pick",
                     file=sys.stderr,
                 )
                 return 1
@@ -474,7 +501,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
             )
 
     # 4. Show what's going to happen
-    print(f"orchestrator : {label} ({binary})")
+    source_suffix = f"  [{source}]" if source else ""
+    print(f"orchestrator : {label} ({binary}){source_suffix}")
     print(f"launch cwd   : {launch_dir}")
     if len(argv) > 1:
         print(f"extra args   : {' '.join(argv[1:])}")
@@ -578,7 +606,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.add_argument(
         "--agent",
         choices=[o[0] for o in ORCHESTRATORS],
-        help="force a specific agent (otherwise: saved preference, auto-pick if one, interactive prompt if many)",
+        help="one-off agent override (does NOT update the saved preference)",
+    )
+    p_run.add_argument(
+        "--pick",
+        action="store_true",
+        help="re-run the interactive picker and update the saved preference",
     )
     p_run.add_argument(
         "--cwd",
