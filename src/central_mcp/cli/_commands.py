@@ -12,6 +12,7 @@ import argparse
 import os
 import shutil
 import sys
+from importlib.resources import files
 from pathlib import Path
 
 import tomlkit
@@ -20,8 +21,34 @@ from central_mcp import brief as brief_mod
 from central_mcp import install as install_mod
 from central_mcp import layout
 from central_mcp import paths
-from central_mcp import preamble
 from central_mcp import tmux
+
+
+# Inline default for the SessionStart hook — small enough that package-data
+# lookup would be overkill. Writing `central-mcp brief` means the hook
+# resolves through PATH, which works regardless of how the package was
+# installed.
+_SETTINGS_JSON = """\
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "central-mcp brief"
+          }
+        ]
+      }
+    ]
+  }
+}
+"""
+
+
+def _read_packaged(name: str) -> str:
+    """Load a file from `central_mcp/data/` as shipped in the wheel."""
+    return files("central_mcp").joinpath("data", name).read_text(encoding="utf-8")
 from central_mcp.registry import (
     add_project as registry_add,
     load_registry,
@@ -351,19 +378,25 @@ def _save_preference(key: str) -> None:
 
 
 def _ensure_launch_dir(target: Path) -> None:
-    """Scaffold preamble + SessionStart hook in the launch directory."""
+    """Scaffold preamble + SessionStart hook in the launch directory.
+
+    CLAUDE.md / AGENTS.md content is shipped as package data under
+    `central_mcp/data/` so editable and non-editable installs both
+    resolve to the same canonical text. Existing files are never
+    overwritten so users can customize.
+    """
     target.mkdir(parents=True, exist_ok=True)
     claude_md = target / "CLAUDE.md"
     if not claude_md.exists():
-        claude_md.write_text(preamble.CLAUDE_MD)
+        claude_md.write_text(_read_packaged("CLAUDE.md"))
     agents_md = target / "AGENTS.md"
     if not agents_md.exists():
-        agents_md.write_text(preamble.AGENTS_MD)
+        agents_md.write_text(_read_packaged("AGENTS.md"))
     settings_dir = target / ".claude"
     settings_dir.mkdir(exist_ok=True)
     settings_file = settings_dir / "settings.json"
     if not settings_file.exists():
-        settings_file.write_text(preamble.SETTINGS_JSON)
+        settings_file.write_text(_SETTINGS_JSON)
 
 
 def _prompt_choice(installed: list[tuple[str, str, str]]) -> tuple[str, str, str]:
