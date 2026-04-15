@@ -45,7 +45,16 @@ def install(client: str, *, dry_run: bool = False) -> int:
 
 
 def _install_claude(*, dry_run: bool) -> int:
-    cmd = ["claude", "mcp", "add", SERVER_NAME, "--", LAUNCH_COMMAND, *LAUNCH_ARGS]
+    # --scope user registers the MCP server under the user profile instead
+    # of the local/project scope of the caller's cwd. Without this flag the
+    # server would only be visible to sessions started from the exact
+    # directory where `central-mcp install claude` ran — so a subsequent
+    # `central-mcp run` (which launches Claude Code from ~/.central-mcp/)
+    # would not see it and Claude would report "not registered".
+    cmd = [
+        "claude", "mcp", "add", "--scope", "user", SERVER_NAME, "--",
+        LAUNCH_COMMAND, *LAUNCH_ARGS,
+    ]
     _say("Would run: " + " ".join(cmd) if dry_run else "Running: " + " ".join(cmd))
     if dry_run:
         return 0
