@@ -88,7 +88,7 @@ All tools honor ANSI stripping and secret-regex redaction by default — both ca
 ```
 central-mcp                          # no-arg → run MCP server on stdio (what clients invoke)
 central-mcp serve                    # same, explicit
-central-mcp run [--agent X]          # launch a coding-agent CLI as orchestrator
+central-mcp run [--agent X] [--bypass]  # launch a coding-agent CLI as orchestrator
 central-mcp install CLIENT           # register central-mcp with claude | codex | cursor
 central-mcp alias [NAME]             # create a short-name symlink (default: cmcp), conflict-checked
 central-mcp unalias [NAME]           # remove an alias previously created by `alias`
@@ -115,6 +115,22 @@ same name) won't have it silently shadowed by installing central-mcp.
 3. `$HOME/.central-mcp/registry.yaml` (the global default; created by `cmcp init`)
 
 The registry file is per-user state — never commit it. This repo's `.gitignore` already excludes it.
+
+## Permission bypass mode
+
+`central-mcp run --bypass` launches the orchestrator in its "skip all
+permission prompts" / yolo mode when the agent exposes one:
+
+| Agent | Flag that gets appended |
+|---|---|
+| Claude Code | `--dangerously-skip-permissions` |
+| Codex CLI | `--dangerously-bypass-approvals-and-sandbox` |
+| Gemini CLI | `--yolo` |
+| Cursor Agent | (not wired — warning printed) |
+
+Use with intent. This is for turnkey sessions where you trust the
+orchestrator to dispatch freely; individual project panes still enforce
+whatever permission model you started them with.
 
 ## Environment variables
 

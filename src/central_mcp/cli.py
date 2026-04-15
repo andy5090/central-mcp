@@ -42,6 +42,16 @@ ORCHESTRATORS: list[tuple[str, str, str]] = [
     ("cursor", "cursor-agent", "Cursor Agent"),
     ("gemini", "gemini", "Gemini CLI"),
 ]
+
+# Known "skip all permission prompts" / yolo flags per orchestrator.
+# Unset entries mean the agent has no documented bypass mode (as far as
+# central-mcp knows) — `--bypass` will warn and launch without any extra flag.
+BYPASS_FLAGS: dict[str, list[str]] = {
+    "claude": ["--dangerously-skip-permissions"],
+    "codex": ["--dangerously-bypass-approvals-and-sandbox"],
+    "gemini": ["--yolo"],
+    # cursor-agent: not wired up — add when a stable flag exists.
+}
 from central_mcp.registry import (
     DEFAULT_REGISTRY_PATH,
     add_project as registry_add,
@@ -450,18 +460,33 @@ def _cmd_run(args: argparse.Namespace) -> int:
     launch_dir = Path(args.cwd).expanduser().resolve() if args.cwd else CENTRAL_HOME
     _ensure_launch_dir(launch_dir)
 
-    # 3. Show what's going to happen
+    # 3. Assemble argv (optionally with permission-bypass flags)
+    argv: list[str] = [binary]
+    if args.bypass:
+        bypass = BYPASS_FLAGS.get(key)
+        if bypass:
+            argv.extend(bypass)
+        else:
+            print(
+                f"warning: --bypass: {key!r} has no known permission-bypass flag in "
+                "central-mcp; launching without it. Add one to BYPASS_FLAGS in cli.py.",
+                file=sys.stderr,
+            )
+
+    # 4. Show what's going to happen
     print(f"orchestrator : {label} ({binary})")
     print(f"launch cwd   : {launch_dir}")
+    if len(argv) > 1:
+        print(f"extra args   : {' '.join(argv[1:])}")
 
     if args.dry_run:
         print("(dry-run: not executing)")
         return 0
 
-    # 4. Hand off the terminal
+    # 5. Hand off the terminal
     os.chdir(launch_dir)
     try:
-        os.execvp(binary, [binary])
+        os.execvp(binary, argv)
     except FileNotFoundError:
         print(f"error: {binary!r} vanished from PATH between detection and exec", file=sys.stderr)
         return 1
@@ -558,6 +583,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.add_argument(
         "--cwd",
         help=f"launch directory (default: {CENTRAL_HOME})",
+    )
+    p_run.add_argument(
+        "--bypass",
+        action="store_true",
+        help=(
+            "launch the agent in its permission-bypass / yolo mode when supported "
+            "(claude: --dangerously-skip-permissions, codex: "
+            "--dangerously-bypass-approvals-and-sandbox, gemini: --yolo)"
+        ),
     )
     p_run.add_argument("--dry-run", action="store_true", help="print the plan without executing")
     p_run.set_defaults(func=_cmd_run)
