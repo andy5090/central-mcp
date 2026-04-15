@@ -67,6 +67,40 @@ def pane_current_command(target: str) -> str:
     return r.stdout.strip() if r.ok else ""
 
 
+def pane_tty(target: str) -> str:
+    r = _run(["display-message", "-p", "-t", target, "#{pane_tty}"])
+    return r.stdout.strip() if r.ok else ""
+
+
+def pane_has_process(target: str, binary: str) -> bool:
+    """True if any process attached to the pane's tty matches `binary`.
+
+    We compare against `comm` (short process name, last path component)
+    using an exact basename match, so `claude` matches `claude` but not
+    `claude-code-helper`. Tolerant of `ps` not existing / permission
+    errors — returns False rather than raising.
+    """
+    tty = pane_tty(target)
+    if not tty:
+        return False
+    tty_name = tty[5:] if tty.startswith("/dev/") else tty
+    try:
+        proc = subprocess.run(
+            ["ps", "-t", tty_name, "-o", "comm="],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=3,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+    for line in proc.stdout.splitlines():
+        name = line.strip().rsplit("/", 1)[-1]
+        if name == binary:
+            return True
+    return False
+
+
 def send_keys(target: str, text: str, enter: bool = True) -> TmuxResult:
     result = _run(["send-keys", "-t", target, "-l", text])
     if not result.ok:

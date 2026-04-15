@@ -76,11 +76,16 @@ _FIRST_BOOT_SETTLE_SEC = 1.5
 def _ensure_pane_up(project: Project) -> dict[str, Any] | None:
     """Idempotently ensure the project's tmux pane is alive with its agent.
 
-    Three cases, in order:
-      1. Pane already exists — no-op.
-      2. Session exists but this pane doesn't — split-window (or new-window)
-         into the registry-declared window, then launch the agent.
-      3. No session at all — cold boot the full layout via ensure_session,
+    Four cases, in order:
+      1. Pane already exists AND configured agent is running — no-op.
+      2. Pane exists but the agent process is gone (crashed / exited back
+         into the sh wrapper's fallback shell) — attempt one restart by
+         re-sending the launch command. Refuse with a clear error if the
+         restart does not settle.
+      3. Session exists but this pane doesn't — split-window (or
+         new-window) into the registry-declared window, then launch the
+         agent.
+      4. No session at all — cold boot the full layout via ensure_session,
          which handles all registered projects at once.
 
     Used by every mutating tool (dispatch_query, start_project, add_project)
@@ -89,7 +94,7 @@ def _ensure_pane_up(project: Project) -> dict[str, Any] | None:
     """
     target = project.tmux.target
     if tmux.pane_exists(target):
-        return None
+        return _ensure_agent_alive(project, target)
 
     session = project.tmux.session
     window = project.tmux.window
@@ -138,6 +143,48 @@ def _ensure_pane_up(project: Project) -> dict[str, Any] | None:
     if get_adapter(project.agent).launch:
         time.sleep(_FIRST_BOOT_SETTLE_SEC)
     return None
+
+
+def _ensure_agent_alive(project: Project, target: str) -> dict[str, Any] | None:
+    """Verify the expected agent binary is attached to the pane's tty.
+
+    If the pane exists but the agent process is missing, try exactly one
+    restart (re-send the launch command). The sh wrapper's `exec $SHELL`
+    fallback leaves the pane as a bare shell when the agent crashed, so
+    send_keys into it runs the launch command in the shell, restoring
+    the agent. If the restart also fails to land the expected binary on
+    the tty within a settle window, surface an error that tells the
+    orchestrator to investigate with fetch_logs instead of silently
+    sending a prompt into a shell prompt.
+    """
+    adapter = get_adapter(project.agent)
+    if not adapter.launch:
+        return None  # shell adapter — no process to check for
+    binary = adapter.launch.split()[0]
+    if tmux.pane_has_process(target, binary):
+        return None
+
+    cmd = adapter.launch_command(resume=has_history(project.agent, project.path))
+    if not cmd:
+        return None
+    tmux.send_keys(target, cmd, enter=True)
+    deadline = time.time() + 5.0
+    while time.time() < deadline:
+        time.sleep(0.4)
+        if tmux.pane_has_process(target, binary):
+            time.sleep(_FIRST_BOOT_SETTLE_SEC)
+            return None
+    return {
+        "ok": False,
+        "error": (
+            f"pane {target} is not running {binary!r} — the configured agent "
+            f"for project {project.name!r} appears to have crashed or exited. "
+            "Restart attempt did not settle. Inspect with "
+            f"`fetch_logs(name={project.name!r}, source='file')` to see the "
+            "original startup errors, then fix the underlying issue (often a "
+            "broken MCP server entry in the agent's own config file)."
+        ),
+    }
 
 
 def _ensure_logging(project: Project) -> None:
