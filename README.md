@@ -2,7 +2,7 @@
 
 **Orchestrator-agnostic MCP hub for managing and dispatching to multiple coding agents.**
 
-One MCP server, any MCP-capable client (Claude Code, Codex CLI, Cursor, Gemini CLI, …) becomes the control plane for your portfolio of coding-agent projects. List projects, inspect their state, dispatch prompts, and collect logs — all from whichever agent you happen to be using.
+One MCP server turns any MCP-capable client (Claude Code, Codex CLI, Cursor, Gemini CLI, …) into the control plane for your portfolio of coding-agent projects. List projects, inspect their state, dispatch prompts, and collect logs — all from whichever agent you happen to be using.
 
 ## Why
 
@@ -30,91 +30,88 @@ Pre-release — not yet on PyPI. Install from a local checkout with `uv tool ins
 
 ## Quickstart
 
-Requires [`uv`](https://docs.astral.sh/uv/) and `tmux`.
+Requires [`uv`](https://docs.astral.sh/uv/) and `tmux`. The CLI is installed
+as both `central-mcp` and the shorter alias `cmcp` — examples below use
+`cmcp`, but they're interchangeable.
 
 ```bash
-# 1. Clone and install (dev mode — editable)
+# 1. Clone and install (editable, dev mode)
 git clone <repo> ~/Projects/central-mcp
 cd ~/Projects/central-mcp
 uv tool install --editable .
 
-# 2. Scaffold an empty registry (writes to ~/.central-mcp/registry.yaml)
-central-mcp init
+# 2. Scaffold an empty registry at ~/.central-mcp/registry.yaml
+cmcp init
 
-# 3. Connect your orchestrator client ONCE (pick whichever you prefer)
-central-mcp install claude    # adds to Claude Code MCP config
-central-mcp install codex     # patches ~/.codex/config.toml
-central-mcp install cursor    # patches ~/.cursor/mcp.json
+# 3. Register central-mcp with your MCP client(s) — once per client
+cmcp install claude    # adds to Claude Code MCP config
+cmcp install codex     # patches ~/.codex/config.toml
+cmcp install cursor    # patches ~/.cursor/mcp.json
 
-# 4. Launch the orchestrator — on first run, central-mcp detects which
-#    coding-agent CLIs you have installed and asks which one to use.
-#    The choice is saved to ~/.central-mcp/config.toml for next time.
-central-mcp run
+# 4. Launch the orchestrator. On first run cmcp detects which coding-agent
+#    CLIs you have installed and — if there's more than one — prompts you to
+#    pick one. The choice is saved to ~/.central-mcp/config.toml for next time.
+cmcp run
 ```
 
-That's it. The chosen client starts in `~/.central-mcp/`, which
-`central-mcp run` scaffolds with an orchestrator preamble
-(`CLAUDE.md` / `AGENTS.md`) and a SessionStart brief hook. You can
-manage the hub in natural language from there — no need to drop back
-to a shell to add projects or change anything. For example:
+That's it. The chosen client starts in `~/.central-mcp/`, which `cmcp run` scaffolds with an orchestrator preamble (`CLAUDE.md` / `AGENTS.md`) and a SessionStart hook that injects a live project brief. Manage the hub in natural language from there — no need to drop back to a shell:
 
 - *"Add ~/Projects/my-app to the hub and run Claude Code on it."*
 - *"What projects do I have? Send the latest design doc to my-app."*
 - *"How is gluecut-dawg doing right now?"*
 
-The orchestrator will call `add_project`, `dispatch_query`,
-`project_status`, etc. on your behalf. The hub auto-creates the tmux
-layout on the first mutating MCP call and auto-launches each project's
-configured agent. Run `tmux attach -t central` in a real terminal to
-watch the panes live whenever you want to look over its shoulder.
+The orchestrator calls `add_project`, `dispatch_query`, `project_status`, etc. on your behalf. The hub auto-creates the tmux layout on the first mutating MCP call and auto-launches each project's configured agent. Run `tmux attach -t central` in a real terminal to watch the panes live whenever you want to look over its shoulder.
 
-### Optional manual controls
+## What the orchestrator can do
 
-```bash
-central-mcp up      # eagerly create tmux sessions (not required — lazy-boot handles it)
-central-mcp down    # kill every session the registry references
-central-mcp list    # one-line dump
-central-mcp brief   # orchestrator-ready markdown snapshot
-```
+`central-mcp` exposes eight MCP tools under the server name `central`. Any connected client will see them in its tool list:
 
-`add_project` (via MCP or CLI) also auto-boots the new pane on the fly, so
-you can grow the hub during a session without tearing anything down.
+| Tool | Purpose |
+|---|---|
+| `list_projects` | Enumerate everything in the registry. |
+| `project_status` | Registry info + recent pane output for one project. |
+| `project_activity` | `busy` / `recent` / `idle` classification + current process. |
+| `dispatch_query` | Send a prompt into a project's pane as keystrokes. |
+| `fetch_logs` | Retrieve recent pane output (live scrollback or persisted log file). |
+| `start_project` | Launch the configured agent CLI in its pane. |
+| `add_project` | Register a new project (auto-boots its tmux pane). |
+| `remove_project` | Unregister a project. |
+
+All tools honor ANSI stripping and secret-regex redaction by default — both can be opted out per-call.
 
 ## CLI reference
 
-The binary is installed as both `central-mcp` and the shorter alias `cmcp` —
-they are identical, use whichever you prefer.
+```
+cmcp                          # no-arg → run MCP server on stdio (what clients invoke)
+cmcp serve                    # same, explicit
+cmcp run [--agent X]          # launch a coding-agent CLI as orchestrator
+cmcp install CLIENT           # register central-mcp with claude | codex | cursor
+cmcp init [PATH]              # scaffold empty registry.yaml (default: ~/.central-mcp)
+cmcp add NAME PATH [--agent …]  # register a project from the shell
+cmcp remove NAME
+cmcp list                     # one-line-per-project dump
+cmcp brief                    # orchestrator-ready markdown snapshot
+cmcp up                       # eagerly create tmux sessions (optional — lazy-boot handles it)
+cmcp down                     # kill every session the registry references
+```
 
-```
-central-mcp                       # no-arg → run MCP server on stdio
-central-mcp serve                 # same, explicit
-central-mcp run [--agent X]       # launch a coding-agent CLI as orchestrator
-central-mcp up                    # create tmux sessions from registry.yaml
-central-mcp down                  # kill every session the registry references
-central-mcp list                  # one-line-per-project dump
-central-mcp brief                 # orchestrator-ready markdown snapshot
-central-mcp add NAME PATH [--agent claude|codex|gemini|cursor|shell] …
-central-mcp remove NAME
-central-mcp init [PATH]           # scaffold empty registry.yaml (default: ~/.central-mcp/)
-central-mcp install CLIENT [--dry-run]
-```
+Every command also works as `central-mcp …` if you prefer the long form.
 
 ## Registry resolution
 
 `central-mcp` resolves the registry path with a three-level cascade:
 
-1. `$CENTRAL_MCP_REGISTRY` if set
+1. `$CENTRAL_MCP_REGISTRY` if set (explicit override)
 2. `./registry.yaml` if it exists in the current directory (per-project override)
-3. `$HOME/.central-mcp/registry.yaml` (the global default; created by `central-mcp init`)
+3. `$HOME/.central-mcp/registry.yaml` (the global default; created by `cmcp init`)
 
-The registry file is per-user state — never commit it. This repo's `.gitignore`
-already excludes it.
+The registry file is per-user state — never commit it. This repo's `.gitignore` already excludes it.
 
 ## Environment variables
 
 - `CENTRAL_MCP_REGISTRY` — override the registry path (takes precedence over the cascade)
 - `CENTRAL_HUB_SPLIT` — `horizontal` (default) | `vertical` | `none` — hub window split direction
-- `CENTRAL_MCP_AUTOSTART` — `1` (default) | `0` — auto-launch each project's agent when `up` creates a session
+- `CENTRAL_MCP_AUTOSTART` — `1` (default) | `0` — auto-launch each project's agent when sessions are created
 
 ## License
 
