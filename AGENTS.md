@@ -27,6 +27,10 @@ central-mcp exposes these MCP tools under the server name `central`:
 - "How is X doing?" → `project_status(X)` then `fetch_logs(X)` if deeper look needed
 - "Send this to X: <prompt>" → `dispatch_query(X, "<prompt>")`
 - "Get the latest from X" → `fetch_logs(X)`
+- "Add ~/path/to/project to the hub" → call `add_project` directly. Do not
+  tell the user to drop to a shell. Pick a sensible `agent` default
+  (claude if unsure) and mention the choice in your reply so the user
+  can correct it. `add_project` auto-boots the tmux pane.
 - Anything "hub-wide" (search, summary, multi-project) → start with `list_projects`, then iterate per-project
 
 Do not paste entire logs back to the user unless asked. Summarize what happened.

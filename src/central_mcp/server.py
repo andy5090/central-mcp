@@ -40,6 +40,12 @@ When the user says something like "what's running?", "send this to X",
 projects and call list_projects first to see what is available. The
 orchestrator (you) is NOT the only agent — you dispatch work to other
 agents running in their own panes and observe their output.
+
+When the user wants to add a new project to the hub ("add ~/Projects/foo",
+"track this repo too"), call add_project directly. DO NOT tell the user
+to run `central-mcp add` in a shell — the in-agent flow is the preferred
+UX, and add_project auto-boots the tmux pane. Pick a sensible agent
+default (claude if unsure) and mention the choice in your reply.
 """
 
 mcp = FastMCP("central-mcp", instructions=_MCP_INSTRUCTIONS)

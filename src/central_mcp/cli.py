@@ -145,8 +145,10 @@ def _cmd_init(args: argparse.Namespace) -> int:
     print()
     print("Next steps:")
     print("  1. central-mcp install claude     # or codex, cursor")
-    print("  2. central-mcp add NAME PATH --agent claude")
-    print("     (tmux pane + agent CLI auto-starts on add)")
+    print("  2. Start that client and add projects in natural language, e.g.:")
+    print('     "Add ~/Projects/my-app to the hub and run Claude on it."')
+    print("     (The orchestrator will call add_project; shell fallback is")
+    print("      `central-mcp add NAME PATH --agent claude`.)")
     return 0
 
 

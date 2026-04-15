@@ -19,6 +19,8 @@ When the user mentions "my projects", status, dispatching, logs, or anything hub
 
 Call `list_projects` at the start of any hub-related conversation so you know what exists. If the user names a project ("send this to gluecut-dawg"), dispatch to it via `dispatch_query` without asking for confirmation on the routing — that's the whole point of the hub.
 
+If the user mentions a project path that is NOT yet in the registry ("add ~/Projects/new-app"), call `add_project` yourself — don't tell the user to run `central-mcp add` in a shell. The CLI and the MCP tool write to the same registry; the in-agent flow is the preferred UX, and auto-boot will spin up the pane immediately. Offer a sensible default for `agent` based on context (claude if unsure) and ask only if it would actually change behavior.
+
 ## When you are working INSIDE central-mcp's own source
 
 If the user asks you to edit central-mcp's code itself (files under `src/central_mcp/`, `bin/`, etc.), switch modes: now you are a normal engineer working on this Python project. Use the file tools directly; the MCP hub tools are for managing *other* projects, not this one.

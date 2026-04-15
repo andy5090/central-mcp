@@ -41,19 +41,25 @@ uv tool install --editable .
 # 2. Scaffold an empty registry (writes to ~/.central-mcp/registry.yaml)
 central-mcp init
 
-# 3. Register the projects you want the hub to know about
-central-mcp add gluecut-dawg ~/Projects/gluecut-dawg --agent claude
-
-# 4. Connect your orchestrator client ONCE (pick whichever you prefer)
+# 3. Connect your orchestrator client ONCE (pick whichever you prefer)
 central-mcp install claude    # adds to Claude Code MCP config
 central-mcp install codex     # patches ~/.codex/config.toml
 central-mcp install cursor    # patches ~/.cursor/mcp.json
 ```
 
-That's it. Start any of those clients and ask natural-language questions
-about your projects — the hub auto-creates the tmux layout on the first
-mutating MCP call and auto-launches each project's configured agent. In a
-real terminal, run `tmux attach -t central` to watch the panes live.
+That's it. Start your chosen client and manage the hub in natural
+language from there — you don't need to drop back to a shell to add
+projects or change anything. For example:
+
+- *"Add ~/Projects/my-app to the hub and run Claude Code on it."*
+- *"What projects do I have? Send the latest design doc to my-app."*
+- *"How is gluecut-dawg doing right now?"*
+
+The orchestrator will call `add_project`, `dispatch_query`,
+`project_status`, etc. on your behalf. The hub auto-creates the tmux
+layout on the first mutating MCP call and auto-launches each project's
+configured agent. Run `tmux attach -t central` in a real terminal to
+watch the panes live whenever you want to look over its shoulder.
 
 ### Optional manual controls
 
