@@ -230,7 +230,7 @@ def _split_hub_for_logs(root: Path, projects: list[Project], messages: list[str]
     # Focus back on the orchestrator pane (index 0).
     tmux._run(["select-pane", "-t", f"{hub_target}.0"])
     direction = "left|right" if flag == "-h" else "top|bottom"
-    messages.append(f"hub split ({direction}): orchestrator | tail -F {len(log_paths)} log(s)")
+    messages.append(f"hub split ({direction}): orchestrator | watch {len(projects)} project(s)")
 
 
 def _assign_pane_indices(projects: list[Project]) -> None:
