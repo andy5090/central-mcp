@@ -82,6 +82,9 @@ you can grow the hub during a session without tearing anything down.
 
 ## CLI reference
 
+The binary is installed as both `central-mcp` and the shorter alias `cmcp` —
+they are identical, use whichever you prefer.
+
 ```
 central-mcp                       # no-arg → run MCP server on stdio
 central-mcp serve                 # same, explicit
