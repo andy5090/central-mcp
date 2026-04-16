@@ -279,6 +279,13 @@ def dispatch(
 
     def _run_bg() -> None:
         try:
+            # Merge adapter-specific env vars (e.g. cursor's CI=true TERM=dumb)
+            # into the current environment so the subprocess inherits PATH etc.
+            import os as _os
+            env = _os.environ.copy()
+            if hasattr(adapter, "exec_env") and adapter.exec_env:
+                env.update(adapter.exec_env)
+
             proc = subprocess.Popen(
                 argv,
                 cwd=str(cwd),
@@ -286,6 +293,7 @@ def dispatch(
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                env=env,
             )
             with _dispatch_lock:
                 entry["process"] = proc

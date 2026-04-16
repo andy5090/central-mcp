@@ -72,11 +72,21 @@ class _Gemini(Adapter):
 
 
 class _Cursor(Adapter):
+    # cursor-agent's Ink-based TUI crashes without a real TTY. Setting
+    # CI=true + TERM=dumb suppresses the Ink renderer so -p (print mode)
+    # works headlessly. --trust is required to skip the interactive
+    # workspace-trust prompt.
+    exec_env: dict[str, str] = None  # type: ignore[assignment]
+
+    def __post_init__(self) -> None:
+        self.exec_env = {"CI": "true", "TERM": "dumb"}
+
     def exec_argv(self, prompt: str, *, resume: bool = True, bypass: bool = False) -> list[str] | None:
-        argv = ["cursor-agent", "-p", prompt]
+        argv = ["cursor-agent", "-p", prompt, "--output-format", "text", "--trust"]
         if resume:
             argv.append("--resume")
-        # cursor-agent has no known bypass flag yet
+        if bypass:
+            argv.append("--yolo")
         return argv
 
 
