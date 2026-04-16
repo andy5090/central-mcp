@@ -15,10 +15,12 @@ critical path and can be absent entirely.
 
 from __future__ import annotations
 
+import json
 import subprocess
 import threading
 import time
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -119,6 +121,42 @@ def _with_completed(response: Any) -> Any:
     return response
 
 
+def _history_dir() -> Path:
+    return paths.central_mcp_home() / "history"
+
+
+def _append_history(project: str, record: dict[str, Any]) -> None:
+    """Append a dispatch record to the project's history JSONL file."""
+    hdir = _history_dir()
+    hdir.mkdir(parents=True, exist_ok=True)
+    fpath = hdir / f"{project}.jsonl"
+    with fpath.open("a") as f:
+        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
+def _read_history(project: str | None = None, n: int = 10) -> list[dict[str, Any]]:
+    """Read the last N dispatch records. If project is None, read across all."""
+    hdir = _history_dir()
+    if not hdir.exists():
+        return []
+
+    files = [hdir / f"{project}.jsonl"] if project else sorted(hdir.glob("*.jsonl"))
+    records: list[dict[str, Any]] = []
+    for fpath in files:
+        if not fpath.exists():
+            continue
+        for line in fpath.read_text(errors="replace").splitlines():
+            line = line.strip()
+            if line:
+                try:
+                    records.append(json.loads(line))
+                except json.JSONDecodeError:
+                    pass
+    # Sort by timestamp descending, take last N
+    records.sort(key=lambda r: r.get("timestamp", ""), reverse=True)
+    return records[:n]
+
+
 def _require_project(name: str) -> tuple[Project | None, dict[str, Any] | None]:
     project = find_project(name)
     if project is None:
@@ -194,6 +232,7 @@ def dispatch(
         "id": dispatch_id,
         "project": project.name,
         "agent": project.agent,
+        "prompt": prompt,
         "command": " ".join(argv),
         "status": "running",
         "started": time.time(),
@@ -230,13 +269,26 @@ def dispatch(
 
             with _dispatch_lock:
                 entry["status"] = "complete"
-                entry["result"] = {
+                result_data = {
                     "ok": proc.returncode == 0,
                     "exit_code": proc.returncode,
                     "output": scrub(stdout, ansi=True, secrets=True),
                     "stderr": scrub(stderr, ansi=True, secrets=True),
                     "duration_sec": round(time.time() - entry["started"], 1),
                 }
+                entry["result"] = result_data
+            # Write to persistent history (outside lock)
+            _append_history(entry["project"], {
+                "dispatch_id": entry["id"],
+                "project": entry["project"],
+                "agent": entry["agent"],
+                "prompt": entry.get("prompt", ""),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "ok": result_data["ok"],
+                "exit_code": result_data.get("exit_code"),
+                "duration_sec": result_data.get("duration_sec"),
+                "output_preview": result_data.get("output", "")[:500],
+            })
         except FileNotFoundError:
             with _dispatch_lock:
                 entry["status"] = "error"
@@ -377,6 +429,28 @@ def remove_project(name: str) -> dict[str, Any]:
     if not removed:
         return {"ok": False, "error": f"project {name!r} not found in registry"}
     return _with_completed({"ok": True, "removed": name})
+
+
+@mcp.tool()
+def dispatch_history(
+    name: str | None = None,
+    n: int = 10,
+) -> dict[str, Any]:
+    """Return the last N dispatch records from persistent history.
+
+    Pass `name` to filter by project; omit for cross-project history.
+    Each record includes: dispatch_id, project, agent, prompt,
+    timestamp, ok, exit_code, duration_sec, output_preview (first 500
+    chars). History survives server restarts — it's stored on disk at
+    ~/.central-mcp/history/<project>.jsonl.
+    """
+    records = _read_history(project=name, n=n)
+    return _with_completed({
+        "ok": True,
+        "count": len(records),
+        "project_filter": name,
+        "records": records,
+    })
 
 
 def main() -> None:
