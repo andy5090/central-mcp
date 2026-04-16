@@ -133,8 +133,10 @@ def dispatch(
         return {
             "ok": False,
             "error": (
-                f"adapter {project.agent!r} has no non-interactive exec mode; "
-                "use dispatch_query or dispatch_background with claude/codex/gemini only"
+                f"adapter {project.agent!r} has no non-interactive exec mode. "
+                "Supported agents for dispatch: claude, codex, gemini, cursor. "
+                "If the project was registered with a wrong agent name, call "
+                "remove_project then add_project with the correct agent."
             ),
         }
 

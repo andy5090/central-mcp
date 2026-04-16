@@ -78,13 +78,18 @@ class _Cursor(Adapter):
         return argv
 
 
+_cursor = _Cursor("cursor", launch=("cursor-agent",), has_exec=True)
+
 _ADAPTERS: dict[str, Adapter] = {
     "claude": _Claude("claude", launch=("claude",), has_exec=True),
     "codex": _Codex("codex", launch=("codex",), has_exec=True),
     "gemini": _Gemini("gemini", launch=("gemini",), has_exec=True),
-    "cursor": _Cursor("cursor", launch=("cursor-agent",), has_exec=True),
+    "cursor": _cursor,
+    "cursor-agent": _cursor,  # common alias — binary name used as agent key
     "shell": Adapter("shell", launch=(), has_exec=False),
 }
+
+VALID_AGENTS = {"claude", "codex", "gemini", "cursor", "shell"}
 
 
 def get_adapter(name: str) -> Adapter:
