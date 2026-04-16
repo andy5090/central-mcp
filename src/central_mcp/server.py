@@ -172,6 +172,7 @@ def dispatch_query(
         completed = subprocess.run(
             argv,
             cwd=str(cwd),
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -255,6 +256,7 @@ def dispatch_background(
             proc = subprocess.Popen(
                 argv,
                 cwd=str(cwd),
+                stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
