@@ -100,6 +100,34 @@ class TestAddRemoveList:
         assert "already exists" in r.stderr
 
 
+class TestAgentValidation:
+    def test_invalid_agent_rejected_at_add(self, cli_env: dict, tmp_path: Path) -> None:
+        _run(["init"], cli_env)
+        d = tmp_path / "proj"
+        d.mkdir()
+        r = _run(["add", "proj", str(d), "--agent", "cursor-agent"], cli_env)
+        assert r.returncode == 1
+        assert "unknown agent" in r.stderr
+
+    def test_invalid_agent_lists_valid_options(self, cli_env: dict, tmp_path: Path) -> None:
+        _run(["init"], cli_env)
+        d = tmp_path / "proj"
+        d.mkdir()
+        r = _run(["add", "proj", str(d), "--agent", "vim"], cli_env)
+        assert r.returncode == 1
+        assert "claude" in r.stderr
+        assert "codex" in r.stderr
+        assert "gemini" in r.stderr
+
+    def test_shell_agent_accepted(self, cli_env: dict, tmp_path: Path) -> None:
+        _run(["init"], cli_env)
+        d = tmp_path / "proj"
+        d.mkdir()
+        r = _run(["add", "proj", str(d), "--agent", "shell"], cli_env)
+        assert r.returncode == 0
+        assert "added" in r.stdout
+
+
 class TestBrief:
     def test_empty_registry(self, cli_env: dict) -> None:
         _run(["init"], cli_env)

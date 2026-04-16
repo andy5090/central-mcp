@@ -103,6 +103,14 @@ def cmd_down(args: argparse.Namespace) -> int:
 # ---------- registry mutation ----------
 
 def cmd_add(args: argparse.Namespace) -> int:
+    from central_mcp.adapters.base import VALID_AGENTS
+    if args.agent not in VALID_AGENTS:
+        print(
+            f"error: unknown agent {args.agent!r}. "
+            f"Valid: {', '.join(sorted(VALID_AGENTS - {'shell'}))} (or 'shell' for registry-only).",
+            file=sys.stderr,
+        )
+        return 1
     try:
         proj = registry_add(
             name=args.name,

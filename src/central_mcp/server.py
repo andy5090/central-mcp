@@ -444,6 +444,28 @@ def add_project(
     directory entry to `~/.codex/config.toml` so `codex exec` doesn't
     refuse to run in that path.
     """
+    # Validate agent name at registration time so users don't hit
+    # "no exec mode" errors only when they first try to dispatch.
+    from central_mcp.adapters.base import VALID_AGENTS
+    adapter = get_adapter(agent)
+    if agent not in VALID_AGENTS:
+        return {
+            "ok": False,
+            "error": (
+                f"unknown agent {agent!r}. "
+                f"Valid agents: {', '.join(sorted(VALID_AGENTS - {'shell'}))}. "
+                "Use 'shell' for registry-only projects (no dispatch)."
+            ),
+        }
+    if not adapter.has_exec and agent != "shell":
+        return {
+            "ok": False,
+            "error": (
+                f"agent {agent!r} has no non-interactive dispatch mode. "
+                f"Supported agents for dispatch: {', '.join(sorted(a for a in VALID_AGENTS if get_adapter(a).has_exec))}."
+            ),
+        }
+
     try:
         proj = _registry_add(
             name=name,
