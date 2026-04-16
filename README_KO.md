@@ -44,6 +44,7 @@ central-mcp init
 # 3. MCP 클라이언트에 central-mcp 등록 — 클라이언트당 1회
 central-mcp install claude    # Claude Code MCP 설정에 추가
 central-mcp install codex     # ~/.codex/config.toml 패치
+central-mcp install gemini    # ~/.gemini/settings.json 패치
 
 # 4. 오케스트레이터 기동
 central-mcp run
@@ -66,18 +67,19 @@ central-mcp run
 
 ## MCP 도구
 
-`central-mcp`는 `central` 서버명으로 9개 도구를 노출합니다:
+`central-mcp`는 `central` 서버명으로 10개 도구를 노출합니다:
 
 | 도구 | 블로킹? | 용도 |
 |---|---|---|
 | `list_projects` | sync | 레지스트리 열거. |
 | `project_status` | sync | 프로젝트 메타데이터. |
-| `dispatch` | **<100ms** | 프로젝트 에이전트에 프롬프트 전송. `dispatch_id` 즉시 반환. |
+| `dispatch` | **<100ms** | 프로젝트 에이전트에 프롬프트 전송. 일회성 에이전트 오버라이드 및 fallback 체인 지원. `dispatch_id` 즉시 반환. |
 | `check_dispatch` | sync | 디스패치 폴링 — `running` / `complete` / `error` + 출력. |
 | `list_dispatches` | sync | 모든 활성 + 최근 완료 디스패치. |
 | `cancel_dispatch` | sync | 실행 중인 디스패치 중단. |
 | `dispatch_history` | sync | 과거 디스패치 이력 조회 (재시작 후에도 유지). |
 | `add_project` | sync | 새 프로젝트 등록. 에이전트 이름 검증. Codex 디렉토리 자동 trust. |
+| `update_project` | sync | 기존 프로젝트의 agent / description / tags / bypass / fallback 변경. |
 | `remove_project` | sync | 프로젝트 등록 해제. |
 
 ### 디스패치 동작 방식
@@ -97,10 +99,46 @@ dispatch("my-app", "auth에 에러 핸들링 추가")
 | `claude` | `claude -p "<프롬프트>" --continue` | `--dangerously-skip-permissions` |
 | `codex` | `codex exec "<프롬프트>"` | `--dangerously-bypass-approvals-and-sandbox` |
 | `gemini` | `gemini -p "<프롬프트>"` | `--yolo` |
-| `droid` | `droid exec "<프롬프트>" -r` | `--skip-permissions-unsafe` |
-| `amp` | `amp -x "<프롬프트>"` | `--no-confirm` |
+| `droid` | `droid exec "<프롬프트>"` | `--skip-permissions-unsafe` |
+| `amp` | `amp -x "<프롬프트>"` | `--dangerously-allow-all` (-x 앞에 위치) |
 
 에이전트 이름은 등록 시점에 검증됩니다 — `cursor-agent` 같은 오타는 dispatch 시점이 아니라 즉시 잡힙니다.
+
+### 프로젝트 에이전트 변경
+
+프로젝트에 등록된 에이전트를 언제든 변경할 수 있습니다 — 특정 코드베이스가 다른 CLI와 더 잘 맞는 경우 유용:
+
+```
+update_project(name="my-app", agent="codex")
+```
+
+`update_project`는 `description`, `tags`, `bypass`, `fallback` 도 받습니다 — 생략된 필드는 그대로 유지. `codex`로 전환하면 프로젝트 디렉토리가 `~/.codex/config.toml` trust 리스트에 자동 등록됩니다.
+
+### 일회성 에이전트 오버라이드
+
+레지스트리를 변경하지 않고 *한 번만* 다른 에이전트로 작업을 보내고 싶을 때 — 예를 들어 디자인에 특화된 에이전트에게 디자인 작업만 보내고 프로젝트는 원래 에이전트 유지:
+
+```
+dispatch(name="my-app", prompt="...", agent="codex")
+```
+
+레지스트리는 유지됩니다. `agent=` 없이 다음 dispatch는 다시 저장된 에이전트로.
+
+### 실패 시 fallback 체인
+
+주 에이전트가 non-zero로 종료될 때 (rate limit, 토큰 한도, 크래시), central-mcp가 백업 에이전트로 자동 재시도:
+
+```
+# 일회성 (저장 안됨):
+dispatch(name="my-app", prompt="...", fallback=["codex", "gemini"])
+
+# 이 프로젝트의 기본값으로 저장:
+update_project(name="my-app", fallback=["codex", "gemini"])
+```
+
+결과에는 실제로 응답을 생성한 에이전트(`agent_used`), fallback이 발동되었는지(`fallback_used`), 그리고 모든 시도의 목록이 포함됩니다. 타임아웃은 재시도되지 *않습니다* — 멈춘 에이전트 때문에 전체 체인을 소모하기보다 사용자에게 바로 보여주는 것이 낫기 때문.
+
+저장된 fallback 체인을 일회성으로 비활성화하려면 `fallback=[]` 전달.
 
 ### 프로젝트별 bypass 모드
 
@@ -136,7 +174,7 @@ dispatch_history(n=50)            # 최근 50개
 central-mcp                        # 인자 없음 → stdio에서 MCP 서버 실행
 central-mcp serve                  # 동일, 명시적
 central-mcp run [--agent X] [--pick] [--bypass]  # 오케스트레이터 기동
-central-mcp install CLIENT         # claude | codex에 등록
+central-mcp install CLIENT         # claude | codex | gemini에 등록
 central-mcp alias [NAME]           # 짧은 이름 심링크 (기본: cmcp)
 central-mcp unalias [NAME]
 central-mcp init [PATH]            # registry.yaml 스캐폴드 (기본: ~/.central-mcp)
@@ -179,7 +217,10 @@ $EDITOR ~/.central-mcp/config.toml
 
 ```bash
 uv tool install --editable .
-uv run --group dev pytest      # 77 tests (adapters, dispatch, CLI e2e, tmux, registry, scrub)
+uv run --group dev pytest             # 97개 단위 테스트 (빠름, 실제 CLI 호출 없음)
+uv run --group dev pytest -m live     # 15개 라이브 테스트 — 실제 에이전트 바이너리
+                                      # (claude/codex/gemini/droid/amp) 호출.
+                                      # 해당 바이너리가 PATH에 없으면 자동 skip
 ```
 
 ## 라이선스

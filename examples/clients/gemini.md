@@ -1,8 +1,22 @@
 # Registering central-mcp with Gemini CLI
 
-## Setup
+## Recommended: `central-mcp install gemini`
 
-Gemini CLI supports MCP servers via its settings file. Add central-mcp to `~/.gemini/settings.json`:
+```bash
+central-mcp install gemini
+```
+
+Patches `~/.gemini/settings.json` to add the `central` MCP server under the top-level `mcpServers` key. Idempotent — reruns after a successful install are no-ops. The file (and `~/.gemini/` itself) is created automatically if missing.
+
+To preview changes without writing:
+
+```bash
+central-mcp install gemini --dry-run
+```
+
+## Manual setup (equivalent)
+
+If you prefer editing the file yourself, the entry is:
 
 ```json
 {

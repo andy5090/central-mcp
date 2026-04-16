@@ -73,3 +73,45 @@ def test_write_creates_parent_dir(fake_home: Path) -> None:
     assert not fake_home.exists()
     registry.add_project("first", "/tmp/first")
     assert (fake_home / "registry.yaml").exists()
+
+
+def test_update_project_agent_only(fake_home: Path) -> None:
+    registry.add_project("p", "/p", agent="claude", description="d", tags=["x"])
+    updated = registry.update_project("p", agent="codex")
+    assert updated is not None
+    assert updated.agent == "codex"
+    assert updated.description == "d"
+    assert updated.tags == ["x"]
+
+
+def test_update_project_partial_preserves_other_fields(fake_home: Path) -> None:
+    registry.add_project(
+        "p", "/p", agent="claude", description="original", tags=["a"]
+    )
+    registry.update_project("p", bypass=True)
+    loaded = registry.find_project("p")
+    assert loaded is not None
+    assert loaded.agent == "claude"
+    assert loaded.description == "original"
+    assert loaded.tags == ["a"]
+    assert loaded.bypass is True
+
+
+def test_update_project_fallback(fake_home: Path) -> None:
+    registry.add_project("p", "/p", agent="claude")
+    updated = registry.update_project("p", fallback=["codex", "gemini"])
+    assert updated is not None
+    assert updated.fallback == ["codex", "gemini"]
+    loaded = registry.find_project("p")
+    assert loaded.fallback == ["codex", "gemini"]
+
+
+def test_update_project_missing_returns_none(fake_home: Path) -> None:
+    assert registry.update_project("ghost", agent="codex") is None
+
+
+def test_fallback_roundtrip_in_yaml(fake_home: Path) -> None:
+    registry.add_project("p", "/p")
+    registry.update_project("p", fallback=["codex"])
+    reloaded = registry.load_registry()
+    assert reloaded[0].fallback == ["codex"]

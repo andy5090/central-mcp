@@ -57,3 +57,82 @@ def test_install_codex_refuses_if_no_config(
     assert rc == 1
 
 
+@pytest.fixture
+def fake_gemini_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Point $HOME at a temp dir with a pre-existing ~/.gemini/settings.json."""
+    home = tmp_path / "home"
+    home.mkdir()
+    gemini_dir = home / ".gemini"
+    gemini_dir.mkdir()
+    cfg = gemini_dir / "settings.json"
+    cfg.write_text(
+        json.dumps(
+            {
+                "selectedAuthType": "gemini-api-key",
+                "mcpServers": {
+                    "other": {"command": "other-binary", "args": ["serve"]}
+                },
+            }
+        )
+    )
+    monkeypatch.setenv("HOME", str(home))
+    return cfg
+
+
+def test_install_gemini_adds_entry(fake_gemini_config: Path) -> None:
+    rc = install.install("gemini")
+    assert rc == 0
+    data = json.loads(fake_gemini_config.read_text())
+    assert "central" in data["mcpServers"]
+    assert data["mcpServers"]["central"]["command"] == "central-mcp"
+    assert data["mcpServers"]["central"]["args"] == ["serve"]
+    # Preserves unrelated settings and pre-existing servers
+    assert data["selectedAuthType"] == "gemini-api-key"
+    assert "other" in data["mcpServers"]
+
+
+def test_install_gemini_is_idempotent(fake_gemini_config: Path) -> None:
+    assert install.install("gemini") == 0
+    first = fake_gemini_config.read_text()
+    assert install.install("gemini") == 0
+    # File content must be byte-identical on the second (idempotent) run.
+    second = fake_gemini_config.read_text()
+    assert first == second
+
+
+def test_install_gemini_creates_config_if_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Unlike codex (which requires a pre-existing config file), gemini
+    install should bootstrap an empty ~/.gemini/settings.json — useful
+    for freshly installed Gemini CLIs the user hasn't opened yet."""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    rc = install.install("gemini")
+    assert rc == 0
+    cfg = home / ".gemini" / "settings.json"
+    assert cfg.exists()
+    data = json.loads(cfg.read_text())
+    assert data["mcpServers"]["central"]["command"] == "central-mcp"
+
+
+def test_install_gemini_rejects_non_object_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "home"
+    (home / ".gemini").mkdir(parents=True)
+    (home / ".gemini" / "settings.json").write_text('["not", "an", "object"]')
+    monkeypatch.setenv("HOME", str(home))
+    assert install.install("gemini") == 1
+
+
+def test_install_gemini_rejects_invalid_json(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "home"
+    (home / ".gemini").mkdir(parents=True)
+    (home / ".gemini" / "settings.json").write_text("{not json")
+    monkeypatch.setenv("HOME", str(home))
+    assert install.install("gemini") == 1
+

@@ -44,6 +44,7 @@ central-mcp init
 # 3. Register central-mcp with your MCP client(s) — once per client
 central-mcp install claude    # adds to Claude Code MCP config
 central-mcp install codex     # patches ~/.codex/config.toml
+central-mcp install gemini    # patches ~/.gemini/settings.json
 
 # 4. Launch the orchestrator
 central-mcp run
@@ -66,18 +67,19 @@ Multiple dispatches run in parallel.
 
 ## MCP tools
 
-`central-mcp` exposes 9 tools under the server name `central`:
+`central-mcp` exposes 10 tools under the server name `central`:
 
 | Tool | Blocking? | Purpose |
 |---|---|---|
 | `list_projects` | sync | Enumerate the registry. |
 | `project_status` | sync | Metadata for one project. |
-| `dispatch` | **<100ms** | Send a prompt to a project's agent. Returns `dispatch_id` immediately. |
+| `dispatch` | **<100ms** | Send a prompt to a project's agent. Supports per-dispatch agent override and fallback chain. Returns `dispatch_id` immediately. |
 | `check_dispatch` | sync | Poll a dispatch — `running` / `complete` / `error` with full output. |
 | `list_dispatches` | sync | All active + recently completed dispatches. |
 | `cancel_dispatch` | sync | Abort a running dispatch. |
 | `dispatch_history` | sync | Persistent history of past dispatches (survives restarts). |
 | `add_project` | sync | Register a new project. Validates agent name. Auto-trusts codex dirs. |
+| `update_project` | sync | Change an existing project's agent, description, tags, bypass, or fallback. |
 | `remove_project` | sync | Unregister a project. |
 
 ### How dispatch works
@@ -97,10 +99,46 @@ dispatch("my-app", "add error handling to auth")
 | `claude` | `claude -p "<prompt>" --continue` | `--dangerously-skip-permissions` |
 | `codex` | `codex exec "<prompt>"` | `--dangerously-bypass-approvals-and-sandbox` |
 | `gemini` | `gemini -p "<prompt>"` | `--yolo` |
-| `droid` | `droid exec "<prompt>" -r` | `--skip-permissions-unsafe` |
-| `amp` | `amp -x "<prompt>"` | `--no-confirm` |
+| `droid` | `droid exec "<prompt>"` | `--skip-permissions-unsafe` |
+| `amp` | `amp -x "<prompt>"` | `--dangerously-allow-all` (precedes `-x`) |
 
 Agent names are validated at registration time — typos like `cursor-agent` are caught immediately, not at dispatch time.
+
+### Switching agents mid-project
+
+You can change a project's registered agent any time — useful when a given codebase turns out to pair better with a different CLI:
+
+```
+update_project(name="my-app", agent="codex")
+```
+
+`update_project` also accepts `description`, `tags`, `bypass`, and `fallback` — omitted fields stay untouched. Switching to `codex` auto-adds the project dir to `~/.codex/config.toml` trust list.
+
+### One-shot agent override
+
+Sometimes you want to route *one* task to a different agent without mutating the registry — e.g. a design-heavy task goes to a design-strong agent while the project stays on its usual one:
+
+```
+dispatch(name="my-app", prompt="...", agent="codex")
+```
+
+The registry entry is untouched. Next dispatch without `agent=` goes back to the project's saved agent.
+
+### Fallback chain on failure
+
+If the primary agent exits non-zero (rate limit, token cap, crash), central-mcp can transparently retry with a backup:
+
+```
+# per-dispatch (not persisted):
+dispatch(name="my-app", prompt="...", fallback=["codex", "gemini"])
+
+# save a default for this project:
+update_project(name="my-app", fallback=["codex", "gemini"])
+```
+
+The result reports which agent actually produced output (`agent_used`), whether a fallback was triggered (`fallback_used`), and the full list of attempts. Timeouts are *not* retried — the user should see them directly rather than burn the whole chain on a stuck agent.
+
+Pass `fallback=[]` to explicitly disable the saved chain for a one-shot dispatch.
 
 ### Per-project bypass mode
 
@@ -136,7 +174,7 @@ The sub-agent model is independent — each `dispatch` spawns its own process wi
 central-mcp                        # no-arg → run MCP server on stdio
 central-mcp serve                  # same, explicit
 central-mcp run [--agent X] [--pick] [--bypass]  # launch orchestrator
-central-mcp install CLIENT         # register with claude | codex
+central-mcp install CLIENT         # register with claude | codex | gemini
 central-mcp alias [NAME]           # short-name symlink (default: cmcp)
 central-mcp unalias [NAME]
 central-mcp init [PATH]            # scaffold registry.yaml (default: ~/.central-mcp)
@@ -179,7 +217,10 @@ $EDITOR ~/.central-mcp/config.toml
 
 ```bash
 uv tool install --editable .
-uv run --group dev pytest      # 77 tests (adapters, dispatch, CLI e2e, tmux, registry, scrub)
+uv run --group dev pytest             # 97 unit tests (fast, no real CLIs)
+uv run --group dev pytest -m live     # 15 live tests — shell out to real agent binaries
+                                      # (claude/codex/gemini/droid/amp); each case skips
+                                      # cleanly if that binary isn't on PATH
 ```
 
 ## License

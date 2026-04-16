@@ -38,7 +38,13 @@ def install(client: str, *, dry_run: bool = False) -> int:
         return _install_claude(dry_run=dry_run)
     if client == "codex":
         return _install_codex(dry_run=dry_run)
-    print(f"error: unknown client {client!r}", file=sys.stderr)
+    if client == "gemini":
+        return _install_gemini(dry_run=dry_run)
+    print(
+        f"error: unknown client {client!r}. "
+        "Supported: claude, codex, gemini.",
+        file=sys.stderr,
+    )
     return 1
 
 
@@ -130,6 +136,66 @@ def _install_codex(*, dry_run: bool) -> int:
     cfg.write_text(tomlkit.dumps(doc))
     _say(f"updated {cfg}")
     _say(f"backup: {bak}")
+    return 0
+
+
+def _install_gemini(*, dry_run: bool) -> int:
+    """Register central-mcp inside Gemini CLI's settings.json.
+
+    Gemini CLI reads MCP server configuration from ~/.gemini/settings.json
+    under the top-level `mcpServers` object. Entry shape:
+
+        {"mcpServers": {"central": {"command": "central-mcp", "args": ["serve"]}}}
+
+    This installer is idempotent and creates the file (with parent dir)
+    if it doesn't exist yet, mirroring Claude/Codex behavior.
+    """
+    cfg_dir = Path.home() / ".gemini"
+    cfg = cfg_dir / "settings.json"
+
+    if cfg.exists():
+        try:
+            doc = json.loads(cfg.read_text() or "{}")
+        except json.JSONDecodeError as exc:
+            print(f"error: {cfg} is not valid JSON: {exc}", file=sys.stderr)
+            return 1
+    else:
+        # Create a minimal settings.json rather than failing — the user
+        # may have installed Gemini CLI but never opened it interactively.
+        doc = {}
+    if not isinstance(doc, dict):
+        print(f"error: {cfg} root must be a JSON object", file=sys.stderr)
+        return 1
+
+    servers = doc.setdefault("mcpServers", {})
+    if not isinstance(servers, dict):
+        print(f"error: {cfg} mcpServers must be an object", file=sys.stderr)
+        return 1
+
+    desired = {"command": LAUNCH_COMMAND, "args": list(LAUNCH_ARGS)}
+    existing = servers.get(SERVER_NAME)
+    if (
+        isinstance(existing, dict)
+        and existing.get("command") == desired["command"]
+        and list(existing.get("args") or []) == desired["args"]
+    ):
+        _say(f"already registered in {cfg} — no change")
+        return 0
+
+    servers[SERVER_NAME] = desired
+    new_text = json.dumps(doc, indent=2) + "\n"
+
+    if dry_run:
+        _say(f"Would write to {cfg}:")
+        _say(new_text)
+        return 0
+
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    bak = _backup(cfg) if cfg.exists() else None
+    cfg.write_text(new_text)
+    _say(f"updated {cfg}")
+    if bak:
+        _say(f"backup: {bak}")
     return 0
 
 

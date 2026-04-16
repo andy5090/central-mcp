@@ -73,9 +73,11 @@ class _Gemini(Adapter):
 
 class _Droid(Adapter):
     def exec_argv(self, prompt: str, *, resume: bool = True, bypass: bool = False) -> list[str] | None:
+        # `droid exec` has no session-resume flag — `-r` is
+        # reasoning-effort (takes a value like low/medium/high), not
+        # resume, so adding it here was a bug. We ignore `resume`
+        # entirely for droid.
         argv = ["droid", "exec", prompt]
-        if resume:
-            argv.extend(["-r"])  # resume last session
         if bypass:
             argv.append("--skip-permissions-unsafe")
         return argv
@@ -83,9 +85,13 @@ class _Droid(Adapter):
 
 class _Amp(Adapter):
     def exec_argv(self, prompt: str, *, resume: bool = True, bypass: bool = False) -> list[str] | None:
-        argv = ["amp", "-x", prompt]
+        # amp's "skip confirmations" flag is `--dangerously-allow-all`.
+        # Order: the bypass flag must come BEFORE `-x` so that `-x`'s
+        # optional message argument consumes the prompt, not our flag.
+        argv = ["amp"]
         if bypass:
-            argv.append("--no-confirm")
+            argv.append("--dangerously-allow-all")
+        argv.extend(["-x", prompt])
         return argv
 
 

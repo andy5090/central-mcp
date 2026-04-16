@@ -27,7 +27,10 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+addopts = "-q -m 'not live'"
+markers = [
+    "live: exercises real installed agent CLIs (opt in with `-m live`; requires binaries on PATH)",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/central_mcp"]

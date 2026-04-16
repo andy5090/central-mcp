@@ -70,18 +70,26 @@ class TestGemini:
 
 
 class TestDroid:
-    def test_basic_with_resume(self) -> None:
+    def test_basic(self) -> None:
         argv = get_adapter("droid").exec_argv("refactor")
-        assert argv[:3] == ["droid", "exec", "refactor"]
-        assert "-r" in argv
+        assert argv == ["droid", "exec", "refactor"]
 
-    def test_no_resume(self) -> None:
+    def test_resume_is_noop(self) -> None:
+        # droid exec has no session-resume flag — `-r` is
+        # reasoning-effort (takes a value), so we never emit it.
+        argv = get_adapter("droid").exec_argv("refactor", resume=True)
+        assert "-r" not in argv
         argv = get_adapter("droid").exec_argv("refactor", resume=False)
         assert "-r" not in argv
 
     def test_bypass(self) -> None:
         argv = get_adapter("droid").exec_argv("refactor", bypass=True)
         assert "--skip-permissions-unsafe" in argv
+        # Regression: `--skip-permissions-unsafe` must not follow a
+        # value-taking flag like `-r`, or droid eats it as the value.
+        if "-r" in argv:
+            r_idx = argv.index("-r")
+            assert argv[r_idx + 1] != "--skip-permissions-unsafe"
 
 
 class TestAmp:
@@ -91,7 +99,14 @@ class TestAmp:
 
     def test_bypass(self) -> None:
         argv = get_adapter("amp").exec_argv("review code", bypass=True)
-        assert "--no-confirm" in argv
+        # Correct flag per `amp --help`: --dangerously-allow-all.
+        # Must come BEFORE -x so -x's optional-value consumes the prompt.
+        assert argv == ["amp", "--dangerously-allow-all", "-x", "review code"]
+        assert "--no-confirm" not in argv  # regression: old typo
+
+    def test_bypass_flag_precedes_execute(self) -> None:
+        argv = get_adapter("amp").exec_argv("x", bypass=True)
+        assert argv.index("--dangerously-allow-all") < argv.index("-x")
 
 
 class TestShell:

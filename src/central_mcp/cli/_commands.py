@@ -158,7 +158,7 @@ def cmd_init(args: argparse.Namespace) -> int:
 
     print()
     print("Next steps:")
-    print("  1. central-mcp install claude     # or codex")
+    print("  1. central-mcp install claude     # or codex, gemini")
     print("  2. Start that client and add projects in natural language, e.g.:")
     print('     "Add ~/Projects/my-app to the hub, agent=claude."')
     return 0
@@ -352,9 +352,10 @@ def _prompt_choice(installed: list[tuple[str, str, str]]) -> tuple[str, str, str
 def cmd_run(args: argparse.Namespace) -> int:
     installed = _detect_installed()
     if not installed:
+        supported = ", ".join(name for name, _bin, _label in ORCHESTRATORS)
         print(
             "error: no supported coding-agent CLI detected on PATH.\n"
-            "       install one of: claude, codex, gemini, droid, amp",
+            f"       install one of: {supported}",
             file=sys.stderr,
         )
         return 1

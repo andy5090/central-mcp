@@ -90,7 +90,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_init.set_defaults(func=cmd_init)
 
     p_install = sub.add_parser("install", help="register central-mcp with an MCP client")
-    p_install.add_argument("client", choices=["claude", "codex"])
+    p_install.add_argument("client", choices=["claude", "codex", "gemini"])
     p_install.add_argument("--dry-run", action="store_true")
     p_install.set_defaults(func=cmd_install)
 

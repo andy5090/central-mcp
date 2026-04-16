@@ -28,12 +28,14 @@ from fastmcp import FastMCP
 
 from central_mcp import paths
 from central_mcp.adapters import get_adapter
+from central_mcp.adapters.base import VALID_AGENTS
 from central_mcp.registry import (
     Project,
     add_project as _registry_add,
     find_project,
     load_registry,
     remove_project as _registry_remove,
+    update_project as _registry_update,
 )
 from central_mcp.scrub import scrub
 
@@ -56,6 +58,7 @@ instead:
   - cancel_dispatch   — abort a running dispatch
   - add_project       — register a new project
   - remove_project    — unregister a project
+  - update_project    — change a project's agent / fallback / bypass / etc.
 
 dispatch is NON-BLOCKING. It spawns the agent as a subprocess and
 returns a dispatch_id instantly (<100ms). To get the result:
@@ -197,11 +200,22 @@ def dispatch(
     resume: bool = True,
     bypass: bool | None = None,
     timeout: float = 600.0,
+    agent: str | None = None,
+    fallback: list[str] | None = None,
 ) -> dict[str, Any]:
     """Dispatch a prompt to the project's agent. NON-BLOCKING.
 
     Spawns a one-shot subprocess (e.g. `claude -p "..." --continue`) in the
     project's cwd and returns immediately with a dispatch_id (<100ms).
+
+    **agent** (optional): override the project's registered agent for this
+    one dispatch only. Useful for e.g. sending a design-heavy task to a
+    different agent without mutating the registry. Registry is unchanged.
+
+    **fallback** (optional): list of agent names to try in order if the
+    primary agent exits non-zero (e.g. token/rate limit, crash). If omitted,
+    the project's saved `fallback` from the registry is used. Pass an empty
+    list `[]` to explicitly disable fallback for this dispatch.
 
     **bypass** controls whether the agent runs with permission-skip flags:
       - `true`: skip all permission prompts (--dangerously-skip-permissions etc.)
@@ -216,7 +230,16 @@ def dispatch(
     if err:
         return err
 
-    # Resolve bypass: explicit param > registry saved > ask user
+    # Resolve effective agent chain: primary then fallbacks
+    primary_agent = agent or project.agent
+    if fallback is None:
+        fallback_chain = list(project.fallback or [])
+    else:
+        fallback_chain = list(fallback)
+    chain = [primary_agent] + fallback_chain
+
+    # Resolve bypass BEFORE probing — adapters may return different argv
+    # for bypass=True vs False, so we must probe with the real value.
     if bypass is None:
         bypass = project.bypass
     if bypass is None:
@@ -224,7 +247,7 @@ def dispatch(
             "ok": False,
             "needs_bypass_decision": True,
             "project": project.name,
-            "agent": project.agent,
+            "agent": primary_agent,
             "error": (
                 f"First dispatch to '{project.name}' — bypass mode not yet decided. "
                 "Ask the user: should this agent run with full permissions "
@@ -241,21 +264,24 @@ def dispatch(
     # so the user can flip from false→true (or vice versa) mid-session
     # by calling dispatch with an explicit bypass value.
     if project.bypass != bypass:
-        from central_mcp.registry import update_project_bypass
-        update_project_bypass(project.name, bypass)
+        _registry_update(project.name, bypass=bypass)
 
-    adapter = get_adapter(project.agent)
-    argv = adapter.exec_argv(prompt, resume=resume, bypass=bypass)
-    if argv is None:
-        return {
-            "ok": False,
-            "error": (
-                f"adapter {project.agent!r} has no non-interactive exec mode. "
-                "Supported agents for dispatch: claude, codex, gemini, droid, amp. "
-                "If the project was registered with a wrong agent name, call "
-                "remove_project then add_project with the correct agent."
-            ),
-        }
+    # Validate every agent in the chain produces valid argv with the
+    # real prompt + resolved bypass, so adapters that conditionally
+    # return None based on those inputs fail synchronously rather than
+    # inside the background thread.
+    for a in chain:
+        probe_adapter = get_adapter(a)
+        probe_argv = probe_adapter.exec_argv(prompt, resume=resume, bypass=bypass)
+        if probe_argv is None:
+            return {
+                "ok": False,
+                "error": (
+                    f"adapter {a!r} has no non-interactive exec mode "
+                    f"(bypass={bypass}). "
+                    f"Supported agents for dispatch: {', '.join(sorted(VALID_AGENTS - {'shell'}))}."
+                ),
+            }
 
     cwd = Path(project.path)
     if not cwd.is_dir():
@@ -264,28 +290,40 @@ def dispatch(
             "error": f"project cwd {project.path!r} does not exist",
         }
 
+    # Build the initial argv from the primary agent so we can surface the
+    # command string in the return value. Fallback attempts re-build argv
+    # in the background thread.
+    primary_adapter = get_adapter(primary_agent)
+    initial_argv = primary_adapter.exec_argv(prompt, resume=resume, bypass=bypass)
+
     dispatch_id = uuid.uuid4().hex[:8]
     entry: dict[str, Any] = {
         "id": dispatch_id,
         "project": project.name,
-        "agent": project.agent,
+        "agent": primary_agent,
+        "chain": chain,
         "prompt": prompt,
-        "command": " ".join(argv),
+        "command": " ".join(initial_argv),
         "status": "running",
         "started": time.time(),
         "process": None,
         "result": None,
+        "attempts": [],
     }
 
-    def _run_bg() -> None:
+    def _run_one(agent_name: str) -> dict[str, Any]:
+        """Spawn one attempt with a specific agent. Returns result dict
+        with keys: ok, exit_code, output, stderr, error (optional),
+        timeout (optional).
+        """
+        adapter = get_adapter(agent_name)
+        argv = adapter.exec_argv(prompt, resume=resume, bypass=bypass)
+        import os as _os
+        env = _os.environ.copy()
+        if hasattr(adapter, "exec_env") and adapter.exec_env:
+            env.update(adapter.exec_env)
+        attempt_started = time.time()
         try:
-            # Merge adapter-specific env vars if present
-            # into the current environment so the subprocess inherits PATH etc.
-            import os as _os
-            env = _os.environ.copy()
-            if hasattr(adapter, "exec_env") and adapter.exec_env:
-                env.update(adapter.exec_env)
-
             proc = subprocess.Popen(
                 argv,
                 cwd=str(cwd),
@@ -295,56 +333,128 @@ def dispatch(
                 text=True,
                 env=env,
             )
-            with _dispatch_lock:
-                entry["process"] = proc
-            try:
-                stdout, stderr = proc.communicate(timeout=timeout)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                stdout, stderr = proc.communicate()
+        except FileNotFoundError:
+            return {
+                "agent": agent_name,
+                "command": " ".join(argv),
+                "ok": False,
+                "error": f"agent binary {argv[0]!r} not found on PATH",
+                "duration_sec": round(time.time() - attempt_started, 1),
+            }
+        with _dispatch_lock:
+            entry["process"] = proc
+            entry["agent"] = agent_name
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            stdout, stderr = proc.communicate()
+            return {
+                "agent": agent_name,
+                "command": " ".join(argv),
+                "ok": False,
+                "timeout": True,
+                "error": f"timeout after {timeout}s",
+                "output": scrub(stdout or "", ansi=True, secrets=True),
+                "stderr": scrub(stderr or "", ansi=True, secrets=True),
+                "duration_sec": round(time.time() - attempt_started, 1),
+            }
+        return {
+            "agent": agent_name,
+            "command": " ".join(argv),
+            "ok": proc.returncode == 0,
+            "exit_code": proc.returncode,
+            "output": scrub(stdout, ansi=True, secrets=True),
+            "stderr": scrub(stderr, ansi=True, secrets=True),
+            "duration_sec": round(time.time() - attempt_started, 1),
+        }
+
+    def _run_bg() -> None:
+        attempts: list[dict[str, Any]] = []
+        final_result: dict[str, Any] | None = None
+        final_status = "complete"
+        try:
+            for agent_name in chain:
+                # Honor cancellation between attempts so a cancel during
+                # attempt N doesn't silently run attempt N+1.
                 with _dispatch_lock:
-                    entry["status"] = "timeout"
-                    entry["result"] = {
-                        "ok": False,
-                        "error": f"timeout after {timeout}s",
-                        "partial_output": scrub(stdout or "", ansi=True, secrets=True),
-                        "partial_stderr": scrub(stderr or "", ansi=True, secrets=True),
-                    }
-                return
+                    if entry.get("cancel_requested"):
+                        break
+                attempt = _run_one(agent_name)
+                attempts.append(attempt)
+                with _dispatch_lock:
+                    entry["attempts"] = list(attempts)
+                if attempt.get("ok"):
+                    break
+                # Don't fall back on timeout — user probably wants to see it
+                # rather than burn their whole fallback chain on a stuck agent.
+                if attempt.get("timeout"):
+                    break
 
             with _dispatch_lock:
-                entry["status"] = "complete"
-                result_data = {
-                    "ok": proc.returncode == 0,
-                    "exit_code": proc.returncode,
-                    "output": scrub(stdout, ansi=True, secrets=True),
-                    "stderr": scrub(stderr, ansi=True, secrets=True),
+                was_cancelled = bool(entry.get("cancel_requested"))
+
+            if was_cancelled:
+                final_status = "cancelled"
+                final_result = {
+                    "ok": False,
+                    "error": "cancelled by orchestrator",
+                    "agent_used": attempts[-1].get("agent") if attempts else primary_agent,
                     "duration_sec": round(time.time() - entry["started"], 1),
+                    "attempts": attempts,
+                    "fallback_used": len(attempts) > 1,
                 }
-                entry["result"] = result_data
-            # Write to persistent history (outside lock)
+            elif not attempts:
+                final_status = "error"
+                final_result = {
+                    "ok": False,
+                    "error": "no attempts ran (chain was empty)",
+                    "attempts": attempts,
+                }
+            else:
+                last = attempts[-1]
+                final_result = {
+                    "ok": last.get("ok", False),
+                    "agent_used": last.get("agent"),
+                    "exit_code": last.get("exit_code"),
+                    "output": last.get("output", ""),
+                    "stderr": last.get("stderr", ""),
+                    "error": last.get("error"),
+                    "duration_sec": round(time.time() - entry["started"], 1),
+                    "attempts": attempts,
+                    "fallback_used": len(attempts) > 1,
+                }
+                if last.get("timeout"):
+                    final_status = "timeout"
+        except Exception as exc:
+            final_status = "error"
+            final_result = {
+                "ok": False,
+                "error": str(exc),
+                "attempts": attempts,
+            }
+
+        with _dispatch_lock:
+            entry["status"] = final_status
+            entry["result"] = final_result
+
+        # Write to persistent history (outside lock)
+        try:
             _append_history(entry["project"], {
                 "dispatch_id": entry["id"],
                 "project": entry["project"],
-                "agent": entry["agent"],
+                "agent": final_result.get("agent_used", entry["agent"]),
+                "chain": chain,
                 "prompt": entry.get("prompt", ""),
                 "timestamp": datetime.now(timezone.utc).isoformat(),
-                "ok": result_data["ok"],
-                "exit_code": result_data.get("exit_code"),
-                "duration_sec": result_data.get("duration_sec"),
-                "output_preview": result_data.get("output", "")[:500],
+                "ok": final_result.get("ok", False),
+                "exit_code": final_result.get("exit_code"),
+                "duration_sec": final_result.get("duration_sec"),
+                "fallback_used": final_result.get("fallback_used", False),
+                "output_preview": (final_result.get("output") or "")[:500],
             })
-        except FileNotFoundError:
-            with _dispatch_lock:
-                entry["status"] = "error"
-                entry["result"] = {
-                    "ok": False,
-                    "error": f"agent binary {argv[0]!r} not found on PATH",
-                }
-        except Exception as exc:
-            with _dispatch_lock:
-                entry["status"] = "error"
-                entry["result"] = {"ok": False, "error": str(exc)}
+        except Exception:
+            pass
 
     with _dispatch_lock:
         _dispatches[dispatch_id] = entry
@@ -356,8 +466,9 @@ def dispatch(
         "ok": True,
         "dispatch_id": dispatch_id,
         "project": project.name,
-        "agent": project.agent,
-        "command": " ".join(argv),
+        "agent": primary_agent,
+        "chain": chain,
+        "command": " ".join(initial_argv),
         "note": "running in background — poll with check_dispatch(dispatch_id)",
     }
 
@@ -409,23 +520,29 @@ def list_dispatches() -> list[dict[str, Any]]:
 
 @mcp.tool()
 def cancel_dispatch(dispatch_id: str) -> dict[str, Any]:
-    """Abort a running background dispatch. No-op if already finished."""
+    """Abort a running background dispatch. No-op if already finished.
+
+    Sets a cancel flag so `_run_bg` stops before the next fallback
+    attempt, then terminates the current subprocess. The background
+    thread finalizes the status to "cancelled".
+    """
     with _dispatch_lock:
         entry = _dispatches.get(dispatch_id)
-    if entry is None:
-        return {"ok": False, "error": f"no dispatch with id {dispatch_id!r}"}
-    if entry["status"] != "running":
-        return {
-            "ok": True,
-            "note": f"dispatch already {entry['status']}",
-            "dispatch_id": dispatch_id,
-        }
-    proc = entry.get("process")
+        if entry is None:
+            return {"ok": False, "error": f"no dispatch with id {dispatch_id!r}"}
+        if entry["status"] != "running":
+            return {
+                "ok": True,
+                "note": f"dispatch already {entry['status']}",
+                "dispatch_id": dispatch_id,
+            }
+        entry["cancel_requested"] = True
+        proc = entry.get("process")
     if proc is not None:
-        proc.terminate()
-    with _dispatch_lock:
-        entry["status"] = "cancelled"
-        entry["result"] = {"ok": False, "error": "cancelled by orchestrator"}
+        try:
+            proc.terminate()
+        except Exception:
+            pass
     return {"ok": True, "cancelled": dispatch_id}
 
 
@@ -496,6 +613,87 @@ def remove_project(name: str) -> dict[str, Any]:
     if not removed:
         return {"ok": False, "error": f"project {name!r} not found in registry"}
     return _with_completed({"ok": True, "removed": name})
+
+
+@mcp.tool()
+def update_project(
+    name: str,
+    agent: str | None = None,
+    description: str | None = None,
+    tags: list[str] | None = None,
+    bypass: bool | None = None,
+    fallback: list[str] | None = None,
+) -> dict[str, Any]:
+    """Update an existing project's fields. Omitted args stay unchanged.
+
+    Use this to permanently change a project's primary agent, edit its
+    description/tags, flip its bypass preference, or set a fallback chain
+    of agents to try when the primary fails (e.g. token limits hit).
+
+    Agent names in `agent` and `fallback` are validated. If any is invalid
+    the registry is not touched.
+    """
+    if agent is not None:
+        if agent not in VALID_AGENTS:
+            return {
+                "ok": False,
+                "error": (
+                    f"unknown agent {agent!r}. "
+                    f"Valid: {', '.join(sorted(VALID_AGENTS - {'shell'}))}."
+                ),
+            }
+        if agent == "shell":
+            return {
+                "ok": False,
+                "error": (
+                    "agent 'shell' is for registry-only projects and cannot dispatch. "
+                    "If you really want to stop dispatching to this project, "
+                    "remove_project then add_project with agent='shell'."
+                ),
+            }
+        if not get_adapter(agent).has_exec:
+            return {
+                "ok": False,
+                "error": f"agent {agent!r} has no non-interactive exec mode.",
+            }
+
+    if fallback is not None:
+        for a in fallback:
+            if a not in VALID_AGENTS:
+                return {
+                    "ok": False,
+                    "error": (
+                        f"unknown agent {a!r} in fallback. "
+                        f"Valid: {', '.join(sorted(VALID_AGENTS - {'shell'}))}."
+                    ),
+                }
+            if not get_adapter(a).has_exec:
+                return {
+                    "ok": False,
+                    "error": f"agent {a!r} in fallback has no non-interactive exec mode.",
+                }
+
+    updated = _registry_update(
+        name,
+        agent=agent,
+        description=description,
+        tags=tags,
+        bypass=bypass,
+        fallback=fallback,
+    )
+    if updated is None:
+        return {"ok": False, "error": f"project {name!r} not found in registry"}
+
+    result: dict[str, Any] = {"ok": True, "project": updated.to_dict()}
+
+    # If agent switched to codex, make sure its cwd is in codex's trust list.
+    if agent == "codex":
+        from central_mcp.install import ensure_codex_trust
+        trust_msg = ensure_codex_trust(updated.path)
+        if trust_msg:
+            result["codex_trust"] = trust_msg
+
+    return _with_completed(result)
 
 
 @mcp.tool()

@@ -28,6 +28,7 @@ class Project:
     description: str = ""
     tags: list[str] | None = None
     bypass: bool | None = None  # None = not yet decided
+    fallback: list[str] | None = None  # agents to try if primary fails
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -37,6 +38,7 @@ class Project:
             "description": self.description,
             "tags": self.tags or [],
             "bypass": self.bypass,
+            "fallback": self.fallback or [],
         }
 
 
@@ -59,6 +61,7 @@ def _write_raw(data: dict[str, Any], path: Path | None = None) -> None:
 
 def _project_from_raw(p: dict[str, Any]) -> Project:
     raw_bypass = p.get("bypass")
+    raw_fallback = p.get("fallback")
     return Project(
         name=p["name"],
         path=p["path"],
@@ -66,6 +69,7 @@ def _project_from_raw(p: dict[str, Any]) -> Project:
         description=p.get("description", ""),
         tags=list(p.get("tags") or []),
         bypass=bool(raw_bypass) if raw_bypass is not None else None,
+        fallback=list(raw_fallback) if raw_fallback else None,
     )
 
 
@@ -123,6 +127,39 @@ def update_project_bypass(
             _write_raw(data, registry_path)
             return True
     return False
+
+
+def update_project(
+    name: str,
+    *,
+    agent: str | None = None,
+    description: str | None = None,
+    tags: list[str] | None = None,
+    bypass: bool | None = None,
+    fallback: list[str] | None = None,
+    registry_path: Path | None = None,
+) -> Project | None:
+    """Update fields of an existing project. Omitted args stay unchanged.
+
+    Returns the updated Project, or None if no project with `name` exists.
+    """
+    data = _read_raw(registry_path)
+    projects = data.get("projects") or []
+    for p in projects:
+        if p.get("name") == name:
+            if agent is not None:
+                p["agent"] = agent
+            if description is not None:
+                p["description"] = description
+            if tags is not None:
+                p["tags"] = list(tags)
+            if bypass is not None:
+                p["bypass"] = bypass
+            if fallback is not None:
+                p["fallback"] = list(fallback)
+            _write_raw(data, registry_path)
+            return _project_from_raw(p)
+    return None
 
 
 def remove_project(
