@@ -75,8 +75,10 @@ delivered even when background polling agents fail to fire.
 
 If a dispatch result contains permission-related errors (e.g. "needs
 approval", "permission denied", "not allowed"), tell the user and offer
-to re-dispatch with bypass=true. Calling dispatch with an explicit
-bypass value updates the saved preference, so the user only decides once.
+two options:
+  1. Re-dispatch with bypass=true (updates saved preference permanently)
+  2. Use `central-mcp up` to open a tmux observation session where
+     the agent runs interactively and the user can approve manually
 
 If the user mentions a project path that is not yet registered
 ("add ~/Projects/foo"), call add_project yourself; do not tell the user
@@ -228,7 +230,10 @@ def dispatch(
                 "Ask the user: should this agent run with full permissions "
                 "(bypass=true, skips all approval prompts) or restricted "
                 "(bypass=false, may fail on operations needing approval)? "
-                "Then call dispatch again with bypass=true or bypass=false."
+                "Then call dispatch again with bypass=true or bypass=false. "
+                "Note: if bypass=false and the agent needs approvals, the user "
+                "can run `central-mcp up` and interact with the agent directly "
+                "in a tmux pane where manual approval is possible."
             ),
         }
 
