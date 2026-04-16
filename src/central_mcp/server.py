@@ -73,6 +73,11 @@ since your last call. When you see this field, REPORT those results to
 the user immediately — do not ignore them. This is how completions are
 delivered even when background polling agents fail to fire.
 
+If a dispatch result contains permission-related errors (e.g. "needs
+approval", "permission denied", "not allowed"), tell the user and offer
+to re-dispatch with bypass=true. Calling dispatch with an explicit
+bypass value updates the saved preference, so the user only decides once.
+
 If the user mentions a project path that is not yet registered
 ("add ~/Projects/foo"), call add_project yourself; do not tell the user
 to drop to a shell.
@@ -227,8 +232,10 @@ def dispatch(
             ),
         }
 
-    # Save bypass preference to registry if not yet stored
-    if project.bypass is None:
+    # Save bypass preference to registry — always when explicitly passed,
+    # so the user can flip from false→true (or vice versa) mid-session
+    # by calling dispatch with an explicit bypass value.
+    if project.bypass != bypass:
         from central_mcp.registry import update_project_bypass
         update_project_bypass(project.name, bypass)
 
