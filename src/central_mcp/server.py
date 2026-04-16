@@ -61,7 +61,7 @@ returns a dispatch_id instantly (<100ms). To get the result:
   1. Call dispatch(name, prompt) → returns dispatch_id.
   2. Spawn a BACKGROUND subagent (Agent tool with run_in_background=true
      in Claude Code, or equivalent) to poll check_dispatch(dispatch_id)
-     every 10 seconds until status is no longer "running", then report.
+     every 3 seconds until status is no longer "running", then report.
   3. Tell the user "dispatched to <project>, I'll report when it's done"
      and CONTINUE the conversation.
 
