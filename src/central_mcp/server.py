@@ -188,27 +188,52 @@ def dispatch(
     name: str,
     prompt: str,
     resume: bool = True,
+    bypass: bool | None = None,
     timeout: float = 600.0,
 ) -> dict[str, Any]:
     """Dispatch a prompt to the project's agent. NON-BLOCKING.
 
     Spawns a one-shot subprocess (e.g. `claude -p "..." --continue`) in the
     project's cwd and returns immediately with a dispatch_id (<100ms).
-    The subprocess runs in a background thread.
 
-    To get the result, poll `check_dispatch(dispatch_id)` — when status is
-    no longer "running", the full output is available. Use `cancel_dispatch`
-    to abort, `list_dispatches` to see everything in flight.
-
-    The orchestrator should spawn a background subagent to handle the
-    polling and report, so the main conversation stays unblocked.
+    **bypass** controls whether the agent runs with permission-skip flags:
+      - `true`: skip all permission prompts (--dangerously-skip-permissions etc.)
+      - `false`: run without bypass (agent may fail if it needs approvals)
+      - `null` (default): use the project's saved bypass preference from the
+        registry. If no preference is saved yet (first dispatch), the server
+        returns a `needs_bypass_decision` response instead of dispatching —
+        the orchestrator should ask the user and re-call with an explicit value.
+        The choice is then saved to the registry for future dispatches.
     """
     project, err = _require_project(name)
     if err:
         return err
 
+    # Resolve bypass: explicit param > registry saved > ask user
+    if bypass is None:
+        bypass = project.bypass
+    if bypass is None:
+        return {
+            "ok": False,
+            "needs_bypass_decision": True,
+            "project": project.name,
+            "agent": project.agent,
+            "error": (
+                f"First dispatch to '{project.name}' — bypass mode not yet decided. "
+                "Ask the user: should this agent run with full permissions "
+                "(bypass=true, skips all approval prompts) or restricted "
+                "(bypass=false, may fail on operations needing approval)? "
+                "Then call dispatch again with bypass=true or bypass=false."
+            ),
+        }
+
+    # Save bypass preference to registry if not yet stored
+    if project.bypass is None:
+        from central_mcp.registry import update_project_bypass
+        update_project_bypass(project.name, bypass)
+
     adapter = get_adapter(project.agent)
-    argv = adapter.exec_argv(prompt, resume=resume)
+    argv = adapter.exec_argv(prompt, resume=resume, bypass=bypass)
     if argv is None:
         return {
             "ok": False,

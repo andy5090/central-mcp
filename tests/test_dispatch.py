@@ -17,7 +17,7 @@ class _StubAdapter(Adapter):
         super().__init__(name=name, launch=())
         self._argv_fn = argv_fn
 
-    def exec_argv(self, prompt, *, resume=True):
+    def exec_argv(self, prompt, *, resume=True, bypass=False):
         return self._argv_fn(prompt)
 
 
@@ -49,7 +49,7 @@ def test_dispatch_returns_id_immediately(
     stub_project: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _install_stub(monkeypatch, lambda p: [sys.executable, "-c", "import time; time.sleep(1)"])
-    r = server.dispatch(stub_project, "x")
+    r = server.dispatch(stub_project, "x", bypass=True)
     assert r["ok"] is True
     assert "dispatch_id" in r
     assert r["project"] == stub_project
@@ -61,7 +61,7 @@ def test_dispatch_check_complete(
     stub_project: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _install_stub(monkeypatch, lambda p: [sys.executable, "-c", f"print({p!r})"])
-    r = server.dispatch(stub_project, "hello world")
+    r = server.dispatch(stub_project, "hello world", bypass=True)
     result = _wait_for_complete(r["dispatch_id"])
     assert result["status"] == "complete"
     assert result["ok"] is True
@@ -75,7 +75,7 @@ def test_dispatch_runs_in_project_cwd(
         monkeypatch,
         lambda p: [sys.executable, "-c", "import os; print(os.getcwd())"],
     )
-    r = server.dispatch(stub_project, "ignored")
+    r = server.dispatch(stub_project, "ignored", bypass=True)
     result = _wait_for_complete(r["dispatch_id"])
     assert "stub-cwd" in result.get("output", "")
 
@@ -87,7 +87,7 @@ def test_dispatch_nonzero_exit(
         monkeypatch,
         lambda p: [sys.executable, "-c", "import sys; sys.stderr.write('boom'); sys.exit(7)"],
     )
-    r = server.dispatch(stub_project, "x")
+    r = server.dispatch(stub_project, "x", bypass=True)
     result = _wait_for_complete(r["dispatch_id"])
     assert result["ok"] is False
     assert result["exit_code"] == 7
@@ -95,7 +95,7 @@ def test_dispatch_nonzero_exit(
 
 
 def test_dispatch_missing_project(fake_home: Path) -> None:
-    r = server.dispatch("no-such-project", "x")
+    r = server.dispatch("no-such-project", "x", bypass=True)
     assert r["ok"] is False
     assert "unknown project" in r["error"]
 
@@ -106,7 +106,7 @@ def test_dispatch_adapter_without_exec(
     cwd = tmp_path / "cwd"
     cwd.mkdir()
     registry.add_project(name="shellproj", path_=str(cwd), agent="shell")
-    r = server.dispatch("shellproj", "x")
+    r = server.dispatch("shellproj", "x", bypass=True)
     assert r["ok"] is False
     assert "exec mode" in r["error"]
 
@@ -114,7 +114,7 @@ def test_dispatch_adapter_without_exec(
 def test_dispatch_missing_cwd(fake_home: Path, tmp_path: Path) -> None:
     missing = tmp_path / "does-not-exist"
     registry.add_project(name="ghost", path_=str(missing), agent="claude")
-    r = server.dispatch("ghost", "x")
+    r = server.dispatch("ghost", "x", bypass=True)
     assert r["ok"] is False
     assert "does not exist" in r["error"]
 
@@ -126,7 +126,7 @@ def test_cancel_dispatch(
         monkeypatch,
         lambda p: [sys.executable, "-c", "import time; time.sleep(30)"],
     )
-    r = server.dispatch(stub_project, "x")
+    r = server.dispatch(stub_project, "x", bypass=True)
     time.sleep(0.2)
     rc = server.cancel_dispatch(r["dispatch_id"])
     assert rc["ok"] is True
@@ -139,7 +139,7 @@ def test_list_dispatches(
     stub_project: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _install_stub(monkeypatch, lambda p: [sys.executable, "-c", f"print({p!r})"])
-    r = server.dispatch(stub_project, "test-list")
+    r = server.dispatch(stub_project, "test-list", bypass=True)
     _wait_for_complete(r["dispatch_id"])
     listing = server.list_dispatches()
     ids = [d["dispatch_id"] for d in listing]

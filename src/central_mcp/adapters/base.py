@@ -35,46 +35,48 @@ class Adapter:
         """
         return " ".join(self.launch)
 
-    def exec_argv(self, prompt: str, *, resume: bool = True) -> list[str] | None:
+    def exec_argv(self, prompt: str, *, resume: bool = True, bypass: bool = False) -> list[str] | None:
         """Return argv for a one-shot non-interactive invocation.
 
         Override in subclasses. Return None if this adapter does not
-        support non-interactive dispatch.
+        support non-interactive dispatch. When bypass=True, append the
+        agent's permission-skip flag if it has one.
         """
         return None
 
 
 class _Claude(Adapter):
-    def exec_argv(self, prompt: str, *, resume: bool = True) -> list[str] | None:
+    def exec_argv(self, prompt: str, *, resume: bool = True, bypass: bool = False) -> list[str] | None:
         argv = ["claude", "-p", prompt]
         if resume:
-            # --continue resumes the most recent conversation in the
-            # subprocess's working directory, which for us is always the
-            # project's own cwd. This keeps multi-turn context implicit
-            # without forcing the registry to track a session-id per project.
             argv.append("--continue")
+        if bypass:
+            argv.append("--dangerously-skip-permissions")
         return argv
 
 
 class _Codex(Adapter):
-    def exec_argv(self, prompt: str, *, resume: bool = True) -> list[str] | None:
-        # `codex exec` is codex's one-shot mode. Codex's resume semantics
-        # require explicit session IDs and don't compose cleanly with
-        # `exec`, so dispatches are stateless for now — each call starts
-        # a fresh codex context in the project's cwd.
-        return ["codex", "exec", prompt]
+    def exec_argv(self, prompt: str, *, resume: bool = True, bypass: bool = False) -> list[str] | None:
+        argv = ["codex", "exec", prompt]
+        if bypass:
+            argv.append("--dangerously-bypass-approvals-and-sandbox")
+        return argv
 
 
 class _Gemini(Adapter):
-    def exec_argv(self, prompt: str, *, resume: bool = True) -> list[str] | None:
-        return ["gemini", "-p", prompt]
+    def exec_argv(self, prompt: str, *, resume: bool = True, bypass: bool = False) -> list[str] | None:
+        argv = ["gemini", "-p", prompt]
+        if bypass:
+            argv.append("--yolo")
+        return argv
 
 
 class _Cursor(Adapter):
-    def exec_argv(self, prompt: str, *, resume: bool = True) -> list[str] | None:
+    def exec_argv(self, prompt: str, *, resume: bool = True, bypass: bool = False) -> list[str] | None:
         argv = ["cursor-agent", "-p", prompt]
         if resume:
             argv.append("--resume")
+        # cursor-agent has no known bypass flag yet
         return argv
 
 

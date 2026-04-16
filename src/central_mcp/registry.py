@@ -27,6 +27,7 @@ class Project:
     agent: str = "claude"
     description: str = ""
     tags: list[str] | None = None
+    bypass: bool | None = None  # None = not yet decided
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -35,6 +36,7 @@ class Project:
             "agent": self.agent,
             "description": self.description,
             "tags": self.tags or [],
+            "bypass": self.bypass,
         }
 
 
@@ -56,12 +58,14 @@ def _write_raw(data: dict[str, Any], path: Path | None = None) -> None:
 
 
 def _project_from_raw(p: dict[str, Any]) -> Project:
+    raw_bypass = p.get("bypass")
     return Project(
         name=p["name"],
         path=p["path"],
         agent=p.get("agent", "claude"),
         description=p.get("description", ""),
         tags=list(p.get("tags") or []),
+        bypass=bool(raw_bypass) if raw_bypass is not None else None,
     )
 
 
@@ -103,6 +107,22 @@ def add_project(
     data["projects"] = projects
     _write_raw(data, registry_path)
     return _project_from_raw(entry)
+
+
+def update_project_bypass(
+    name: str,
+    bypass: bool,
+    registry_path: Path | None = None,
+) -> bool:
+    """Set the bypass preference for an existing project. Returns True if found."""
+    data = _read_raw(registry_path)
+    projects = data.get("projects") or []
+    for p in projects:
+        if p.get("name") == name:
+            p["bypass"] = bypass
+            _write_raw(data, registry_path)
+            return True
+    return False
 
 
 def remove_project(
