@@ -93,13 +93,15 @@ dispatch("my-app", "add error handling to auth")
 
 ### Performance tip: use a faster model for the orchestrator
 
-The orchestrator's job is just routing — it doesn't need top-tier reasoning. Switching to a faster model cuts per-turn latency dramatically while the sub-agents (which do the actual work) stay on the best available model:
+The orchestrator's job is just routing — it doesn't need top-tier reasoning. Switching to a lighter/faster model cuts per-turn latency dramatically while the sub-agents (which do the actual work) stay on the best available model:
 
 | Orchestrator client | Tip |
 |---|---|
-| Claude Code | Switch to Sonnet (`/model sonnet`). ~1-2s/turn vs ~5-8s on Opus. |
-| Codex CLI | Already uses a fast model by default — no change needed. |
-| Gemini CLI | Already fast by default — no change needed. |
+| Claude Code | `/model sonnet` — ~1-2s/turn vs ~5-8s on Opus |
+| Codex CLI | Use a lighter model (e.g. `-spark` variant) via `/model` or `config.toml` |
+| Gemini CLI | Use Flash instead of Pro if available via model config |
+
+The sub-agent model is independent — each `dispatch` spawns its own process with whatever model the project's agent defaults to.
 
 ## CLI reference
 
