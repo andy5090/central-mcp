@@ -94,7 +94,7 @@ dispatch("my-app", "add error handling to auth")
 | `claude` | `claude -p "<prompt>" --continue` (resumes cwd conversation) |
 | `codex` | `codex exec "<prompt>"` (stateless) |
 | `gemini` | `gemini -p "<prompt>"` (stateless) |
-| `cursor` | `cursor-agent -p "<prompt>" --resume` (resumes last session) |
+| `cursor` | _(tmux observation only — cursor-agent requires interactive TTY)_ |
 
 ### Performance tip: use a faster model for the orchestrator
 
