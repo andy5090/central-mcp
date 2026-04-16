@@ -75,6 +75,78 @@ class TestKillAll:
         assert "no session" in msg.lower()
 
 
+class TestPaneDetails:
+    """Verify pane count, cwd, and render integrity."""
+
+    def test_pane_count_matches_projects(self, fake_home: Path, tmp_path: Path) -> None:
+        for i in range(3):
+            d = tmp_path / f"proj-{i}"
+            d.mkdir()
+            registry.add_project(f"proj-{i}", str(d), agent="shell")
+
+        layout.ensure_session()
+        r = tmux._run([
+            "list-panes", "-t", f"{layout.SESSION}:{layout.WINDOW}",
+            "-F", "#{pane_index}",
+        ])
+        assert r.ok
+        pane_count = len(r.stdout.strip().splitlines())
+        assert pane_count == 3
+
+    def test_pane_cwd_matches_project_path(self, fake_home: Path, tmp_path: Path) -> None:
+        d = tmp_path / "my-proj"
+        d.mkdir()
+        registry.add_project("my-proj", str(d), agent="shell")
+
+        layout.ensure_session()
+        r = tmux._run([
+            "list-panes", "-t", f"{layout.SESSION}:{layout.WINDOW}",
+            "-F", "#{pane_current_path}",
+        ])
+        assert r.ok
+        # Resolve both to handle /private/tmp vs /tmp on macOS
+        actual = Path(r.stdout.strip().splitlines()[0]).resolve()
+        expected = d.resolve()
+        assert actual == expected
+
+    def test_capture_pane_no_garbled_output(self, fake_home: Path, tmp_path: Path) -> None:
+        """Capture the pane viewport and check for common corruption markers."""
+        d = tmp_path / "proj"
+        d.mkdir()
+        registry.add_project("proj", str(d), agent="shell")
+
+        layout.ensure_session()
+        import time
+        time.sleep(0.3)  # let shell prompt render
+
+        r = tmux._run([
+            "capture-pane", "-p", "-t", f"{layout.SESSION}:{layout.WINDOW}.0",
+        ])
+        assert r.ok
+        text = r.stdout
+        # No raw escape sequences should leak into the captured viewport
+        assert "\x1b" not in text, f"raw escape sequence in pane output: {text[:200]}"
+        # No NUL bytes
+        assert "\x00" not in text
+
+    def test_multiple_panes_have_tiled_layout(self, fake_home: Path, tmp_path: Path) -> None:
+        for i in range(2):
+            d = tmp_path / f"p{i}"
+            d.mkdir()
+            registry.add_project(f"p{i}", str(d), agent="shell")
+
+        layout.ensure_session()
+        r = tmux._run([
+            "list-windows", "-t", layout.SESSION,
+            "-F", "#{window_layout}",
+        ])
+        assert r.ok
+        # tiled layout produces a specific pattern; at minimum confirm
+        # there's a layout string (not empty)
+        layout_str = r.stdout.strip().splitlines()[0]
+        assert len(layout_str) > 5  # e.g. "a1b2,80x24,0,0{40x24,0,0,1,39x24,41,0,2}"
+
+
 class TestUpDown:
     def test_up_then_down(self, fake_home: Path, tmp_path: Path) -> None:
         d = tmp_path / "proj"
