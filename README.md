@@ -60,7 +60,7 @@ Inside the orchestrator session, speak naturally:
 The orchestrator calls `dispatch` for each request and **continues the conversation immediately** — you don't wait. Results arrive through two channels:
 
 - **Background poll (best-effort):** a subagent polls `check_dispatch` every 3 seconds and reports automatically when done.
-- **User-driven check (100% reliable):** ask "결과는?" / "any updates?" anytime, and the orchestrator calls `check_dispatch` or `list_dispatches` directly.
+- **User-driven check (100% reliable):** ask "any updates?" anytime, and the orchestrator calls `check_dispatch` or `list_dispatches` directly.
 
 Multiple dispatches run in parallel.
 
