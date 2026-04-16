@@ -94,13 +94,13 @@ dispatch("my-app", "add error handling to auth")
 
 ### Supported agents
 
-| Agent | Non-interactive invocation | Bypass flag |
-|---|---|---|
-| `claude` | `claude -p "<prompt>" --continue` | `--dangerously-skip-permissions` |
-| `codex` | `codex exec "<prompt>"` | `--dangerously-bypass-approvals-and-sandbox` |
-| `gemini` | `gemini -p "<prompt>"` | `--yolo` |
-| `droid` | `droid exec "<prompt>"` | `--skip-permissions-unsafe` |
-| `amp` | `amp -x "<prompt>"` | `--dangerously-allow-all` (precedes `-x`) |
+| Agent | Non-interactive invocation | Bypass flag | Notes |
+|---|---|---|---|
+| `claude` | `claude -p "<prompt>" --continue` | `--dangerously-skip-permissions` | |
+| `codex` | `codex exec "<prompt>"` | `--dangerously-bypass-approvals-and-sandbox` | |
+| `gemini` | `gemini -p "<prompt>"` | `--yolo` | |
+| `droid` | `droid exec "<prompt>"` | `--skip-permissions-unsafe` | |
+| `amp` | `amp -x "<prompt>"` | `--dangerously-allow-all` (precedes `-x`) | **Paid plan only** — `amp -x` is rejected on Amp Free with "Execute mode ... require paid credits". Pair with `fallback=["claude"]` etc. so free users degrade gracefully. |
 
 Agent names are validated at registration time — typos like `cursor-agent` are caught immediately, not at dispatch time.
 

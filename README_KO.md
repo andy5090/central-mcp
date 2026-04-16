@@ -94,13 +94,13 @@ dispatch("my-app", "auth에 에러 핸들링 추가")
 
 ### 지원 에이전트
 
-| 에이전트 | 비인터랙티브 호출 | bypass 플래그 |
-|---|---|---|
-| `claude` | `claude -p "<프롬프트>" --continue` | `--dangerously-skip-permissions` |
-| `codex` | `codex exec "<프롬프트>"` | `--dangerously-bypass-approvals-and-sandbox` |
-| `gemini` | `gemini -p "<프롬프트>"` | `--yolo` |
-| `droid` | `droid exec "<프롬프트>"` | `--skip-permissions-unsafe` |
-| `amp` | `amp -x "<프롬프트>"` | `--dangerously-allow-all` (-x 앞에 위치) |
+| 에이전트 | 비인터랙티브 호출 | bypass 플래그 | 비고 |
+|---|---|---|---|
+| `claude` | `claude -p "<프롬프트>" --continue` | `--dangerously-skip-permissions` | |
+| `codex` | `codex exec "<프롬프트>"` | `--dangerously-bypass-approvals-and-sandbox` | |
+| `gemini` | `gemini -p "<프롬프트>"` | `--yolo` | |
+| `droid` | `droid exec "<프롬프트>"` | `--skip-permissions-unsafe` | |
+| `amp` | `amp -x "<프롬프트>"` | `--dangerously-allow-all` (-x 앞에 위치) | **유료 플랜 전용** — `amp -x`는 Amp Free에서 "Execute mode ... require paid credits"로 거부됨. 무료 유저는 `fallback=["claude"]` 등으로 우회 가능. |
 
 에이전트 이름은 등록 시점에 검증됩니다 — `cursor-agent` 같은 오타는 dispatch 시점이 아니라 즉시 잡힙니다.
 
