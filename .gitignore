@@ -13,3 +13,4 @@ logs/
 # Per-user state — registry is scaffolded by `central-mcp init`, never committed.
 registry.yaml
 docs/feedback.md
+.omx/
