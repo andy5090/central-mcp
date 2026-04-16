@@ -71,27 +71,11 @@ class _Gemini(Adapter):
         return argv
 
 
-class _Cursor(Adapter):
-    # cursor-agent's Ink-based TUI crashes without a real TTY. Setting
-    # CI=true + TERM=dumb suppresses the Ink renderer so -p (print mode)
-    # works headlessly. --trust is required to skip the interactive
-    # workspace-trust prompt.
-    exec_env: dict[str, str] | None = None
+# cursor-agent requires a real TTY (Ink's stdin.setRawMode). Even with
+# -p mode and CI=true/TERM=dumb, behavior is non-deterministic across
+# environments. Dispatch not supported — use tmux observation layer.
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        self.exec_env = {"CI": "true", "TERM": "dumb"}
-
-    def exec_argv(self, prompt: str, *, resume: bool = True, bypass: bool = False) -> list[str] | None:
-        argv = ["cursor-agent", "-p", prompt, "--output-format", "text", "--trust"]
-        if resume:
-            argv.append("--resume")
-        if bypass:
-            argv.append("--yolo")
-        return argv
-
-
-_cursor = _Cursor("cursor", launch=("cursor-agent",), has_exec=True)
+_cursor = Adapter("cursor", launch=("cursor-agent",), has_exec=False)
 
 _ADAPTERS: dict[str, Adapter] = {
     "claude": _Claude("claude", launch=("claude",), has_exec=True),
