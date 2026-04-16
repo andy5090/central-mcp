@@ -44,6 +44,38 @@ def install(client: str, *, dry_run: bool = False) -> int:
     return 1
 
 
+def ensure_codex_trust(project_path: str) -> str | None:
+    """Add a trusted project entry to ~/.codex/config.toml if missing.
+
+    Returns a status message, or None if nothing was needed/possible.
+    Idempotent — re-calling with the same path is a no-op.
+    """
+    cfg = Path.home() / ".codex" / "config.toml"
+    if not cfg.exists():
+        return None  # codex not installed — skip silently
+
+    doc = tomlkit.parse(cfg.read_text())
+    projects = doc.get("projects")
+    if projects is None:
+        projects = tomlkit.table(is_super_table=True)
+        doc["projects"] = projects
+
+    key = project_path
+    if key in projects:
+        existing = projects[key]
+        if existing.get("trust_level") == "trusted":
+            return f"codex: {key} already trusted"
+        existing["trust_level"] = "trusted"
+    else:
+        entry = tomlkit.table()
+        entry["trust_level"] = "trusted"
+        projects[key] = entry
+
+    bak = _backup(cfg)
+    cfg.write_text(tomlkit.dumps(doc))
+    return f"codex: trusted {key} (backup: {bak})"
+
+
 def _install_claude(*, dry_run: bool) -> int:
     # --scope user registers the MCP server under the user profile instead
     # of the local/project scope of the caller's cwd. Without this flag the

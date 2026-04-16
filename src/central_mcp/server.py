@@ -299,8 +299,9 @@ def add_project(
     """Append a project to registry.yaml.
 
     Registration is immediate. The agent is not spawned until the next
-    `dispatch_query` — there is no tmux pane to boot, no background
-    process to supervise.
+    `dispatch` call. If the agent is `codex`, also adds a trusted-
+    directory entry to `~/.codex/config.toml` so `codex exec` doesn't
+    refuse to run in that path.
     """
     try:
         proj = _registry_add(
@@ -312,7 +313,17 @@ def add_project(
         )
     except ValueError as e:
         return {"ok": False, "error": str(e)}
-    return {"ok": True, "project": proj.to_dict()}
+
+    result: dict[str, Any] = {"ok": True, "project": proj.to_dict()}
+
+    # Auto-trust codex directory so `codex exec` works without manual config.
+    if agent == "codex":
+        from central_mcp.install import ensure_codex_trust
+        trust_msg = ensure_codex_trust(path)
+        if trust_msg:
+            result["codex_trust"] = trust_msg
+
+    return result
 
 
 @mcp.tool()
