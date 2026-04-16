@@ -4,7 +4,7 @@ This directory is **central-mcp**, a multi-project orchestration hub. If you are
 
 ## What central-mcp is
 
-An MCP server that manages a registry of coding-agent projects. Every `dispatch_query` call spawns the configured agent CLI as a one-shot non-interactive subprocess in the project's working directory and returns its full stdout to you over MCP. There is no long-lived pane to watch or keep alive — each dispatch is a fresh process that runs, writes its response, and exits.
+An MCP server that manages a registry of coding-agent projects. Every `dispatch` call spawns the configured agent CLI as a one-shot non-interactive subprocess in the project's working directory and returns its full stdout to you over MCP. There is no long-lived pane to watch or keep alive — each dispatch is a fresh process that runs, writes its response, and exits.
 
 ## How to use it
 
@@ -12,20 +12,20 @@ When the user mentions "my projects", status, or dispatching work, call the `cen
 
 - `list_projects` — see what projects this hub manages
 - `project_status` — the registry entry for one project (metadata only)
-- `dispatch_query` — **run the agent non-interactively** in the project's cwd and get its response
+- `dispatch` — **run the agent non-interactively** in the project's cwd and get its response
 - `add_project` / `remove_project` — edit the registry
 
-**Default dispatch pattern — use `dispatch_background`, not `dispatch_query`:**
+**Default dispatch pattern — use `dispatch`, not `dispatch`:**
 
-`dispatch_query` blocks the entire conversation until the subprocess exits (often 30–120 seconds). The user cannot type anything while it runs. **Prefer `dispatch_background`** instead:
+`dispatch` blocks the entire conversation until the subprocess exits (often 30–120 seconds). The user cannot type anything while it runs. **Prefer `dispatch`** instead:
 
-1. Call `dispatch_background(name, prompt)` — returns immediately with a `dispatch_id`.
+1. Call `dispatch(name, prompt)` — returns immediately with a `dispatch_id`.
 2. Spawn a **background subagent** (`Agent` tool with `run_in_background=true`) whose sole job is to poll `check_dispatch(dispatch_id)` every 10 seconds until the status is no longer `"running"`, then summarize the result to the user.
 3. Tell the user *"Dispatched to X — I'll report when it's done. What else?"* and continue the conversation.
 
 This way the user can send requests to multiple projects and keep talking while each finishes. Results arrive asynchronously.
 
-Use `dispatch_query` (blocking) only when the user explicitly says "wait" or "don't move on until this is done."
+Use `dispatch` (blocking) only when the user explicitly says "wait" or "don't move on until this is done."
 
 If the user names a project that is not yet registered ("add ~/Projects/new-app"), call `add_project` yourself. Default `agent` to `claude` unless the user specifies otherwise.
 

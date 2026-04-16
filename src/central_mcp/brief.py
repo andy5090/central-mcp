@@ -26,10 +26,10 @@ def render() -> str:
         lines.append(f"- **{p.name}** (`{p.agent}`) — `{p.path}`{desc}{tags}")
     lines += [
         "",
-        "MCP tools: `list_projects`, `project_status`, `dispatch_query`, "
+        "MCP tools: `list_projects`, `project_status`, `dispatch`, "
         "`add_project`, `remove_project`.",
         "",
-        "dispatch_query runs the agent non-interactively in the project's cwd "
+        "dispatch runs the agent non-interactively in the project's cwd "
         "and returns its full stdout as `output`.",
     ]
     return "\n".join(lines)

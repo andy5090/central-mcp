@@ -47,37 +47,23 @@ instead:
 
   - list_projects    — enumerate the registry
   - project_status   — registry info for one project
-  - dispatch_query       — run a one-shot non-interactive agent in the
-                          project's cwd and return its full stdout (SYNC)
-  - dispatch_background  — same but NON-BLOCKING: returns a dispatch_id
-  - check_dispatch        — poll a background dispatch (running / done)
-  - list_dispatches       — show all active + recently completed dispatches
-  - cancel_dispatch       — abort a running background dispatch
-  - add_project           — register a new project
-  - remove_project        — unregister a project
+  - dispatch          — run a one-shot agent in the project's cwd.
+                        NON-BLOCKING: returns a dispatch_id immediately.
+  - check_dispatch    — poll a dispatch (running / complete / error)
+  - list_dispatches   — show all active + recently completed dispatches
+  - cancel_dispatch   — abort a running dispatch
+  - add_project       — register a new project
+  - remove_project    — unregister a project
 
-**PREFERRED DISPATCH PATTERN — use dispatch_background, not dispatch_query:**
+dispatch is NON-BLOCKING. It spawns the agent as a subprocess and
+returns a dispatch_id instantly (<100ms). To get the result:
 
-dispatch_query blocks the entire conversation until the subprocess
-finishes (often 30–120 seconds). During that time the user cannot
-type anything. Prefer dispatch_background instead:
-
-  1. Call dispatch_background(name, prompt) — returns immediately with
-     a dispatch_id.
+  1. Call dispatch(name, prompt) → returns dispatch_id.
   2. Spawn a BACKGROUND subagent (Agent tool with run_in_background=true
-     in Claude Code, or equivalent) whose sole job is to poll
-     check_dispatch(dispatch_id) every 10 seconds until status is no
-     longer "running", then report the result.
+     in Claude Code, or equivalent) to poll check_dispatch(dispatch_id)
+     every 10 seconds until status is no longer "running", then report.
   3. Tell the user "dispatched to <project>, I'll report when it's done"
-     and CONTINUE the conversation. Accept the next request without
-     waiting.
-
-This way the user can fire off requests to multiple projects and keep
-talking while each runs. Results arrive asynchronously via the
-background subagent.
-
-Use dispatch_query (synchronous) ONLY when the user explicitly says
-"wait for the result" or "don't move on until this is done."
+     and CONTINUE the conversation.
 
 If the user mentions a project path that is not yet registered
 ("add ~/Projects/foo"), call add_project yourself; do not tell the user
@@ -118,104 +104,24 @@ def project_status(name: str) -> dict[str, Any]:
 
 
 @mcp.tool()
-def dispatch_query(
+def dispatch(
     name: str,
     prompt: str,
     resume: bool = True,
     timeout: float = 600.0,
 ) -> dict[str, Any]:
-    """Run the project's agent non-interactively and return its response.
+    """Dispatch a prompt to the project's agent. NON-BLOCKING.
 
-    Spawns a one-shot subprocess using the adapter's `exec_argv`:
-      - claude: `claude -p <prompt> [--continue]`
-      - codex:  `codex exec <prompt>`
-      - gemini: `gemini -p <prompt>`
+    Spawns a one-shot subprocess (e.g. `claude -p "..." --continue`) in the
+    project's cwd and returns immediately with a dispatch_id (<100ms).
+    The subprocess runs in a background thread.
 
-    Runs with `cwd` set to the project path so Claude's `--continue`
-    picks up the most recent conversation for that directory. Captures
-    stdout and stderr, then returns the result to the orchestrator. The
-    orchestrator should read `output` and relay it to the user.
+    To get the result, poll `check_dispatch(dispatch_id)` — when status is
+    no longer "running", the full output is available. Use `cancel_dispatch`
+    to abort, `list_dispatches` to see everything in flight.
 
-    Parameters:
-      - name: registry identifier of the target project
-      - prompt: the natural-language request for the sub-agent
-      - resume: if True (default), resume prior session state when the
-                adapter supports it (claude's --continue flag). Set
-                False to force a fresh context.
-      - timeout: seconds to wait before killing the subprocess
-    """
-    project, err = _require_project(name)
-    if err:
-        return err
-
-    adapter = get_adapter(project.agent)
-    argv = adapter.exec_argv(prompt, resume=resume)
-    if argv is None:
-        return {
-            "ok": False,
-            "error": (
-                f"adapter {project.agent!r} has no non-interactive exec mode; "
-                "dispatch_query needs an adapter that supports one-shot mode "
-                "(claude/codex/gemini)"
-            ),
-        }
-
-    cwd = Path(project.path)
-    if not cwd.is_dir():
-        return {
-            "ok": False,
-            "error": f"project cwd {project.path!r} does not exist or is not a directory",
-        }
-
-    started = time.time()
-    try:
-        completed = subprocess.run(
-            argv,
-            cwd=str(cwd),
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-    except FileNotFoundError:
-        return {
-            "ok": False,
-            "error": f"agent binary {argv[0]!r} not found on PATH",
-        }
-    except subprocess.TimeoutExpired as exc:
-        return {
-            "ok": False,
-            "error": f"timeout after {timeout}s",
-            "partial_output": scrub(exc.stdout or "", ansi=True, secrets=True),
-            "partial_stderr": scrub(exc.stderr or "", ansi=True, secrets=True),
-        }
-
-    duration = round(time.time() - started, 1)
-    return {
-        "ok": completed.returncode == 0,
-        "project": project.name,
-        "agent": project.agent,
-        "exit_code": completed.returncode,
-        "duration_sec": duration,
-        "output": scrub(completed.stdout, ansi=True, secrets=True),
-        "stderr": scrub(completed.stderr, ansi=True, secrets=True),
-        "command": " ".join(argv),
-    }
-
-
-@mcp.tool()
-def dispatch_background(
-    name: str,
-    prompt: str,
-    resume: bool = True,
-    timeout: float = 600.0,
-) -> dict[str, Any]:
-    """Like dispatch_query but NON-BLOCKING. Returns immediately with a
-    dispatch_id. Use check_dispatch(dispatch_id) to poll for the result.
-
-    Ideal for parallel work: call dispatch_background on multiple projects,
-    then iterate with check_dispatch until each completes. Each dispatch is
-    an independent subprocess.
+    The orchestrator should spawn a background subagent to handle the
+    polling and report, so the main conversation stays unblocked.
     """
     project, err = _require_project(name)
     if err:
