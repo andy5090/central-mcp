@@ -91,9 +91,15 @@ dispatch("my-app", "add error handling to auth")
 | `gemini` | `gemini -p "<prompt>"` (stateless) |
 | `cursor` | (not yet supported) |
 
-### Performance tip: orchestrator as Sonnet
+### Performance tip: use a faster model for the orchestrator
 
-The orchestrator's job is just routing — it doesn't need Opus-level reasoning. Switching to Sonnet (`/model sonnet` inside Claude Code) cuts per-turn latency from ~5-8s to ~1-2s while the sub-agents (which do the actual work) can stay on Opus.
+The orchestrator's job is just routing — it doesn't need top-tier reasoning. Switching to a faster model cuts per-turn latency dramatically while the sub-agents (which do the actual work) stay on the best available model:
+
+| Orchestrator client | Recommended model | How to switch |
+|---|---|---|
+| Claude Code | Sonnet (`/model sonnet`) | ~1-2s/turn vs ~5-8s on Opus |
+| Codex CLI | `gpt-5.3-codex-spark` (default) | already fast |
+| Gemini CLI | (default) | already fast |
 
 ## CLI reference
 
