@@ -70,11 +70,19 @@ class _Gemini(Adapter):
         return ["gemini", "-p", prompt]
 
 
+class _Cursor(Adapter):
+    def exec_argv(self, prompt: str, *, resume: bool = True) -> list[str] | None:
+        argv = ["cursor-agent", "-p", prompt]
+        if resume:
+            argv.append("--resume")
+        return argv
+
+
 _ADAPTERS: dict[str, Adapter] = {
     "claude": _Claude("claude", launch=("claude",), has_exec=True),
     "codex": _Codex("codex", launch=("codex",), has_exec=True),
     "gemini": _Gemini("gemini", launch=("gemini",), has_exec=True),
-    "cursor": Adapter("cursor", launch=("cursor-agent",), has_exec=False),
+    "cursor": _Cursor("cursor", launch=("cursor-agent",), has_exec=True),
     "shell": Adapter("shell", launch=(), has_exec=False),
 }
 
