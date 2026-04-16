@@ -56,12 +56,28 @@ instead:
   - add_project           — register a new project
   - remove_project        — unregister a project
 
-For SINGLE-PROJECT requests, prefer dispatch_query — it blocks, returns
-the full response, and you can relay it to the user in the same turn.
+**PREFERRED DISPATCH PATTERN — use dispatch_background, not dispatch_query:**
 
-For PARALLEL requests ("do A on project-1 AND B on project-2"), use
-dispatch_background for each, then poll with check_dispatch until they
-complete. Report each result as it arrives.
+dispatch_query blocks the entire conversation until the subprocess
+finishes (often 30–120 seconds). During that time the user cannot
+type anything. Prefer dispatch_background instead:
+
+  1. Call dispatch_background(name, prompt) — returns immediately with
+     a dispatch_id.
+  2. Spawn a BACKGROUND subagent (Agent tool with run_in_background=true
+     in Claude Code, or equivalent) whose sole job is to poll
+     check_dispatch(dispatch_id) every 10 seconds until status is no
+     longer "running", then report the result.
+  3. Tell the user "dispatched to <project>, I'll report when it's done"
+     and CONTINUE the conversation. Accept the next request without
+     waiting.
+
+This way the user can fire off requests to multiple projects and keep
+talking while each runs. Results arrive asynchronously via the
+background subagent.
+
+Use dispatch_query (synchronous) ONLY when the user explicitly says
+"wait for the result" or "don't move on until this is done."
 
 If the user mentions a project path that is not yet registered
 ("add ~/Projects/foo"), call add_project yourself; do not tell the user

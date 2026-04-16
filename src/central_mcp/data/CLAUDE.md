@@ -15,7 +15,17 @@ When the user mentions "my projects", status, or dispatching work, call the `cen
 - `dispatch_query` — **run the agent non-interactively** in the project's cwd and get its response
 - `add_project` / `remove_project` — edit the registry
 
-`dispatch_query` is SYNCHRONOUS. It blocks until the subprocess exits (or the timeout fires) and returns `{ok, output, stderr, exit_code, duration_sec, project, agent, command}`. READ the `output` field and summarize or quote the response to the user in the same turn. Do not say "dispatched" and stop — the response is already in your return value.
+**Default dispatch pattern — use `dispatch_background`, not `dispatch_query`:**
+
+`dispatch_query` blocks the entire conversation until the subprocess exits (often 30–120 seconds). The user cannot type anything while it runs. **Prefer `dispatch_background`** instead:
+
+1. Call `dispatch_background(name, prompt)` — returns immediately with a `dispatch_id`.
+2. Spawn a **background subagent** (`Agent` tool with `run_in_background=true`) whose sole job is to poll `check_dispatch(dispatch_id)` every 10 seconds until the status is no longer `"running"`, then summarize the result to the user.
+3. Tell the user *"Dispatched to X — I'll report when it's done. What else?"* and continue the conversation.
+
+This way the user can send requests to multiple projects and keep talking while each finishes. Results arrive asynchronously.
+
+Use `dispatch_query` (blocking) only when the user explicitly says "wait" or "don't move on until this is done."
 
 If the user names a project that is not yet registered ("add ~/Projects/new-app"), call `add_project` yourself. Default `agent` to `claude` unless the user specifies otherwise.
 
