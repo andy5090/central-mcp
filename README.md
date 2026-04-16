@@ -2,7 +2,7 @@
 
 **Orchestrator-agnostic MCP hub for dispatching to multiple coding agents.**
 
-One MCP server turns any MCP-capable client (Claude Code, Codex CLI, Cursor, Gemini CLI, …) into a control plane for your portfolio of coding-agent projects. Ask in natural language, and the orchestrator routes the request to the right project's agent — non-blocking, with results reported back asynchronously.
+One MCP server turns any MCP-capable client (Claude Code, Codex CLI, Gemini CLI, Droid, Amp, …) into a control plane for your portfolio of coding-agent projects. Ask in natural language, and the orchestrator routes the request to the right project's agent — non-blocking, with results reported back asynchronously.
 
 ## Why
 
@@ -20,8 +20,8 @@ Every dispatch is a fresh subprocess in the project's cwd (e.g. `claude -p "..."
 ## Design principles
 
 1. **Orchestrator-agnostic.** MCP tools are the canonical surface. Any MCP client can be the orchestrator.
-2. **Non-blocking dispatch.** `dispatch` returns a `dispatch_id` in <100ms. A background subagent polls for results. The conversation never freezes.
-3. **Dispatch-router preamble.** The orchestrator is instructed to be a pure router — parse the project name, call `dispatch`, move on. No deliberation about which tool to use, no direct file/shell access. This minimizes LLM reasoning latency to ~1-2 seconds per turn.
+2. **Non-blocking dispatch.** `dispatch` returns a `dispatch_id` in <100ms. Results arrive asynchronously. The conversation never freezes.
+3. **Dispatch-router preamble.** The orchestrator is instructed to be a pure router — parse the project name, call `dispatch`, move on. This minimizes LLM reasoning latency to ~1-2 seconds per turn.
 4. **File-based state.** `registry.yaml` is the single source of truth.
 
 ## Status
@@ -34,7 +34,7 @@ Requires [`uv`](https://docs.astral.sh/uv/). (`tmux` only if you want the option
 
 ```bash
 # 1. Clone and install (editable, dev mode)
-git clone <repo> ~/Projects/central-mcp
+git clone https://github.com/andy5090/central-mcp.git ~/Projects/central-mcp
 cd ~/Projects/central-mcp
 uv tool install --editable .
 
@@ -56,16 +56,17 @@ Inside the orchestrator session, speak naturally:
 - *"Send this to my-app: add error handling to the auth module."*
 - *"Also send to gluecut-dawg: summarize the project structure."*
 
-The orchestrator calls `dispatch` for each request and **continues the conversation immediately** — you don't wait. Results arrive through two channels:
+The orchestrator calls `dispatch` for each request and **continues the conversation immediately** — you don't wait. Results arrive through three channels:
 
+- **Piggyback (automatic):** every MCP tool response includes a `completed_dispatches` array with any results that finished since the last call.
 - **Background poll (best-effort):** a subagent polls `check_dispatch` every 3 seconds and reports automatically when done.
-- **User-driven check (100% reliable):** ask "any updates?" anytime, and the orchestrator calls `check_dispatch` or `list_dispatches` directly.
+- **User-driven check (100% reliable):** ask "any updates?" anytime.
 
 Multiple dispatches run in parallel.
 
 ## MCP tools
 
-`central-mcp` exposes 8 tools under the server name `central`:
+`central-mcp` exposes 9 tools under the server name `central`:
 
 | Tool | Blocking? | Purpose |
 |---|---|---|
@@ -75,7 +76,8 @@ Multiple dispatches run in parallel.
 | `check_dispatch` | sync | Poll a dispatch — `running` / `complete` / `error` with full output. |
 | `list_dispatches` | sync | All active + recently completed dispatches. |
 | `cancel_dispatch` | sync | Abort a running dispatch. |
-| `add_project` | sync | Register a new project. Auto-trusts codex directories. |
+| `dispatch_history` | sync | Persistent history of past dispatches (survives restarts). |
+| `add_project` | sync | Register a new project. Validates agent name. Auto-trusts codex dirs. |
 | `remove_project` | sync | Unregister a project. |
 
 ### How dispatch works
@@ -88,17 +90,37 @@ dispatch("my-app", "add error handling to auth")
   → check_dispatch("a1b2c3d4") → {status: "complete", output: "...", duration_sec: 45}
 ```
 
-| Agent | Non-interactive invocation |
-|---|---|
-| `claude` | `claude -p "<prompt>" --continue` (resumes cwd conversation) |
-| `codex` | `codex exec "<prompt>"` (stateless) |
-| `gemini` | `gemini -p "<prompt>"` (stateless) |
-| `droid` | `droid exec "<prompt>" -r` (resumes last session) |
-| `amp` | `amp -x "<prompt>"` (Sourcegraph Amp execute mode) |
+### Supported agents
+
+| Agent | Non-interactive invocation | Bypass flag |
+|---|---|---|
+| `claude` | `claude -p "<prompt>" --continue` | `--dangerously-skip-permissions` |
+| `codex` | `codex exec "<prompt>"` | `--dangerously-bypass-approvals-and-sandbox` |
+| `gemini` | `gemini -p "<prompt>"` | `--yolo` |
+| `droid` | `droid exec "<prompt>" -r` | `--skip-permissions-unsafe` |
+| `amp` | `amp -x "<prompt>"` | `--no-confirm` |
+
+Agent names are validated at registration time — typos like `cursor-agent` are caught immediately, not at dispatch time.
+
+### Per-project bypass mode
+
+On the first dispatch to a project, central-mcp asks: *"Run with full permissions (bypass) or restricted?"* The choice is saved to `registry.yaml` for all future dispatches. Change it anytime by passing `bypass=true` or `bypass=false` explicitly.
+
+If bypass=false and the agent hits a permission wall, the orchestrator will suggest either re-dispatching with bypass=true or using the tmux observation layer for interactive approval.
+
+### Dispatch history
+
+Every completed dispatch is logged to `~/.central-mcp/history/<project>.jsonl` — survives server restarts. Query with:
+
+```
+dispatch_history()                # last 10 across all projects
+dispatch_history(name="my-app")   # last 10 for one project
+dispatch_history(n=50)            # last 50
+```
 
 ### Performance tip: use a faster model for the orchestrator
 
-The orchestrator's job is just routing — it doesn't need top-tier reasoning. Switching to a lighter/faster model cuts per-turn latency dramatically while the sub-agents (which do the actual work) stay on the best available model:
+The orchestrator's job is just routing — it doesn't need top-tier reasoning:
 
 | Orchestrator client | Tip |
 |---|---|
@@ -114,9 +136,11 @@ The sub-agent model is independent — each `dispatch` spawns its own process wi
 central-mcp                        # no-arg → run MCP server on stdio
 central-mcp serve                  # same, explicit
 central-mcp run [--agent X] [--pick] [--bypass]  # launch orchestrator
+central-mcp install CLIENT         # register with claude | codex
 central-mcp alias [NAME]           # short-name symlink (default: cmcp)
 central-mcp unalias [NAME]
 central-mcp init [PATH]            # scaffold registry.yaml (default: ~/.central-mcp)
+central-mcp add NAME PATH [--agent claude|codex|gemini|droid|amp|shell]
 central-mcp remove NAME
 central-mcp list                   # one-line registry dump
 central-mcp brief                  # orchestrator-ready markdown snapshot
@@ -146,24 +170,17 @@ central-mcp run --agent codex  # one-off override
 $EDITOR ~/.central-mcp/config.toml
 ```
 
-## Permission bypass
-
-```bash
-central-mcp run --bypass
-```
-
-| Agent | Flag appended |
-|---|---|
-| Claude Code | `--dangerously-skip-permissions` |
-| Codex CLI | `--dangerously-bypass-approvals-and-sandbox` |
-| Gemini CLI | `--yolo` |
-| Droid (Factory) | `--skip-permissions-unsafe` |
-| Amp (Sourcegraph) | `--no-confirm` |
-
 ## Environment variables
 
 - `CENTRAL_MCP_HOME` — user-state dir (default: `~/.central-mcp`)
 - `CENTRAL_MCP_REGISTRY` — registry path override
+
+## Development
+
+```bash
+uv tool install --editable .
+uv run --group dev pytest      # 77 tests (adapters, dispatch, CLI e2e, tmux, registry, scrub)
+```
 
 ## License
 
