@@ -49,7 +49,6 @@ def _read_packaged(name: str) -> str:
 ORCHESTRATORS: list[tuple[str, str, str]] = [
     ("claude", "claude", "Claude Code"),
     ("codex", "codex", "Codex CLI"),
-    ("cursor", "cursor-agent", "Cursor Agent"),
     ("gemini", "gemini", "Gemini CLI"),
 ]
 
@@ -151,7 +150,7 @@ def cmd_init(args: argparse.Namespace) -> int:
 
     print()
     print("Next steps:")
-    print("  1. central-mcp install claude     # or codex, cursor")
+    print("  1. central-mcp install claude     # or codex")
     print("  2. Start that client and add projects in natural language, e.g.:")
     print('     "Add ~/Projects/my-app to the hub, agent=claude."')
     return 0
@@ -347,7 +346,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     if not installed:
         print(
             "error: no supported coding-agent CLI detected on PATH.\n"
-            "       install one of: claude, codex, cursor-agent, gemini",
+            "       install one of: claude, codex, gemini",
             file=sys.stderr,
         )
         return 1

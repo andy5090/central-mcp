@@ -251,7 +251,7 @@ def dispatch(
             "ok": False,
             "error": (
                 f"adapter {project.agent!r} has no non-interactive exec mode. "
-                "Supported agents for dispatch: claude, codex, gemini, cursor. "
+                "Supported agents for dispatch: claude, codex, gemini. "
                 "If the project was registered with a wrong agent name, call "
                 "remove_project then add_project with the correct agent."
             ),
@@ -279,7 +279,7 @@ def dispatch(
 
     def _run_bg() -> None:
         try:
-            # Merge adapter-specific env vars (e.g. cursor's CI=true TERM=dumb)
+            # Merge adapter-specific env vars if present
             # into the current environment so the subprocess inherits PATH etc.
             import os as _os
             env = _os.environ.copy()

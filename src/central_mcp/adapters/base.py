@@ -71,22 +71,14 @@ class _Gemini(Adapter):
         return argv
 
 
-# cursor-agent requires a real TTY (Ink's stdin.setRawMode). Even with
-# -p mode and CI=true/TERM=dumb, behavior is non-deterministic across
-# environments. Dispatch not supported — use tmux observation layer.
-
-_cursor = Adapter("cursor", launch=("cursor-agent",), has_exec=False)
-
 _ADAPTERS: dict[str, Adapter] = {
     "claude": _Claude("claude", launch=("claude",), has_exec=True),
     "codex": _Codex("codex", launch=("codex",), has_exec=True),
     "gemini": _Gemini("gemini", launch=("gemini",), has_exec=True),
-    "cursor": _cursor,
-    "cursor-agent": _cursor,  # common alias — binary name used as agent key
     "shell": Adapter("shell", launch=(), has_exec=False),
 }
 
-VALID_AGENTS = {"claude", "codex", "gemini", "cursor", "shell"}
+VALID_AGENTS = {"claude", "codex", "gemini", "shell"}
 
 
 def get_adapter(name: str) -> Adapter:

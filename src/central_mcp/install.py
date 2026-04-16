@@ -38,8 +38,6 @@ def install(client: str, *, dry_run: bool = False) -> int:
         return _install_claude(dry_run=dry_run)
     if client == "codex":
         return _install_codex(dry_run=dry_run)
-    if client == "cursor":
-        return _install_cursor(dry_run=dry_run)
     print(f"error: unknown client {client!r}", file=sys.stderr)
     return 1
 
@@ -135,33 +133,3 @@ def _install_codex(*, dry_run: bool) -> int:
     return 0
 
 
-def _install_cursor(*, dry_run: bool) -> int:
-    cfg = Path.home() / ".cursor" / "mcp.json"
-    cfg.parent.mkdir(parents=True, exist_ok=True)
-
-    data: dict[str, Any] = {}
-    if cfg.exists():
-        try:
-            data = json.loads(cfg.read_text())
-        except json.JSONDecodeError:
-            print(f"error: {cfg} is not valid JSON", file=sys.stderr)
-            return 1
-
-    servers = data.setdefault("mcpServers", {})
-    entry = {"command": LAUNCH_COMMAND, "args": LAUNCH_ARGS}
-    if servers.get(SERVER_NAME) == entry and not dry_run:
-        _say(f"already registered in {cfg} — no change")
-        return 0
-    servers[SERVER_NAME] = entry
-
-    if dry_run:
-        _say(f"Would write to {cfg}:")
-        _say(json.dumps(data, indent=2))
-        return 0
-
-    if cfg.exists():
-        bak = _backup(cfg)
-        _say(f"backup: {bak}")
-    cfg.write_text(json.dumps(data, indent=2) + "\n")
-    _say(f"updated {cfg}")
-    return 0

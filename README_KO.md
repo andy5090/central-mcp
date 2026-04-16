@@ -44,7 +44,6 @@ central-mcp init
 # 3. MCP 클라이언트에 central-mcp 등록 — 클라이언트당 1회
 central-mcp install claude    # Claude Code MCP 설정에 추가
 central-mcp install codex     # ~/.codex/config.toml 패치
-central-mcp install cursor    # ~/.cursor/mcp.json 패치
 
 # 4. 오케스트레이터 기동
 central-mcp run
@@ -94,7 +93,6 @@ dispatch("my-app", "auth에 에러 핸들링 추가")
 | `claude` | `claude -p "<프롬프트>" --continue` (cwd 대화 재개) |
 | `codex` | `codex exec "<프롬프트>"` (무상태) |
 | `gemini` | `gemini -p "<프롬프트>"` (무상태) |
-| `cursor` | `cursor-agent -p "<프롬프트>" --resume` (마지막 세션 재개) |
 
 ### 성능 팁: 오케스트레이터에 빠른 모델 사용
 
@@ -114,11 +112,9 @@ dispatch("my-app", "auth에 에러 핸들링 추가")
 central-mcp                        # 인자 없음 → stdio에서 MCP 서버 실행
 central-mcp serve                  # 동일, 명시적
 central-mcp run [--agent X] [--pick] [--bypass]  # 오케스트레이터 기동
-central-mcp install CLIENT         # claude | codex | cursor에 등록
 central-mcp alias [NAME]           # 짧은 이름 심링크 (기본: cmcp)
 central-mcp unalias [NAME]
 central-mcp init [PATH]            # registry.yaml 스캐폴드 (기본: ~/.central-mcp)
-central-mcp add NAME PATH [--agent claude|codex|gemini|cursor|shell]
 central-mcp remove NAME
 central-mcp list                   # 한 줄씩 레지스트리 출력
 central-mcp brief                  # 오케스트레이터용 마크다운 스냅샷

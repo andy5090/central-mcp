@@ -44,7 +44,6 @@ central-mcp init
 # 3. Register central-mcp with your MCP client(s) — once per client
 central-mcp install claude    # adds to Claude Code MCP config
 central-mcp install codex     # patches ~/.codex/config.toml
-central-mcp install cursor    # patches ~/.cursor/mcp.json
 
 # 4. Launch the orchestrator
 central-mcp run
@@ -94,7 +93,6 @@ dispatch("my-app", "add error handling to auth")
 | `claude` | `claude -p "<prompt>" --continue` (resumes cwd conversation) |
 | `codex` | `codex exec "<prompt>"` (stateless) |
 | `gemini` | `gemini -p "<prompt>"` (stateless) |
-| `cursor` | _(tmux observation only — cursor-agent requires interactive TTY)_ |
 
 ### Performance tip: use a faster model for the orchestrator
 
@@ -114,11 +112,9 @@ The sub-agent model is independent — each `dispatch` spawns its own process wi
 central-mcp                        # no-arg → run MCP server on stdio
 central-mcp serve                  # same, explicit
 central-mcp run [--agent X] [--pick] [--bypass]  # launch orchestrator
-central-mcp install CLIENT         # register with claude | codex | cursor
 central-mcp alias [NAME]           # short-name symlink (default: cmcp)
 central-mcp unalias [NAME]
 central-mcp init [PATH]            # scaffold registry.yaml (default: ~/.central-mcp)
-central-mcp add NAME PATH [--agent claude|codex|gemini|cursor|shell]
 central-mcp remove NAME
 central-mcp list                   # one-line registry dump
 central-mcp brief                  # orchestrator-ready markdown snapshot

@@ -61,7 +61,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_add.add_argument(
         "--agent",
         default="claude",
-        help="adapter name (claude|codex|gemini|cursor|shell)",
+        help="adapter name (claude|codex|gemini|shell)",
     )
     p_add.add_argument("--description", default="")
     p_add.add_argument("--tag", action="append")
@@ -90,7 +90,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_init.set_defaults(func=cmd_init)
 
     p_install = sub.add_parser("install", help="register central-mcp with an MCP client")
-    p_install.add_argument("client", choices=["claude", "codex", "cursor"])
+    p_install.add_argument("client", choices=["claude", "codex"])
     p_install.add_argument("--dry-run", action="store_true")
     p_install.set_defaults(func=cmd_install)
 
