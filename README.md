@@ -95,11 +95,11 @@ dispatch("my-app", "add error handling to auth")
 
 The orchestrator's job is just routing — it doesn't need top-tier reasoning. Switching to a faster model cuts per-turn latency dramatically while the sub-agents (which do the actual work) stay on the best available model:
 
-| Orchestrator client | Recommended model | How to switch |
-|---|---|---|
-| Claude Code | Sonnet (`/model sonnet`) | ~1-2s/turn vs ~5-8s on Opus |
-| Codex CLI | `gpt-5.3-codex-spark` (default) | already fast |
-| Gemini CLI | (default) | already fast |
+| Orchestrator client | Tip |
+|---|---|
+| Claude Code | Switch to Sonnet (`/model sonnet`). ~1-2s/turn vs ~5-8s on Opus. |
+| Codex CLI | Already uses a fast model by default — no change needed. |
+| Gemini CLI | Already fast by default — no change needed. |
 
 ## CLI reference
 
