@@ -16,7 +16,9 @@ critical path and can be absent entirely.
 from __future__ import annotations
 
 import subprocess
+import threading
 import time
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -45,17 +47,21 @@ instead:
 
   - list_projects    — enumerate the registry
   - project_status   — registry info for one project
-  - dispatch_query   — run a one-shot non-interactive agent in the
-                       project's cwd and return its full stdout
-  - add_project      — register a new project
-  - remove_project   — unregister a project
+  - dispatch_query       — run a one-shot non-interactive agent in the
+                          project's cwd and return its full stdout (SYNC)
+  - dispatch_background  — same but NON-BLOCKING: returns a dispatch_id
+  - check_dispatch        — poll a background dispatch (running / done)
+  - list_dispatches       — show all active + recently completed dispatches
+  - cancel_dispatch       — abort a running background dispatch
+  - add_project           — register a new project
+  - remove_project        — unregister a project
 
-dispatch_query is SYNCHRONOUS: it spawns the agent as a subprocess
-(for example `claude -p "..." --continue` inside the project directory),
-waits for the process to exit, and returns its entire stdout as the
-`output` field of the MCP response. READ that output and summarize or
-quote it back to the user in the same turn — do not say "dispatched"
-and stop. If `ok` is false, report stderr and the exit code.
+For SINGLE-PROJECT requests, prefer dispatch_query — it blocks, returns
+the full response, and you can relay it to the user in the same turn.
+
+For PARALLEL requests ("do A on project-1 AND B on project-2"), use
+dispatch_background for each, then poll with check_dispatch until they
+complete. Report each result as it arrives.
 
 If the user mentions a project path that is not yet registered
 ("add ~/Projects/foo"), call add_project yourself; do not tell the user
@@ -63,6 +69,10 @@ to drop to a shell.
 """
 
 mcp = FastMCP("central-mcp", instructions=_MCP_INSTRUCTIONS)
+
+# ---------- background dispatch state ----------
+_dispatches: dict[str, dict[str, Any]] = {}
+_dispatch_lock = threading.Lock()
 
 
 def _require_project(name: str) -> tuple[Project | None, dict[str, Any] | None]:
@@ -174,6 +184,184 @@ def dispatch_query(
         "stderr": scrub(completed.stderr, ansi=True, secrets=True),
         "command": " ".join(argv),
     }
+
+
+@mcp.tool()
+def dispatch_background(
+    name: str,
+    prompt: str,
+    resume: bool = True,
+    timeout: float = 600.0,
+) -> dict[str, Any]:
+    """Like dispatch_query but NON-BLOCKING. Returns immediately with a
+    dispatch_id. Use check_dispatch(dispatch_id) to poll for the result.
+
+    Ideal for parallel work: call dispatch_background on multiple projects,
+    then iterate with check_dispatch until each completes. Each dispatch is
+    an independent subprocess.
+    """
+    project, err = _require_project(name)
+    if err:
+        return err
+
+    adapter = get_adapter(project.agent)
+    argv = adapter.exec_argv(prompt, resume=resume)
+    if argv is None:
+        return {
+            "ok": False,
+            "error": (
+                f"adapter {project.agent!r} has no non-interactive exec mode; "
+                "use dispatch_query or dispatch_background with claude/codex/gemini only"
+            ),
+        }
+
+    cwd = Path(project.path)
+    if not cwd.is_dir():
+        return {
+            "ok": False,
+            "error": f"project cwd {project.path!r} does not exist",
+        }
+
+    dispatch_id = uuid.uuid4().hex[:8]
+    entry: dict[str, Any] = {
+        "id": dispatch_id,
+        "project": project.name,
+        "agent": project.agent,
+        "command": " ".join(argv),
+        "status": "running",
+        "started": time.time(),
+        "process": None,
+        "result": None,
+    }
+
+    def _run_bg() -> None:
+        try:
+            proc = subprocess.Popen(
+                argv,
+                cwd=str(cwd),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            with _dispatch_lock:
+                entry["process"] = proc
+            try:
+                stdout, stderr = proc.communicate(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                stdout, stderr = proc.communicate()
+                with _dispatch_lock:
+                    entry["status"] = "timeout"
+                    entry["result"] = {
+                        "ok": False,
+                        "error": f"timeout after {timeout}s",
+                        "partial_output": scrub(stdout or "", ansi=True, secrets=True),
+                        "partial_stderr": scrub(stderr or "", ansi=True, secrets=True),
+                    }
+                return
+
+            with _dispatch_lock:
+                entry["status"] = "complete"
+                entry["result"] = {
+                    "ok": proc.returncode == 0,
+                    "exit_code": proc.returncode,
+                    "output": scrub(stdout, ansi=True, secrets=True),
+                    "stderr": scrub(stderr, ansi=True, secrets=True),
+                    "duration_sec": round(time.time() - entry["started"], 1),
+                }
+        except FileNotFoundError:
+            with _dispatch_lock:
+                entry["status"] = "error"
+                entry["result"] = {
+                    "ok": False,
+                    "error": f"agent binary {argv[0]!r} not found on PATH",
+                }
+        except Exception as exc:
+            with _dispatch_lock:
+                entry["status"] = "error"
+                entry["result"] = {"ok": False, "error": str(exc)}
+
+    with _dispatch_lock:
+        _dispatches[dispatch_id] = entry
+
+    t = threading.Thread(target=_run_bg, daemon=True, name=f"dispatch-{dispatch_id}")
+    t.start()
+
+    return {
+        "ok": True,
+        "dispatch_id": dispatch_id,
+        "project": project.name,
+        "agent": project.agent,
+        "command": " ".join(argv),
+        "note": "running in background — poll with check_dispatch(dispatch_id)",
+    }
+
+
+@mcp.tool()
+def check_dispatch(dispatch_id: str) -> dict[str, Any]:
+    """Poll a background dispatch started by dispatch_background.
+
+    Returns `{status: "running", elapsed_sec}` while the subprocess is
+    alive, or the full result (same shape as dispatch_query's return
+    value) once it has exited.
+    """
+    with _dispatch_lock:
+        entry = _dispatches.get(dispatch_id)
+    if entry is None:
+        return {"ok": False, "error": f"no dispatch with id {dispatch_id!r}"}
+    if entry["status"] == "running":
+        return {
+            "ok": True,
+            "status": "running",
+            "dispatch_id": dispatch_id,
+            "project": entry["project"],
+            "elapsed_sec": round(time.time() - entry["started"], 1),
+        }
+    return {
+        "ok": True,
+        "status": entry["status"],
+        "dispatch_id": dispatch_id,
+        "project": entry["project"],
+        **(entry["result"] or {}),
+    }
+
+
+@mcp.tool()
+def list_dispatches() -> list[dict[str, Any]]:
+    """List all active and recently completed background dispatches."""
+    with _dispatch_lock:
+        return [
+            {
+                "dispatch_id": e["id"],
+                "project": e["project"],
+                "agent": e["agent"],
+                "status": e["status"],
+                "elapsed_sec": round(time.time() - e["started"], 1),
+            }
+            for e in _dispatches.values()
+        ]
+
+
+@mcp.tool()
+def cancel_dispatch(dispatch_id: str) -> dict[str, Any]:
+    """Abort a running background dispatch. No-op if already finished."""
+    with _dispatch_lock:
+        entry = _dispatches.get(dispatch_id)
+    if entry is None:
+        return {"ok": False, "error": f"no dispatch with id {dispatch_id!r}"}
+    if entry["status"] != "running":
+        return {
+            "ok": True,
+            "note": f"dispatch already {entry['status']}",
+            "dispatch_id": dispatch_id,
+        }
+    proc = entry.get("process")
+    if proc is not None:
+        proc.terminate()
+    with _dispatch_lock:
+        entry["status"] = "cancelled"
+        entry["result"] = {"ok": False, "error": "cancelled by orchestrator"}
+    return {"ok": True, "cancelled": dispatch_id}
 
 
 @mcp.tool()
