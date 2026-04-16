@@ -105,8 +105,8 @@ def test_dispatch_adapter_without_exec(
 ) -> None:
     cwd = tmp_path / "cwd"
     cwd.mkdir()
-    registry.add_project(name="cursorproj", path_=str(cwd), agent="cursor")
-    r = server.dispatch("cursorproj", "x")
+    registry.add_project(name="shellproj", path_=str(cwd), agent="shell")
+    r = server.dispatch("shellproj", "x")
     assert r["ok"] is False
     assert "exec mode" in r["error"]
 
