@@ -93,6 +93,7 @@ dispatch("my-app", "add error handling to auth")
 | `claude` | `claude -p "<prompt>" --continue` (resumes cwd conversation) |
 | `codex` | `codex exec "<prompt>"` (stateless) |
 | `gemini` | `gemini -p "<prompt>"` (stateless) |
+| `droid` | `droid exec "<prompt>" -r` (resumes last session) |
 
 ### Performance tip: use a faster model for the orchestrator
 
@@ -155,6 +156,7 @@ central-mcp run --bypass
 | Claude Code | `--dangerously-skip-permissions` |
 | Codex CLI | `--dangerously-bypass-approvals-and-sandbox` |
 | Gemini CLI | `--yolo` |
+| Droid (Factory) | `--skip-permissions-unsafe` |
 
 ## Environment variables
 

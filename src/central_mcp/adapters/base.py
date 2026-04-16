@@ -71,14 +71,25 @@ class _Gemini(Adapter):
         return argv
 
 
+class _Droid(Adapter):
+    def exec_argv(self, prompt: str, *, resume: bool = True, bypass: bool = False) -> list[str] | None:
+        argv = ["droid", "exec", prompt]
+        if resume:
+            argv.extend(["-r"])  # resume last session
+        if bypass:
+            argv.append("--skip-permissions-unsafe")
+        return argv
+
+
 _ADAPTERS: dict[str, Adapter] = {
     "claude": _Claude("claude", launch=("claude",), has_exec=True),
     "codex": _Codex("codex", launch=("codex",), has_exec=True),
     "gemini": _Gemini("gemini", launch=("gemini",), has_exec=True),
+    "droid": _Droid("droid", launch=("droid",), has_exec=True),
     "shell": Adapter("shell", launch=(), has_exec=False),
 }
 
-VALID_AGENTS = {"claude", "codex", "gemini", "shell"}
+VALID_AGENTS = {"claude", "codex", "gemini", "droid", "shell"}
 
 
 def get_adapter(name: str) -> Adapter:
