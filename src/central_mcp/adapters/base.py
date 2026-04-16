@@ -18,7 +18,7 @@ doing nothing.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Sequence
+from typing import Any, Sequence
 
 
 @dataclass
@@ -76,9 +76,10 @@ class _Cursor(Adapter):
     # CI=true + TERM=dumb suppresses the Ink renderer so -p (print mode)
     # works headlessly. --trust is required to skip the interactive
     # workspace-trust prompt.
-    exec_env: dict[str, str] = None  # type: ignore[assignment]
+    exec_env: dict[str, str] | None = None
 
-    def __post_init__(self) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
         self.exec_env = {"CI": "true", "TERM": "dumb"}
 
     def exec_argv(self, prompt: str, *, resume: bool = True, bypass: bool = False) -> list[str] | None:
