@@ -1,0 +1,147 @@
+"""End-to-end CLI tests from a user's perspective.
+
+Each test runs `central-mcp <subcommand>` as a real subprocess with
+CENTRAL_MCP_HOME pointed at a temp dir. No mocking, no internal imports
+— just stdin/stdout/exit-code, exactly what a user would see.
+"""
+
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+
+@pytest.fixture
+def cli_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
+    """Return env dict that isolates central-mcp to a throwaway home."""
+    import os
+    env = os.environ.copy()
+    home = tmp_path / "central-mcp-home"
+    env["CENTRAL_MCP_HOME"] = str(home)
+    # Ensure no cwd registry interferes
+    env.pop("CENTRAL_MCP_REGISTRY", None)
+    monkeypatch.chdir(tmp_path)
+    return env
+
+
+def _run(args: list[str], env: dict, timeout: float = 10) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [sys.executable, "-m", "central_mcp", *args],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=timeout,
+    )
+
+
+class TestInit:
+    def test_creates_registry(self, cli_env: dict, tmp_path: Path) -> None:
+        r = _run(["init"], cli_env)
+        assert r.returncode == 0
+        reg = Path(cli_env["CENTRAL_MCP_HOME"]) / "registry.yaml"
+        assert reg.exists()
+        assert "projects: []" in reg.read_text()
+
+    def test_refuses_overwrite(self, cli_env: dict) -> None:
+        _run(["init"], cli_env)
+        r = _run(["init"], cli_env)
+        assert r.returncode == 1
+        assert "already exists" in r.stderr
+
+    def test_force_overwrites(self, cli_env: dict) -> None:
+        _run(["init"], cli_env)
+        r = _run(["init", "--force"], cli_env)
+        assert r.returncode == 0
+
+
+class TestAddRemoveList:
+    def test_add_then_list(self, cli_env: dict, tmp_path: Path) -> None:
+        _run(["init"], cli_env)
+        project_dir = tmp_path / "my-project"
+        project_dir.mkdir()
+        r = _run(["add", "myproj", str(project_dir), "--agent", "claude"], cli_env)
+        assert r.returncode == 0
+        assert "added: myproj" in r.stdout
+
+        r = _run(["list"], cli_env)
+        assert r.returncode == 0
+        assert "myproj" in r.stdout
+        assert "claude" in r.stdout
+
+    def test_remove(self, cli_env: dict, tmp_path: Path) -> None:
+        _run(["init"], cli_env)
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        _run(["add", "proj", str(project_dir)], cli_env)
+        r = _run(["remove", "proj"], cli_env)
+        assert r.returncode == 0
+        assert "removed" in r.stdout
+
+        r = _run(["list"], cli_env)
+        assert "empty" in r.stdout
+
+    def test_remove_nonexistent(self, cli_env: dict) -> None:
+        _run(["init"], cli_env)
+        r = _run(["remove", "ghost"], cli_env)
+        assert r.returncode == 1
+        assert "no project" in r.stderr
+
+    def test_add_duplicate(self, cli_env: dict, tmp_path: Path) -> None:
+        _run(["init"], cli_env)
+        d = tmp_path / "dup"
+        d.mkdir()
+        _run(["add", "dup", str(d)], cli_env)
+        r = _run(["add", "dup", str(d)], cli_env)
+        assert r.returncode == 1
+        assert "already exists" in r.stderr
+
+
+class TestBrief:
+    def test_empty_registry(self, cli_env: dict) -> None:
+        _run(["init"], cli_env)
+        r = _run(["brief"], cli_env)
+        assert r.returncode == 0
+        assert "empty" in r.stdout.lower() or "registered" in r.stdout.lower()
+
+    def test_with_projects(self, cli_env: dict, tmp_path: Path) -> None:
+        _run(["init"], cli_env)
+        d = tmp_path / "proj"
+        d.mkdir()
+        _run(["add", "proj", str(d), "--agent", "codex"], cli_env)
+        r = _run(["brief"], cli_env)
+        assert r.returncode == 0
+        assert "proj" in r.stdout
+        assert "codex" in r.stdout
+
+
+class TestInstall:
+    def test_install_claude_dry_run(self, cli_env: dict) -> None:
+        r = _run(["install", "claude", "--dry-run"], cli_env)
+        assert r.returncode == 0
+        assert "Would run" in r.stdout
+
+    def test_install_codex_dry_run(self, cli_env: dict, tmp_path: Path) -> None:
+        # Create a fake codex config so install has something to patch
+        codex_dir = Path(cli_env.get("HOME", str(tmp_path))) / ".codex"
+        codex_dir.mkdir(parents=True, exist_ok=True)
+        (codex_dir / "config.toml").write_text("[mcp_servers]\n")
+        r = _run(["install", "codex", "--dry-run"], cli_env)
+        assert r.returncode == 0
+
+
+class TestHelp:
+    def test_help_shows_all_subcommands(self, cli_env: dict) -> None:
+        r = _run(["--help"], cli_env)
+        assert r.returncode == 0
+        for cmd in ["serve", "run", "init", "add", "remove", "list", "brief",
+                     "install", "alias", "unalias", "up", "down"]:
+            assert cmd in r.stdout
+
+    def test_add_help(self, cli_env: dict) -> None:
+        r = _run(["add", "--help"], cli_env)
+        assert r.returncode == 0
+        assert "--agent" in r.stdout
