@@ -92,21 +92,19 @@ class TestDroid:
             assert argv[r_idx + 1] != "--skip-permissions-unsafe"
 
 
-class TestAmp:
-    def test_basic(self) -> None:
-        argv = get_adapter("amp").exec_argv("review code")
-        assert argv == ["amp", "-x", "review code"]
+class TestAmpRemoved:
+    """Regression: amp was dropped because Amp Free rejects non-
+    interactive `amp -x`. Make sure nobody silently re-adds it without
+    reading that history."""
 
-    def test_bypass(self) -> None:
-        argv = get_adapter("amp").exec_argv("review code", bypass=True)
-        # Correct flag per `amp --help`: --dangerously-allow-all.
-        # Must come BEFORE -x so -x's optional-value consumes the prompt.
-        assert argv == ["amp", "--dangerously-allow-all", "-x", "review code"]
-        assert "--no-confirm" not in argv  # regression: old typo
+    def test_amp_not_in_valid_agents(self) -> None:
+        assert "amp" not in VALID_AGENTS
 
-    def test_bypass_flag_precedes_execute(self) -> None:
-        argv = get_adapter("amp").exec_argv("x", bypass=True)
-        assert argv.index("--dangerously-allow-all") < argv.index("-x")
+    def test_amp_adapter_falls_back_to_shell(self) -> None:
+        # `get_adapter` returns the shell adapter for any unknown name,
+        # so looking up `amp` should yield has_exec=False.
+        assert get_adapter("amp").has_exec is False
+        assert get_adapter("amp").exec_argv("x") is None
 
 
 class TestShell:

@@ -26,7 +26,7 @@ from central_mcp.adapters.base import get_adapter
 
 pytestmark = pytest.mark.live
 
-AGENTS_UNDER_TEST = ["claude", "codex", "gemini", "droid", "amp"]
+AGENTS_UNDER_TEST = ["claude", "codex", "gemini", "droid"]
 
 
 def _run_help(argv: list[str]) -> str:
@@ -104,9 +104,9 @@ def _skip_if_missing(binary: str) -> None:
 def test_help_contains_our_flags(agent: str) -> None:
     """Every flag our adapter emits with resume+bypass must appear in
     `<binary> --help` (or `<binary> <subcmd> --help`). Catches: flag
-    renamed or removed; adapter typos like `--dangerously-skip-premissions`;
-    wrong flag entirely (amp used `--no-confirm` for years — it never
-    existed; the right flag is `--dangerously-allow-all`)."""
+    renamed or removed; adapter typos; or an entirely fictional flag
+    (a historical bug: the amp adapter shipped with `--no-confirm`,
+    which never existed — the correct flag was `--dangerously-allow-all`)."""
     _skip_if_missing(agent)
     argv = get_adapter(agent).exec_argv("probe", resume=True, bypass=True)
     assert argv is not None

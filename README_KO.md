@@ -2,7 +2,7 @@
 
 **여러 코딩 에이전트를 하나의 허브에서 디스패치하는, 오케스트레이터 비종속 MCP 서버.**
 
-하나의 MCP 서버로 어떤 MCP 클라이언트(Claude Code, Codex CLI, Gemini CLI, Droid, Amp 등)든 여러 코딩 에이전트 프로젝트의 컨트롤 플레인이 됩니다. 자연어로 요청하면 오케스트레이터가 해당 프로젝트의 에이전트에게 작업을 보내고, 논블로킹으로 결과를 비동기 보고합니다.
+하나의 MCP 서버로 어떤 MCP 클라이언트(Claude Code, Codex CLI, Gemini CLI, Droid 등)든 여러 코딩 에이전트 프로젝트의 컨트롤 플레인이 됩니다. 자연어로 요청하면 오케스트레이터가 해당 프로젝트의 에이전트에게 작업을 보내고, 논블로킹으로 결과를 비동기 보고합니다.
 
 ## 왜 필요한가
 
@@ -94,13 +94,12 @@ dispatch("my-app", "auth에 에러 핸들링 추가")
 
 ### 지원 에이전트
 
-| 에이전트 | 비인터랙티브 호출 | bypass 플래그 | 비고 |
-|---|---|---|---|
-| `claude` | `claude -p "<프롬프트>" --continue` | `--dangerously-skip-permissions` | |
-| `codex` | `codex exec "<프롬프트>"` | `--dangerously-bypass-approvals-and-sandbox` | |
-| `gemini` | `gemini -p "<프롬프트>"` | `--yolo` | |
-| `droid` | `droid exec "<프롬프트>"` | `--skip-permissions-unsafe` | |
-| `amp` | `amp -x "<프롬프트>"` | `--dangerously-allow-all` (-x 앞에 위치) | **유료 플랜 전용** — `amp -x`는 Amp Free에서 "Execute mode ... require paid credits"로 거부됨. 무료 유저는 `fallback=["claude"]` 등으로 우회 가능. |
+| 에이전트 | 비인터랙티브 호출 | bypass 플래그 |
+|---|---|---|
+| `claude` | `claude -p "<프롬프트>" --continue` | `--dangerously-skip-permissions` |
+| `codex` | `codex exec "<프롬프트>"` | `--dangerously-bypass-approvals-and-sandbox` |
+| `gemini` | `gemini -p "<프롬프트>"` | `--yolo` |
+| `droid` | `droid exec "<프롬프트>"` | `--skip-permissions-unsafe` |
 
 에이전트 이름은 등록 시점에 검증됩니다 — `cursor-agent` 같은 오타는 dispatch 시점이 아니라 즉시 잡힙니다.
 
@@ -178,7 +177,7 @@ central-mcp install CLIENT         # claude | codex | gemini에 등록
 central-mcp alias [NAME]           # 짧은 이름 심링크 (기본: cmcp)
 central-mcp unalias [NAME]
 central-mcp init [PATH]            # registry.yaml 스캐폴드 (기본: ~/.central-mcp)
-central-mcp add NAME PATH [--agent claude|codex|gemini|droid|amp|shell]
+central-mcp add NAME PATH [--agent claude|codex|gemini|droid|shell]
 central-mcp remove NAME
 central-mcp list                   # 한 줄씩 레지스트리 출력
 central-mcp brief                  # 오케스트레이터용 마크다운 스냅샷
@@ -219,7 +218,7 @@ $EDITOR ~/.central-mcp/config.toml
 uv tool install --editable .
 uv run --group dev pytest             # 97개 단위 테스트 (빠름, 실제 CLI 호출 없음)
 uv run --group dev pytest -m live     # 15개 라이브 테스트 — 실제 에이전트 바이너리
-                                      # (claude/codex/gemini/droid/amp) 호출.
+                                      # (claude/codex/gemini/droid) 호출.
                                       # 해당 바이너리가 PATH에 없으면 자동 skip
 ```
 

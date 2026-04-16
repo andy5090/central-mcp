@@ -83,16 +83,10 @@ class _Droid(Adapter):
         return argv
 
 
-class _Amp(Adapter):
-    def exec_argv(self, prompt: str, *, resume: bool = True, bypass: bool = False) -> list[str] | None:
-        # amp's "skip confirmations" flag is `--dangerously-allow-all`.
-        # Order: the bypass flag must come BEFORE `-x` so that `-x`'s
-        # optional message argument consumes the prompt, not our flag.
-        argv = ["amp"]
-        if bypass:
-            argv.append("--dangerously-allow-all")
-        argv.extend(["-x", prompt])
-        return argv
+# `amp` was previously supported as a dispatch target but has been
+# removed: Amp Free rejects `amp -x` with "Execute mode ... require
+# paid credits", making the adapter unusable for the majority of
+# potential users.
 
 
 _ADAPTERS: dict[str, Adapter] = {
@@ -100,11 +94,10 @@ _ADAPTERS: dict[str, Adapter] = {
     "codex": _Codex("codex", launch=("codex",), has_exec=True),
     "gemini": _Gemini("gemini", launch=("gemini",), has_exec=True),
     "droid": _Droid("droid", launch=("droid",), has_exec=True),
-    "amp": _Amp("amp", launch=("amp",), has_exec=True),
     "shell": Adapter("shell", launch=(), has_exec=False),
 }
 
-VALID_AGENTS = {"claude", "codex", "gemini", "droid", "amp", "shell"}
+VALID_AGENTS = {"claude", "codex", "gemini", "droid", "shell"}
 
 
 def get_adapter(name: str) -> Adapter:

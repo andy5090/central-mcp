@@ -2,7 +2,7 @@
 
 **Orchestrator-agnostic MCP hub for dispatching to multiple coding agents.**
 
-One MCP server turns any MCP-capable client (Claude Code, Codex CLI, Gemini CLI, Droid, Amp, …) into a control plane for your portfolio of coding-agent projects. Ask in natural language, and the orchestrator routes the request to the right project's agent — non-blocking, with results reported back asynchronously.
+One MCP server turns any MCP-capable client (Claude Code, Codex CLI, Gemini CLI, Droid, …) into a control plane for your portfolio of coding-agent projects. Ask in natural language, and the orchestrator routes the request to the right project's agent — non-blocking, with results reported back asynchronously.
 
 ## Why
 
@@ -94,13 +94,12 @@ dispatch("my-app", "add error handling to auth")
 
 ### Supported agents
 
-| Agent | Non-interactive invocation | Bypass flag | Notes |
-|---|---|---|---|
-| `claude` | `claude -p "<prompt>" --continue` | `--dangerously-skip-permissions` | |
-| `codex` | `codex exec "<prompt>"` | `--dangerously-bypass-approvals-and-sandbox` | |
-| `gemini` | `gemini -p "<prompt>"` | `--yolo` | |
-| `droid` | `droid exec "<prompt>"` | `--skip-permissions-unsafe` | |
-| `amp` | `amp -x "<prompt>"` | `--dangerously-allow-all` (precedes `-x`) | **Paid plan only** — `amp -x` is rejected on Amp Free with "Execute mode ... require paid credits". Pair with `fallback=["claude"]` etc. so free users degrade gracefully. |
+| Agent | Non-interactive invocation | Bypass flag |
+|---|---|---|
+| `claude` | `claude -p "<prompt>" --continue` | `--dangerously-skip-permissions` |
+| `codex` | `codex exec "<prompt>"` | `--dangerously-bypass-approvals-and-sandbox` |
+| `gemini` | `gemini -p "<prompt>"` | `--yolo` |
+| `droid` | `droid exec "<prompt>"` | `--skip-permissions-unsafe` |
 
 Agent names are validated at registration time — typos like `cursor-agent` are caught immediately, not at dispatch time.
 
@@ -178,7 +177,7 @@ central-mcp install CLIENT         # register with claude | codex | gemini
 central-mcp alias [NAME]           # short-name symlink (default: cmcp)
 central-mcp unalias [NAME]
 central-mcp init [PATH]            # scaffold registry.yaml (default: ~/.central-mcp)
-central-mcp add NAME PATH [--agent claude|codex|gemini|droid|amp|shell]
+central-mcp add NAME PATH [--agent claude|codex|gemini|droid|shell]
 central-mcp remove NAME
 central-mcp list                   # one-line registry dump
 central-mcp brief                  # orchestrator-ready markdown snapshot
@@ -219,7 +218,7 @@ $EDITOR ~/.central-mcp/config.toml
 uv tool install --editable .
 uv run --group dev pytest             # 97 unit tests (fast, no real CLIs)
 uv run --group dev pytest -m live     # 15 live tests — shell out to real agent binaries
-                                      # (claude/codex/gemini/droid/amp); each case skips
+                                      # (claude/codex/gemini/droid); each case skips
                                       # cleanly if that binary isn't on PATH
 ```
 

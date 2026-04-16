@@ -61,7 +61,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_add.add_argument(
         "--agent",
         default="claude",
-        help="adapter name (claude|codex|gemini|droid|amp|shell)",
+        help="adapter name (claude|codex|gemini|droid|shell)",
     )
     p_add.add_argument("--description", default="")
     p_add.add_argument("--tag", action="append")
