@@ -94,6 +94,7 @@ dispatch("my-app", "add error handling to auth")
 | `codex` | `codex exec "<prompt>"` (stateless) |
 | `gemini` | `gemini -p "<prompt>"` (stateless) |
 | `droid` | `droid exec "<prompt>" -r` (resumes last session) |
+| `amp` | `amp -x "<prompt>"` (Sourcegraph Amp execute mode) |
 
 ### Performance tip: use a faster model for the orchestrator
 
@@ -157,6 +158,7 @@ central-mcp run --bypass
 | Codex CLI | `--dangerously-bypass-approvals-and-sandbox` |
 | Gemini CLI | `--yolo` |
 | Droid (Factory) | `--skip-permissions-unsafe` |
+| Amp (Sourcegraph) | `--no-confirm` |
 
 ## Environment variables
 

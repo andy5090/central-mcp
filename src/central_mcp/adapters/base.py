@@ -81,15 +81,24 @@ class _Droid(Adapter):
         return argv
 
 
+class _Amp(Adapter):
+    def exec_argv(self, prompt: str, *, resume: bool = True, bypass: bool = False) -> list[str] | None:
+        argv = ["amp", "-x", prompt]
+        if bypass:
+            argv.append("--no-confirm")
+        return argv
+
+
 _ADAPTERS: dict[str, Adapter] = {
     "claude": _Claude("claude", launch=("claude",), has_exec=True),
     "codex": _Codex("codex", launch=("codex",), has_exec=True),
     "gemini": _Gemini("gemini", launch=("gemini",), has_exec=True),
     "droid": _Droid("droid", launch=("droid",), has_exec=True),
+    "amp": _Amp("amp", launch=("amp",), has_exec=True),
     "shell": Adapter("shell", launch=(), has_exec=False),
 }
 
-VALID_AGENTS = {"claude", "codex", "gemini", "droid", "shell"}
+VALID_AGENTS = {"claude", "codex", "gemini", "droid", "amp", "shell"}
 
 
 def get_adapter(name: str) -> Adapter:

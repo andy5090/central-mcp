@@ -94,6 +94,7 @@ dispatch("my-app", "auth에 에러 핸들링 추가")
 | `codex` | `codex exec "<프롬프트>"` (무상태) |
 | `gemini` | `gemini -p "<프롬프트>"` (무상태) |
 | `droid` | `droid exec "<프롬프트>" -r` (마지막 세션 재개) |
+| `amp` | `amp -x "<프롬프트>"` (Sourcegraph Amp execute mode) |
 
 ### 성능 팁: 오케스트레이터에 빠른 모델 사용
 
@@ -157,6 +158,7 @@ central-mcp run --bypass
 | Codex CLI | `--dangerously-bypass-approvals-and-sandbox` |
 | Gemini CLI | `--yolo` |
 | Droid (Factory) | `--skip-permissions-unsafe` |
+| Amp (Sourcegraph) | `--no-confirm` |
 
 ## 환경 변수
 

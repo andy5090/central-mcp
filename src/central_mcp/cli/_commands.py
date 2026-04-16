@@ -346,7 +346,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     if not installed:
         print(
             "error: no supported coding-agent CLI detected on PATH.\n"
-            "       install one of: claude, codex, gemini, droid",
+            "       install one of: claude, codex, gemini, droid, amp",
             file=sys.stderr,
         )
         return 1
