@@ -30,9 +30,13 @@ If `central-mcp` is not on PATH, fall back to running via `uv`:
 ```toml
 [mcp_servers.central]
 command = "uv"
-args = ["run", "--directory", "/Users/you/Projects/central-mcp", "python", "-m", "central_mcp", "serve"]
+args = ["run", "--directory", "/path/to/central-mcp", "python", "-m", "central_mcp", "serve"]
 ```
+
+## Note: project trust
+
+When you add a project with `agent=codex` via `add_project`, central-mcp automatically adds a `trust_level = "trusted"` entry to `~/.codex/config.toml` for that project's path. No manual trust setup needed.
 
 ## Why this is the point
 
-Claude Code and Codex consume the same server binary with identical tool names. This is the core demonstration of orchestrator-agnosticism: one server, any client.
+Claude Code, Codex, Cursor, and Gemini all consume the same server binary with identical tool names. One server, any client.
