@@ -65,6 +65,12 @@ returns a dispatch_id instantly (<100ms). To get the result:
   3. Tell the user "dispatched to <project>, I'll report when it's done"
      and CONTINUE the conversation.
 
+IMPORTANT: Every MCP tool response may include a `completed_dispatches`
+array with results from previously dispatched work that has finished
+since your last call. When you see this field, REPORT those results to
+the user immediately — do not ignore them. This is how completions are
+delivered even when background polling agents fail to fire.
+
 If the user mentions a project path that is not yet registered
 ("add ~/Projects/foo"), call add_project yourself; do not tell the user
 to drop to a shell.
@@ -77,6 +83,42 @@ _dispatches: dict[str, dict[str, Any]] = {}
 _dispatch_lock = threading.Lock()
 
 
+def _collect_completed() -> list[dict[str, Any]]:
+    """Return and mark-as-reported any dispatches that finished since the
+    last call. Piggyback these into every MCP tool response so the
+    orchestrator learns about completions without explicit polling —
+    even if the background poll agent failed or was never spawned.
+    """
+    results: list[dict[str, Any]] = []
+    with _dispatch_lock:
+        for entry in _dispatches.values():
+            if entry["status"] != "running" and not entry.get("reported"):
+                entry["reported"] = True
+                results.append({
+                    "dispatch_id": entry["id"],
+                    "project": entry["project"],
+                    "status": entry["status"],
+                    **(entry["result"] or {}),
+                })
+    return results
+
+
+def _with_completed(response: Any) -> Any:
+    """Attach any unreported dispatch completions to the response.
+
+    Works for both dict and list responses. If there are no pending
+    completions, the response is returned unchanged.
+    """
+    completed = _collect_completed()
+    if not completed:
+        return response
+    if isinstance(response, dict):
+        response["completed_dispatches"] = completed
+    elif isinstance(response, list):
+        return {"results": response, "completed_dispatches": completed}
+    return response
+
+
 def _require_project(name: str) -> tuple[Project | None, dict[str, Any] | None]:
     project = find_project(name)
     if project is None:
@@ -85,9 +127,9 @@ def _require_project(name: str) -> tuple[Project | None, dict[str, Any] | None]:
 
 
 @mcp.tool()
-def list_projects() -> list[dict[str, Any]]:
+def list_projects() -> list[dict[str, Any]] | dict[str, Any]:
     """List every project registered in registry.yaml."""
-    return [p.to_dict() for p in load_registry()]
+    return _with_completed([p.to_dict() for p in load_registry()])
 
 
 @mcp.tool()
@@ -100,7 +142,7 @@ def project_status(name: str) -> dict[str, Any]:
     project, err = _require_project(name)
     if err:
         return err
-    return {"ok": True, "project": project.to_dict()}
+    return _with_completed({"ok": True, "project": project.to_dict()})
 
 
 @mcp.tool()
@@ -325,7 +367,7 @@ def add_project(
         if trust_msg:
             result["codex_trust"] = trust_msg
 
-    return result
+    return _with_completed(result)
 
 
 @mcp.tool()
@@ -334,7 +376,7 @@ def remove_project(name: str) -> dict[str, Any]:
     removed = _registry_remove(name)
     if not removed:
         return {"ok": False, "error": f"project {name!r} not found in registry"}
-    return {"ok": True, "removed": name}
+    return _with_completed({"ok": True, "removed": name})
 
 
 def main() -> None:
