@@ -57,7 +57,12 @@ Inside the orchestrator session, speak naturally:
 - *"Send this to my-app: add error handling to the auth module."*
 - *"Also send to gluecut-dawg: summarize the project structure."*
 
-The orchestrator calls `dispatch` for each request and **continues the conversation immediately** — you don't wait. A background subagent polls every 3 seconds and reports each result as it arrives. Multiple dispatches run in parallel.
+The orchestrator calls `dispatch` for each request and **continues the conversation immediately** — you don't wait. Results arrive through two channels:
+
+- **Background poll (best-effort):** a subagent polls `check_dispatch` every 3 seconds and reports automatically when done.
+- **User-driven check (100% reliable):** ask "결과는?" / "any updates?" anytime, and the orchestrator calls `check_dispatch` or `list_dispatches` directly.
+
+Multiple dispatches run in parallel.
 
 ## MCP tools
 
