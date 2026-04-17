@@ -416,22 +416,56 @@ def _ensure_launch_dir(target: Path) -> None:
         settings_file.write_text(_SETTINGS_JSON)
 
 
-def _ensure_default_registry() -> None:
+def _ensure_default_registry() -> bool:
     """Create `~/.central-mcp/registry.yaml` with `projects: []` if missing.
 
-    Lets users run `central-mcp` cold without first typing
-    `central-mcp init`. Only touches the default home registry; if the
-    user has an explicit cwd registry or `$CENTRAL_MCP_REGISTRY` set,
-    the cascade already picks that up and this helper is a no-op.
+    Returns True when it just created the file (a cold-start signal the
+    caller can use to trigger first-run bootstrap like auto-install).
+    Returns False when the registry already existed.
+
+    Only touches the default home registry; if the user has an explicit
+    cwd registry or `$CENTRAL_MCP_REGISTRY` set, the cascade already
+    picks that up and this helper is a no-op on the file that actually
+    gets used.
     """
     reg = paths.central_mcp_home() / "registry.yaml"
     if reg.exists():
-        return
+        return False
     reg.parent.mkdir(parents=True, exist_ok=True)
     reg.write_text(
         "# central-mcp project registry — edit via `central-mcp add` or by hand.\n\n"
         "projects: []\n"
     )
+    return True
+
+
+def _maybe_auto_install() -> None:
+    """Run `install all` once on cold start, then never again.
+
+    Gate file: `~/.central-mcp/.install_auto_done`. Present = previously
+    ran auto-install (successful or skipped), so we leave the user's
+    MCP client configs alone on every subsequent launch. `central-mcp
+    install <client>` and `central-mcp install all` remain available
+    for manual control at any time.
+    """
+    marker = paths.central_mcp_home() / ".install_auto_done"
+    if marker.exists():
+        return
+    detected = install_mod.detect_installed_clients()
+    if not detected:
+        # No clients on PATH yet — leave the marker off so the next
+        # cold start (after the user installs claude/codex/etc) picks
+        # them up automatically.
+        return
+    print(
+        "\nFirst-run bootstrap: registering central-mcp with detected MCP clients\n"
+        "(rerun later with `central-mcp install <client>` or `central-mcp install all`)\n"
+    )
+    install_mod.install_all()
+    try:
+        marker.write_text("")
+    except Exception:
+        pass
 
 
 def _prompt_choice(installed: list[tuple[str, str, str]]) -> tuple[str, str, str]:
@@ -454,6 +488,7 @@ def _prompt_choice(installed: list[tuple[str, str, str]]) -> tuple[str, str, str
 
 def cmd_run(args: argparse.Namespace) -> int:
     _ensure_default_registry()
+    _maybe_auto_install()
     installed = _detect_installed()
     if not installed:
         supported = ", ".join(name for name, _bin, _label in ORCHESTRATORS)
