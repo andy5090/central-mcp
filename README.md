@@ -157,32 +157,50 @@ The result reports which agent actually produced output (`agent_used`), whether 
 
 Pass `fallback=[]` to explicitly disable the saved chain for a one-shot dispatch.
 
-### Per-project bypass mode
+### Bypass mode
 
-Most coding agents ask "is this OK?" before editing files, running commands, or installing packages. That's fine when a human is sitting at the terminal — but dispatches run in the background with no one watching, so those approval prompts have no one to answer them and the dispatch can **hang forever waiting for a reply that never comes**.
+Most coding agents ask "is this OK?" before editing files, running commands, or installing packages. That's fine when a human is at the terminal — but anywhere central-mcp runs, there's no TTY to answer approval prompts, so the work can **hang forever waiting for a reply that never comes**. **Bypass mode** tells the agent to auto-approve its own actions and keep moving.
 
-**Bypass mode** tells the agent to auto-approve its own actions and just get the work done. central-mcp is an orchestration hub whose job is to keep dispatches moving without stalls, so **bypass is on by default** for both the orchestrator (`central-mcp run` / `central-mcp up`) and first-time dispatches. Pass `--no-bypass` on the CLI, or `bypass=false` to `dispatch()`, whenever you want the agent to surface approval prompts instead of auto-approving.
+There are two separate bypass layers, and they apply to two separate layers of the stack:
 
-On the first dispatch to a project the chosen bypass value is saved to `registry.yaml` and reused for every future dispatch. Flip it anytime by calling `dispatch(..., bypass=true)` or `dispatch(..., bypass=false)` explicitly — the new value overwrites the saved preference.
+#### 1. Orchestrator bypass — `central-mcp run` / `central-mcp tmux` / `central-mcp up`
+
+This is the agent *you* talk to — the orchestrator pane that calls MCP tools. Launched with its own permission-bypass flag (`claude --dangerously-skip-permissions`, `codex --dangerously-bypass-approvals-and-sandbox`, etc). **Default: on**. Opt out with `--no-bypass`:
+
+```bash
+central-mcp tmux --no-bypass     # orchestrator surfaces approval prompts
+central-mcp run --no-bypass
+```
+
+With orchestrator bypass **on**, the orchestrator can freely read/write files inside its launch directory (`~/.central-mcp`) without asking — so `CLAUDE.md`, scratch notes, and hub-level edits happen without friction. It does *not* automatically propagate to the projects it dispatches to; those are controlled separately (below).
+
+#### 2. Per-project dispatch bypass — `dispatch(..., bypass=...)` / `registry.yaml`
+
+This controls the agent spawned inside a specific project's cwd for one dispatch. The value is saved to `registry.yaml` on first dispatch and reused for every subsequent dispatch to that project. **Default for a brand-new project: `null` (ask once)** — on the very first dispatch, central-mcp asks the orchestrator to decide `bypass=true` or `bypass=false` for that project. Flip it anytime:
+
+```
+dispatch(name="my-app", prompt="…", bypass=true)   # auto-approve, save preference
+dispatch(name="my-app", prompt="…", bypass=false)  # surface prompts, save preference
+update_project(name="my-app", bypass=true)         # flip without dispatching
+```
+
+With per-project bypass **off**, safe read-only dispatches still work (answering questions, reading files, explaining code). Anything that triggers a permission prompt (editing files, shell commands, installing deps) hangs until the timeout — the orchestrator will suggest re-dispatching with `bypass=true`, or you can open a regular terminal in the project's cwd and run the agent interactively there.
 
 > ### ⚠️ Bypass is powerful — and at your own risk
 >
-> With bypass on, the agent may edit files, run shell commands, install packages, call network services, and push code **without confirming with you first**. That is what makes non-stop orchestration possible, but it also means a misguided prompt, prompt injection from a malicious source, or an agent hallucination can cause real damage — dropped tables, force-pushed branches, deleted files, leaked credentials, unintended API spend, etc.
+> With bypass on at either layer, the corresponding agent may edit files, run shell commands, install packages, call network services, and push code **without confirming with you first**. That is what makes non-stop orchestration possible, but it also means a misguided prompt, prompt injection from a malicious source, or an agent hallucination can cause real damage — dropped tables, force-pushed branches, deleted files, leaked credentials, unintended API spend, etc.
 >
-> **Turn bypass off (`--no-bypass`, `bypass=false`) if any of these apply**:
-> - The project holds sensitive code, secrets, or production data you cannot lose.
-> - You are not ready to commit/push safety-net snapshots before dispatching.
-> - You have not read the prompt carefully or are delegating work from untrusted sources.
+> Typical reasoning:
+> - **Orchestrator bypass** controls what the *hub-level* agent can do in `~/.central-mcp` and when calling MCP tools. Lower risk in practice because the hub dir has no production code, but still read/write.
+> - **Per-project bypass** controls what each *project-level* agent can do inside that project's cwd. This is the higher-risk layer — it can rewrite your source, run your build, push branches.
+>
+> **Turn the matching bypass off if any of these apply**:
+> - The project (or `~/.central-mcp`) holds sensitive code, secrets, or production data you can't lose.
+> - No safety-net commit/push is in place.
+> - You didn't read the prompt carefully or you're delegating work from untrusted sources.
 > - You want to review every command the agent is about to run.
 >
-> When bypass is off, dispatches may hang at permission prompts (no TTY to answer) — restrict dispatches to read-only tasks, or open a regular terminal in the project's cwd and run the agent interactively there.
->
-> **Disclaimer**: central-mcp is a routing layer and does not supervise what the agents do. You are responsible for the scope, targets, and consequences of every dispatch you run in bypass mode. The authors and contributors of central-mcp are not liable for any damage, data loss, security breach, cost, or other harm that results from enabling bypass. Use snapshots (git commits, backups, branch protection), least-privilege credentials, and offline/sandboxed environments where possible.
-
-**What happens without bypass**:
-- Safe tasks (answering questions, reading files, explaining code) → still work fine.
-- Any task that triggers a permission prompt (editing files, shell commands, installing deps) → dispatch hangs until the timeout.
-- If that happens, the orchestrator will suggest re-dispatching with `bypass=true`, or you can open a regular terminal in the project's cwd and run the agent interactively there to approve by hand.
+> **Disclaimer**: central-mcp is a routing layer and does not supervise what the agents do. You are responsible for the scope, targets, and consequences of every dispatch you run in bypass mode at either layer. The authors and contributors of central-mcp are not liable for any damage, data loss, security breach, cost, or other harm that results from enabling bypass. Use snapshots (git commits, backups, branch protection), least-privilege credentials, and offline/sandboxed environments where possible.
 
 If a project deals with sensitive code and you're not comfortable granting blanket bypass, keep `bypass=false` and stick to read-only dispatches, or use interactive panes for anything that writes.
 
