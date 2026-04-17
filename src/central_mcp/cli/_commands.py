@@ -416,6 +416,24 @@ def _ensure_launch_dir(target: Path) -> None:
         settings_file.write_text(_SETTINGS_JSON)
 
 
+def _ensure_default_registry() -> None:
+    """Create `~/.central-mcp/registry.yaml` with `projects: []` if missing.
+
+    Lets users run `central-mcp` cold without first typing
+    `central-mcp init`. Only touches the default home registry; if the
+    user has an explicit cwd registry or `$CENTRAL_MCP_REGISTRY` set,
+    the cascade already picks that up and this helper is a no-op.
+    """
+    reg = paths.central_mcp_home() / "registry.yaml"
+    if reg.exists():
+        return
+    reg.parent.mkdir(parents=True, exist_ok=True)
+    reg.write_text(
+        "# central-mcp project registry — edit via `central-mcp add` or by hand.\n\n"
+        "projects: []\n"
+    )
+
+
 def _prompt_choice(installed: list[tuple[str, str, str]]) -> tuple[str, str, str]:
     print("Multiple coding agents detected — which should central-mcp launch?")
     for i, (_key, binary, label) in enumerate(installed, 1):
@@ -435,6 +453,7 @@ def _prompt_choice(installed: list[tuple[str, str, str]]) -> tuple[str, str, str
 
 
 def cmd_run(args: argparse.Namespace) -> int:
+    _ensure_default_registry()
     installed = _detect_installed()
     if not installed:
         supported = ", ".join(name for name, _bin, _label in ORCHESTRATORS)

@@ -161,6 +161,25 @@ class TestInstall:
         assert r.returncode == 0
 
 
+class TestAutoInitOnRun:
+    def test_run_dry_run_creates_registry_when_missing(
+        self, cli_env: dict
+    ) -> None:
+        """`central-mcp` cold-start should drop a registry.yaml without
+        forcing the user to run `central-mcp init` first."""
+        reg = Path(cli_env["CENTRAL_MCP_HOME"]) / "registry.yaml"
+        assert not reg.exists()
+
+        r = _run(["run", "--dry-run", "--agent", "claude"], cli_env)
+        # dry-run may still succeed even if claude is missing on PATH
+        # (we're asserting the side effect, not the launch).
+        if r.returncode != 0 and "is not installed" in r.stderr:
+            pytest.skip("no claude on PATH in this test environment")
+
+        assert reg.exists(), "registry.yaml should be auto-created on first run"
+        assert "projects: []" in reg.read_text()
+
+
 class TestHelp:
     def test_run_help_shows_run_flags(self, cli_env: dict) -> None:
         # `central-mcp --help` routes to `central-mcp run --help`
