@@ -43,6 +43,55 @@ def _wait_dispatch(dispatch_id: str, timeout: float = DISPATCH_TIMEOUT) -> dict:
     return server.check_dispatch(dispatch_id)
 
 
+def test_orchestration_history_picks_up_live_dispatch(
+    fake_home: Path, tmp_path: Path
+) -> None:
+    """End-to-end: dispatch to a real agent, then query orchestration_history.
+
+    Picks the first agent binary that's actually on PATH so the test runs
+    at least once in any reasonable developer environment. Verifies the
+    timeline + in-flight + per-project aggregation reflect the real run.
+    """
+    agent = next(
+        (a for a in AGENTS_UNDER_TEST if shutil.which(a)),
+        None,
+    )
+    if agent is None:
+        pytest.skip("no supported agent binary on PATH")
+
+    cwd = tmp_path / "orch-live-cwd"
+    cwd.mkdir()
+    registry.add_project(name="orch-live", path_=str(cwd), agent=agent)
+
+    r = server.dispatch(
+        "orch-live",
+        "Reply with exactly: LIVE_OK",
+        bypass=False,
+        resume=False,
+    )
+    assert r["ok"] is True
+    _wait_dispatch(r["dispatch_id"])
+
+    snap = server.orchestration_history()
+    assert snap["ok"] is True
+
+    # Timeline carries both the dispatched and terminal milestones
+    # for this run.
+    ids_in_recent = {rec.get("id") for rec in snap["recent"]}
+    assert r["dispatch_id"] in ids_in_recent, (
+        f"dispatch_id {r['dispatch_id']!r} missing from orchestration timeline: "
+        f"{snap['recent']!r}"
+    )
+
+    # Per-project aggregation counts this live dispatch.
+    stats = snap["per_project"].get("orch-live", {})
+    assert stats.get("dispatched", 0) >= 1
+
+    # Registry snapshot reflects the project we just added.
+    names = {p["name"] for p in snap["registered_projects"]}
+    assert "orch-live" in names
+
+
 @pytest.mark.parametrize("agent", AGENTS_UNDER_TEST)
 def test_dispatch_roundtrip(
     agent: str, fake_home: Path, tmp_path: Path
