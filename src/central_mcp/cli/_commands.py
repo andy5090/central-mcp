@@ -166,11 +166,11 @@ def cmd_tmux(args: argparse.Namespace) -> int:
     """Attach to the observation tmux session via the CLI.
 
     Named after the backend (tmux) so users learn a consistent
-    convention: `central-mcp tmux` attaches via tmux, and a future
-    `central-mcp zellij` will attach via zellij. If the session doesn't
-    exist yet, creates it first (equivalent of `central-mcp up &&
-    tmux attach -t central`) so a single command brings the whole
-    layout up and drops the user in.
+    convention: `central-mcp tmux` attaches via tmux, `central-mcp
+    zellij` attaches via zellij. If the session doesn't exist yet,
+    creates it first (equivalent of `central-mcp up && tmux attach`)
+    so a single command brings the whole layout up and drops the user
+    in.
     """
     if not shutil.which("tmux"):
         print("error: tmux is not installed or not on PATH", file=sys.stderr)
@@ -183,6 +183,47 @@ def cmd_tmux(args: argparse.Namespace) -> int:
             return rc
 
     os.execvp("tmux", ["tmux", "attach", "-t", layout.SESSION])
+
+
+def cmd_zellij(args: argparse.Namespace) -> int:
+    """Attach to the observation session via Zellij.
+
+    Mirrors `cmd_tmux` but uses Zellij's KDL layout: builds the file
+    from the current registry, then launches (or attaches to) a session
+    named `central`. Panes run exactly the same commands as tmux mode
+    (`central-mcp watch <project>` per project, the orchestrator on
+    the left half of the hub tab).
+    """
+    from central_mcp import zellij
+
+    if not shutil.which("zellij"):
+        print("error: zellij is not installed or not on PATH", file=sys.stderr)
+        return 1
+
+    orchestrator = _orchestrator_pane_for_up(args)
+    panes_per_window = args.panes_per_window or layout.DEFAULT_PANES_PER_WINDOW
+    if panes_per_window < 1:
+        print(
+            f"error: --panes-per-window must be >= 1 (got {panes_per_window})",
+            file=sys.stderr,
+        )
+        return 1
+
+    if zellij.has_session(zellij.SESSION):
+        print(f"(session '{zellij.SESSION}' already running — attaching)")
+        os.execvp("zellij", ["zellij", "attach", zellij.SESSION])
+
+    layout_path = paths.central_mcp_home() / "zellij-layout.kdl"
+    zellij.write_layout(
+        layout_path,
+        orchestrator=orchestrator,
+        panes_per_window=panes_per_window,
+    )
+    print(f"wrote layout: {layout_path}")
+    os.execvp(
+        "zellij",
+        ["zellij", "--session", zellij.SESSION, "--layout", str(layout_path)],
+    )
 
 
 # ---------- registry mutation ----------

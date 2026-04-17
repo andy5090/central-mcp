@@ -31,6 +31,7 @@ from central_mcp.cli._commands import (
     cmd_up,
     cmd_upgrade,
     cmd_watch,
+    cmd_zellij,
 )
 
 
@@ -121,6 +122,25 @@ def build_parser() -> argparse.ArgumentParser:
         help="max panes per tmux window (default: 4)",
     )
     p_tmux.set_defaults(func=cmd_tmux)
+
+    p_zellij = sub.add_parser(
+        "zellij",
+        help="attach to the observation session via zellij (creates it first if needed)",
+    )
+    p_zellij.add_argument("--no-orchestrator", action="store_true")
+    p_zellij.add_argument(
+        "--bypass", dest="bypass", action="store_true", default=True,
+        help="launch the orchestrator pane with its permission-bypass flag (default: on)",
+    )
+    p_zellij.add_argument(
+        "--no-bypass", dest="bypass", action="store_false",
+        help="launch the orchestrator pane without the permission-bypass flag",
+    )
+    p_zellij.add_argument(
+        "--panes-per-window", type=int, default=None, metavar="N",
+        help="max panes per tab (default: 4)",
+    )
+    p_zellij.set_defaults(func=cmd_zellij)
 
     p_list = sub.add_parser("list", help="print the registry")
     p_list.set_defaults(func=cmd_list)
