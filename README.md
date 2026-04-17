@@ -1,5 +1,9 @@
 # central-mcp
 
+<p align="center">
+  <img src="docs/logo.png" alt="central-mcp logo" width="280"/>
+</p>
+
 [![PyPI version](https://img.shields.io/pypi/v/central-mcp)](https://pypi.org/project/central-mcp/)
 [![Python](https://img.shields.io/pypi/pyversions/central-mcp)](https://pypi.org/project/central-mcp/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
