@@ -75,6 +75,26 @@ def select_window(target: str) -> TmuxResult:
     return _run(["select-window", "-t", target])
 
 
+def set_pane_title(target: str, title: str) -> TmuxResult:
+    """Give a pane a display title (shown on the pane border when
+    `pane-border-status` is enabled)."""
+    return _run(["select-pane", "-t", target, "-T", title])
+
+
+def set_pane_style(target: str, style: str) -> TmuxResult:
+    """Apply a style to a specific pane (tmux 3.0+).
+
+    Example: `fg=yellow,bold` or `bg=colour236`. Unlike `pane-active-border-style`,
+    this attaches directly to one pane and survives focus changes.
+    """
+    return _run(["select-pane", "-t", target, "-P", style])
+
+
+def set_window_option(target: str, name: str, value: str) -> TmuxResult:
+    """Set a per-window option (equivalent of `set-window-option -t`)."""
+    return _run(["set-window-option", "-t", target, name, value])
+
+
 def kill_session(name: str) -> TmuxResult:
     return _run(["kill-session", "-t", name])
 

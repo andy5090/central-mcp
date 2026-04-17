@@ -105,13 +105,22 @@ def ensure_session(
     projects = load_registry()
     has_orchestrator = orchestrator is not None
 
-    plan: list[tuple[str, str, str | None]] = []
+    # Each plan entry: (title_for_border, cwd, wrapped_cmd, is_orchestrator)
+    plan: list[tuple[str, str, str | None, bool]] = []
     if orchestrator is not None:
-        plan.append((f"orchestrator ({orchestrator.label})",
-                     orchestrator.cwd,
-                     _wrap(orchestrator.command)))
+        plan.append((
+            "Central MCP Orchestrator",
+            orchestrator.cwd,
+            _wrap(orchestrator.command),
+            True,
+        ))
     for p in projects:
-        plan.append((p.name, p.path, _pane_command(p, interactive=interactive_panes)))
+        plan.append((
+            p.name,
+            p.path,
+            _pane_command(p, interactive=interactive_panes),
+            False,
+        ))
 
     if not plan:
         messages.append("registry.yaml has no projects and no orchestrator — creating empty session")
@@ -121,13 +130,24 @@ def ensure_session(
             return False, messages
         return True, messages
 
-    # Chunk into windows of at most panes_per_window.
-    chunks = [plan[i:i + panes_per_window] for i in range(0, len(plan), panes_per_window)]
+    # Chunk into windows.
+    # - Hub window (contains orchestrator) holds `panes_per_window - 1`
+    #   panes: orchestrator visually takes two cells via main-vertical,
+    #   so the window still feels like `panes_per_window` cells worth.
+    # - Overflow windows hold the full `panes_per_window` project panes.
+    chunks: list[list[tuple[str, str, str | None, bool]]] = []
+    first_size = panes_per_window - 1 if (has_orchestrator and panes_per_window >= 2) else panes_per_window
+    if first_size < 1:
+        first_size = 1
+    chunks.append(plan[:first_size])
+    remaining = plan[first_size:]
+    for i in range(0, len(remaining), panes_per_window):
+        chunks.append(remaining[i:i + panes_per_window])
 
     for win_idx, chunk in enumerate(chunks):
         wname = window_name(win_idx, has_orchestrator=has_orchestrator)
         target = f"{SESSION}:{wname}"
-        first_label, first_cwd, first_cmd = chunk[0]
+        first_title, first_cwd, first_cmd, first_is_orch = chunk[0]
 
         if win_idx == 0:
             r = tmux.new_session(SESSION, wname, first_cwd, command=first_cmd)
@@ -138,16 +158,41 @@ def ensure_session(
         if not r.ok:
             messages.append(f"{op} for {wname} failed: {r.stderr.strip()}")
             continue
-        messages.append(f"{wname} pane 0 -> {first_label} ({first_cwd})")
+        messages.append(f"{wname} pane 0 -> {first_title} ({first_cwd})")
 
-        for i, (label, cwd, cmd) in enumerate(chunk[1:], start=1):
+        # Pane border titles make each pane self-identify. Apply to every
+        # pane we create, orchestrator included. (set-option scope is
+        # per-window so this line suffices to turn titles on.)
+        tmux.set_window_option(target, "pane-border-status", "top")
+        # Highlight the orchestrator pane's title in bold yellow via a
+        # conditional border format. Changing pane-border-format (title
+        # text) does NOT fight with pane-active-border-style (border
+        # characters), so tmux's own active-pane indicator still works.
+        if first_is_orch:
+            tmux.set_window_option(
+                target,
+                "pane-border-format",
+                "#[fg=#{?#{==:#{pane_index},0},yellow,default},bold]#{pane_title}",
+            )
+        tmux.set_pane_title(f"{target}.0", first_title)
+
+        for i, (title, cwd, cmd, is_orch) in enumerate(chunk[1:], start=1):
             r = tmux.split_window(target, cwd, command=cmd)
             if not r.ok:
-                messages.append(f"split-window for {label} failed: {r.stderr.strip()}")
+                messages.append(f"split-window for {title} failed: {r.stderr.strip()}")
                 continue
-            messages.append(f"{wname} pane {i} -> {label} ({cwd})")
+            messages.append(f"{wname} pane {i} -> {title} ({cwd})")
+            tmux.set_pane_title(f"{target}.{i}", title)
             # Re-tile after every split so tmux redistributes space.
             tmux.select_layout(target, "tiled")
+
+        # Hub window uses main-vertical with a 50% split so the
+        # orchestrator gets the left half and projects stack on the
+        # right. Overflow windows stay tiled so equal-size project
+        # panes read well.
+        if win_idx == 0 and has_orchestrator:
+            tmux.set_window_option(target, "main-pane-width", "50%")
+            tmux.select_layout(target, "main-vertical")
 
     # Focus the first window/pane so attaching users land on pane 0
     # (orchestrator when present) rather than the last-split pane.
@@ -155,7 +200,7 @@ def ensure_session(
     tmux.select_window(f"{SESSION}:{first_wname}")
     tmux.select_pane(f"{SESSION}:{first_wname}.0")
 
-    messages.append(f"created '{SESSION}' — attach with: tmux attach -t {SESSION}")
+    messages.append(f"created '{SESSION}' — attach with: central-mcp tmux")
     return True, messages
 
 

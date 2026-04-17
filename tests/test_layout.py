@@ -182,7 +182,7 @@ class TestOrchestratorPane:
         # Pane 0 should be orchestrator, pane 1 project.
         first = layout.window_name(0, has_orchestrator=True)
         assert first.endswith(layout.HUB_SUFFIX)
-        assert any("pane 0 -> orchestrator" in m and first in m for m in messages)
+        assert any("pane 0 ->" in m and "Central MCP Orchestrator" in m and first in m for m in messages)
         assert any("pane 1 -> proj" in m for m in messages)
 
         r = tmux._run([
@@ -215,7 +215,7 @@ class TestOrchestratorPane:
 
         created, messages = layout.ensure_session(orchestrator=orch)
         assert created
-        assert any("pane 0 -> orchestrator" in m for m in messages)
+        assert any("pane 0 ->" in m and "Central MCP Orchestrator" in m for m in messages)
 
 
 def _window_names(session: str) -> list[str]:
@@ -262,11 +262,13 @@ class TestWindowChunking:
         assert _pane_count(layout.SESSION, w1) == 4
         assert _pane_count(layout.SESSION, w2) == 1
 
-    def test_orchestrator_counts_toward_window_capacity(
+    def test_hub_holds_fewer_panes_when_orchestrator_present(
         self, fake_home: Path, tmp_path: Path
     ) -> None:
-        # Orchestrator + 3 projects = 4 panes in window 1, none overflow.
-        for i in range(3):
+        # panes_per_window=4 + orch → hub holds orch + 2 projects (3 panes).
+        # Orch visually takes two cells via main-vertical so the window
+        # still feels like `panes_per_window` cells worth.
+        for i in range(2):
             d = tmp_path / f"p{i}"
             d.mkdir()
             registry.add_project(f"p{i}", str(d), agent="shell")
@@ -280,13 +282,14 @@ class TestWindowChunking:
         hub = layout.window_name(0, has_orchestrator=True)
         assert hub.endswith(layout.HUB_SUFFIX)
         assert _window_names(layout.SESSION) == [hub]
-        assert _pane_count(layout.SESSION, hub) == 4
+        assert _pane_count(layout.SESSION, hub) == 3
 
-    def test_orchestrator_plus_four_projects_overflows(
+    def test_orchestrator_plus_three_projects_overflows_to_second_window(
         self, fake_home: Path, tmp_path: Path
     ) -> None:
-        # Orchestrator + 4 projects = 5 panes → window 1 (4) + window 2 (1).
-        for i in range(4):
+        # panes_per_window=4 + orch + 3 projects → hub (orch + 2 projects = 3)
+        # + overflow (1 project).
+        for i in range(3):
             d = tmp_path / f"p{i}"
             d.mkdir()
             registry.add_project(f"p{i}", str(d), agent="shell")
@@ -301,8 +304,31 @@ class TestWindowChunking:
         hub = layout.window_name(0, has_orchestrator=True)
         overflow = layout.window_name(1, has_orchestrator=True)
         assert _window_names(layout.SESSION) == [hub, overflow]
-        assert _pane_count(layout.SESSION, hub) == 4
+        assert _pane_count(layout.SESSION, hub) == 3
         assert _pane_count(layout.SESSION, overflow) == 1
+
+    def test_overflow_windows_use_full_panes_per_window(
+        self, fake_home: Path, tmp_path: Path
+    ) -> None:
+        # Overflow windows get the full panes_per_window slots since they
+        # have no orchestrator hogging extra space.
+        for i in range(8):
+            d = tmp_path / f"p{i}"
+            d.mkdir()
+            registry.add_project(f"p{i}", str(d), agent="shell")
+
+        orch_dir = tmp_path / "orch"
+        orch_dir.mkdir()
+        orch = layout.OrchestratorPane(command=":", cwd=str(orch_dir), label="stub")
+
+        created, messages = layout.ensure_session(orchestrator=orch)
+        assert created
+        # 9 total panes → hub (3: orch+2) + overflow (4) + overflow (2)
+        names = _window_names(layout.SESSION)
+        assert len(names) == 3
+        assert _pane_count(layout.SESSION, names[0]) == 3
+        assert _pane_count(layout.SESSION, names[1]) == 4
+        assert _pane_count(layout.SESSION, names[2]) == 2
 
     def test_twenty_projects_span_multiple_windows(
         self, fake_home: Path, tmp_path: Path
@@ -389,3 +415,81 @@ class TestActivePane:
         window, pane = self._active(layout.SESSION)
         assert window == layout.window_name(0)
         assert pane == 0
+
+
+class TestPaneTitlesAndStyle:
+    """Pane border titles + orchestrator highlight."""
+
+    def _pane_titles(self, window_target: str) -> list[str]:
+        r = tmux._run([
+            "list-panes", "-t", window_target,
+            "-F", "#{pane_title}",
+        ])
+        assert r.ok
+        return r.stdout.strip().splitlines()
+
+    def test_project_panes_get_project_names_as_titles(
+        self, fake_home: Path, tmp_path: Path
+    ) -> None:
+        for name in ("alpha", "beta"):
+            d = tmp_path / name
+            d.mkdir()
+            registry.add_project(name, str(d), agent="shell")
+
+        layout.ensure_session()
+        titles = self._pane_titles(f"{layout.SESSION}:{layout.window_name(0)}")
+        assert "alpha" in titles
+        assert "beta" in titles
+
+    def test_orchestrator_pane_title_has_marker(
+        self, fake_home: Path, tmp_path: Path
+    ) -> None:
+        d = tmp_path / "proj"
+        d.mkdir()
+        registry.add_project("proj", str(d), agent="shell")
+
+        orch_dir = tmp_path / "orch"
+        orch_dir.mkdir()
+        orch = layout.OrchestratorPane(command=":", cwd=str(orch_dir), label="stub")
+
+        layout.ensure_session(orchestrator=orch)
+        hub = layout.window_name(0, has_orchestrator=True)
+        titles = self._pane_titles(f"{layout.SESSION}:{hub}")
+        assert any("Central MCP Orchestrator" in t for t in titles)
+        assert "proj" in titles
+
+    def test_hub_window_uses_main_vertical_layout(
+        self, fake_home: Path, tmp_path: Path
+    ) -> None:
+        """Orchestrator should get the wide left pane via main-vertical.
+
+        panes_per_window=4 + orch + 2 projects → hub holds 3 panes
+        (the orchestrator visually takes 2 cells via main-vertical).
+        """
+        for i in range(2):
+            d = tmp_path / f"p{i}"
+            d.mkdir()
+            registry.add_project(f"p{i}", str(d), agent="shell")
+
+        orch_dir = tmp_path / "orch"
+        orch_dir.mkdir()
+        orch = layout.OrchestratorPane(command=":", cwd=str(orch_dir), label="stub")
+
+        layout.ensure_session(orchestrator=orch)
+        hub = layout.window_name(0, has_orchestrator=True)
+        r = tmux._run([
+            "list-panes", "-t", f"{layout.SESSION}:{hub}",
+            "-F", "#{pane_index}:#{pane_left}:#{pane_top}",
+        ])
+        assert r.ok
+        coords = {}
+        for line in r.stdout.strip().splitlines():
+            idx, left, top = line.split(":")
+            coords[int(idx)] = (int(left), int(top))
+        assert len(coords) == 3
+        # main-vertical with 50%: pane 0 is at the leftmost column,
+        # projects (1, 2) are to its right at the same column.
+        assert coords[0][0] == 0
+        assert coords[1][0] > 0
+        assert coords[2][0] > 0
+        assert coords[1][0] == coords[2][0]

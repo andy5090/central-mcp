@@ -26,6 +26,7 @@ from central_mcp.cli._commands import (
     cmd_remove,
     cmd_run,
     cmd_serve,
+    cmd_tmux,
     cmd_unalias,
     cmd_up,
     cmd_watch,
@@ -95,6 +96,28 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_down = sub.add_parser("down", help="kill the observation tmux session")
     p_down.set_defaults(func=cmd_down)
+
+    p_tmux = sub.add_parser(
+        "tmux",
+        help="attach to the observation session via tmux (creates it first if needed)",
+    )
+    # Mirror `up`'s flags so the combined `tmux` (= up + tmux attach) is
+    # configurable in one shot.
+    p_tmux.add_argument("--no-orchestrator", action="store_true")
+    p_tmux.add_argument(
+        "--bypass", dest="bypass", action="store_true", default=True,
+        help="launch the orchestrator pane with its permission-bypass flag (default: on)",
+    )
+    p_tmux.add_argument(
+        "--no-bypass", dest="bypass", action="store_false",
+        help="launch the orchestrator pane without the permission-bypass flag",
+    )
+    p_tmux.add_argument(
+        "--panes-per-window", type=int, default=None, metavar="N",
+        help="max panes per tmux window (default: 4)",
+    )
+    p_tmux.add_argument("--interactive-panes", action="store_true")
+    p_tmux.set_defaults(func=cmd_tmux)
 
     p_list = sub.add_parser("list", help="print the registry")
     p_list.set_defaults(func=cmd_list)

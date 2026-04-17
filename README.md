@@ -224,6 +224,8 @@ central-mcp list                   # one-line registry dump
 central-mcp brief                  # orchestrator-ready markdown snapshot
 central-mcp up [--no-orchestrator] [--no-bypass] [--interactive-panes] [--panes-per-window N]
                                    # optional tmux observation layer
+central-mcp tmux [same flags as up]
+                                   # create session if missing, then attach via tmux
 central-mcp down                   # kill observation session
 central-mcp watch NAME [--from-start]
                                    # stream one project's dispatch events
@@ -240,12 +242,15 @@ Windows are named `cmcp-<N>` with the first window picking up a `-hub` suffix (`
 
 ```bash
 central-mcp up                     # orchestrator + watch panes (bypass on by default)
+central-mcp tmux                   # create session if needed, then attach via tmux
 central-mcp up --no-bypass         # launch orchestrator without permission-bypass
 central-mcp up --no-orchestrator   # watch panes only
 central-mcp up --interactive-panes # legacy: run each project's agent CLI interactively
 central-mcp up --panes-per-window 6
 central-mcp down                   # tear the session back down
 ```
+
+The hub window (`cmcp-1-hub`) uses tmux's `main-vertical` layout: the orchestrator pane sits on the left taking two cells' worth of space, and project panes stack on the right. So the hub holds `panes_per_window − 1` panes (default 3 — orchestrator + 2 projects), and overflow windows get the full `panes_per_window` projects each. Every pane carries its role name on its top border, and the orchestrator border is highlighted in bold yellow so you can spot it at a glance.
 
 Kill with `central-mcp down` — the MCP dispatch path never depends on this layer, so tearing it down doesn't affect in-flight dispatches. The `watch` command is a read-only tail of `~/.central-mcp/logs/<project>/dispatch.jsonl`; you can also run it standalone in any terminal.
 

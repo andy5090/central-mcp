@@ -15,6 +15,7 @@ from central_mcp import brief as brief_mod
 from central_mcp import install as install_mod
 from central_mcp import layout
 from central_mcp import paths
+from central_mcp import tmux
 from central_mcp.registry import (
     add_project as registry_add,
     load_registry,
@@ -142,7 +143,7 @@ def cmd_up(args: argparse.Namespace) -> int:
     for m in messages:
         print(m)
     if not created:
-        print(f"(already running — attach with: tmux attach -t {layout.SESSION})")
+        print("(already running — attach with: central-mcp tmux)")
     return 0
 
 
@@ -155,6 +156,29 @@ def cmd_down(args: argparse.Namespace) -> int:
     killed, message = layout.kill_all()
     print(message)
     return 0 if killed or "no session" in message else 1
+
+
+def cmd_tmux(args: argparse.Namespace) -> int:
+    """Attach to the observation tmux session via the CLI.
+
+    Named after the backend (tmux) so users learn a consistent
+    convention: `central-mcp tmux` attaches via tmux, and a future
+    `central-mcp zellij` will attach via zellij. If the session doesn't
+    exist yet, creates it first (equivalent of `central-mcp up &&
+    tmux attach -t central`) so a single command brings the whole
+    layout up and drops the user in.
+    """
+    if not shutil.which("tmux"):
+        print("error: tmux is not installed or not on PATH", file=sys.stderr)
+        return 1
+
+    if not tmux.has_session(layout.SESSION):
+        print(f"session '{layout.SESSION}' not running — creating it first")
+        rc = cmd_up(args)
+        if rc:
+            return rc
+
+    os.execvp("tmux", ["tmux", "attach", "-t", layout.SESSION])
 
 
 # ---------- registry mutation ----------

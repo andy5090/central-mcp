@@ -211,8 +211,9 @@ central-mcp add NAME PATH [--agent claude|codex|gemini|droid|opencode]
 central-mcp remove NAME
 central-mcp list                   # 한 줄씩 레지스트리 출력
 central-mcp brief                  # 오케스트레이터용 마크다운 스냅샷
-central-mcp up [--no-orchestrator] [--bypass] [--interactive-panes] [--panes-per-window N]
-                                   # 선택적 tmux 관찰 레이어
+central-mcp up [--no-orchestrator] [--no-bypass] [--interactive-panes] [--panes-per-window N]
+                                   # 선택적 tmux 관찰 레이어 생성
+central-mcp tmux [up과 동일 플래그]   # 세션이 없으면 생성 후 tmux로 attach
 central-mcp down                   # 관찰 세션 종료
 central-mcp watch NAME [--from-start]
                                    # 프로젝트의 dispatch 이벤트 실시간 스트리밍
@@ -228,13 +229,16 @@ central-mcp watch NAME [--from-start]
 윈도우 이름은 `cmcp-<N>` 형식. 오케스트레이터가 포함된 첫 윈도우는 `-hub` 접미사(`cmcp-1-hub`)가 붙어 한눈에 구분됩니다. `Ctrl+b n` / `Ctrl+b <숫자>`로 pane 전환. 레지스트리가 한 윈도우에 담기 어려운 규모면 `cmcp-2`, `cmcp-3`, … 윈도우가 자동 생성됩니다 — 각 윈도우당 `--panes-per-window`(기본 4) 개수까지.
 
 ```bash
-central-mcp up                     # 오케스트레이터 + watch pane (기본)
+central-mcp up                     # 오케스트레이터 + watch pane (bypass 기본 ON)
+central-mcp tmux                   # 세션이 없으면 생성 후 tmux로 attach
+central-mcp up --no-bypass         # bypass 끄고 오케스트레이터 기동
 central-mcp up --no-orchestrator   # watch pane만
 central-mcp up --interactive-panes # 레거시: 프로젝트별 에이전트 CLI 인터랙티브 실행
-central-mcp up --bypass            # 오케스트레이터 bypass 플래그 적용
 central-mcp up --panes-per-window 6
 central-mcp down                   # 세션 종료
 ```
+
+Hub 윈도우(`cmcp-1-hub`)는 tmux의 `main-vertical` 레이아웃을 사용합니다 — 오케스트레이터 pane이 왼쪽에 두 칸 크기를 차지하고, 프로젝트 pane들이 오른쪽에 세로로 쌓입니다. 그래서 hub는 `panes_per_window − 1`개 pane(기본 3 — 오케스트레이터 + 프로젝트 2개)을 담고, 오버플로우 윈도우는 `panes_per_window`개 프로젝트를 그대로 담습니다. 모든 pane은 상단 border에 역할 이름이 표시되고, 오케스트레이터 border는 굵은 노란색으로 강조됩니다.
 
 `central-mcp down`으로 종료해도 MCP 디스패치 경로는 이 레이어에 의존하지 않으므로 진행 중인 dispatch에 영향 없습니다. `watch`는 `~/.central-mcp/logs/<project>/dispatch.jsonl`을 읽기 전용으로 tail하는 구조라 어떤 터미널에서도 독립 실행 가능합니다.
 
