@@ -215,9 +215,43 @@ def cmd_upgrade(args: argparse.Namespace) -> int:
 
 
 def cmd_down(args: argparse.Namespace) -> int:
-    killed, message = layout.kill_all()
-    print(message)
-    return 0 if killed or "no session" in message else 1
+    """Tear down the observation session for both backends.
+
+    Users don't have to remember which multiplexer currently holds
+    `central` — `cmcp down` kills whichever has a matching session.
+    Reports each backend's outcome so a partially-live state is
+    visible.
+    """
+    any_killed = False
+    any_error = False
+
+    killed_tmux, msg_tmux = layout.kill_all()
+    print(f"tmux: {msg_tmux}")
+    if killed_tmux:
+        any_killed = True
+    elif "no session" not in msg_tmux:
+        any_error = True
+
+    # zellij is optional — only try if the binary is on PATH.
+    if shutil.which("zellij"):
+        from central_mcp import zellij as zj
+        if zj.has_session(zj.SESSION):
+            r = zj.kill_session(zj.SESSION)
+            if r.ok:
+                print(f"zellij: killed session '{zj.SESSION}'")
+                # Forget any serialized state so a future `cmcp zellij`
+                # starts fresh instead of resurrecting the dead session.
+                zj._run(["delete-session", zj.SESSION, "--force"])
+                any_killed = True
+            else:
+                print(f"zellij: kill-session failed: {r.stderr.strip()}")
+                any_error = True
+        else:
+            print(f"zellij: no session named '{zj.SESSION}'")
+
+    if any_error:
+        return 1
+    return 0 if any_killed else 0
 
 
 def cmd_tmux(args: argparse.Namespace) -> int:
@@ -290,9 +324,15 @@ def cmd_zellij(args: argparse.Namespace) -> int:
         panes_per_window=panes_per_window,
     )
     print(f"wrote layout: {layout_path}")
+    # `--session NAME --layout FILE` means "add FILE as a new tab to the
+    # existing session NAME" and errors out if NAME doesn't exist yet.
+    # `--new-session-with-layout` (-n) is the correct flag for creating
+    # a brand-new session from a layout file — combine with --session
+    # to pin the name.
     os.execvp(
         "zellij",
-        ["zellij", "--session", zellij.SESSION, "--layout", str(layout_path)],
+        ["zellij", "--session", zellij.SESSION,
+         "--new-session-with-layout", str(layout_path)],
     )
 
 
