@@ -28,6 +28,7 @@ from central_mcp.cli._commands import (
     cmd_serve,
     cmd_unalias,
     cmd_up,
+    cmd_watch,
 )
 
 
@@ -62,7 +63,27 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="N",
         help="max panes per tmux window (default: 4); overflow spills to projects-2, projects-3, …",
     )
+    p_up.add_argument(
+        "--interactive-panes",
+        action="store_true",
+        help=(
+            "run each project's interactive agent in its pane (legacy). "
+            "Default runs `central-mcp watch <project>` to stream dispatch events."
+        ),
+    )
     p_up.set_defaults(func=cmd_up)
+
+    p_watch = sub.add_parser(
+        "watch",
+        help="stream a project's dispatch event log (used by tmux panes)",
+    )
+    p_watch.add_argument("name", help="project name (must exist in registry)")
+    p_watch.add_argument(
+        "--from-start",
+        action="store_true",
+        help="replay the whole log from the beginning instead of following from end",
+    )
+    p_watch.set_defaults(func=cmd_watch)
 
     p_down = sub.add_parser("down", help="kill the observation tmux session")
     p_down.set_defaults(func=cmd_down)

@@ -26,7 +26,7 @@ from typing import Any
 
 from fastmcp import FastMCP
 
-from central_mcp import paths
+from central_mcp import events, paths
 from central_mcp.adapters import get_adapter
 from central_mcp.adapters.base import VALID_AGENTS
 from central_mcp.registry import (
@@ -312,9 +312,10 @@ def dispatch(
     }
 
     def _run_one(agent_name: str) -> dict[str, Any]:
-        """Spawn one attempt with a specific agent. Returns result dict
-        with keys: ok, exit_code, output, stderr, error (optional),
-        timeout (optional).
+        """Spawn one attempt with a specific agent. Streams stdout/stderr
+        line-by-line into the project's event log while buffering them
+        for the final MCP response. Returns result dict with keys:
+        ok, exit_code, output, stderr, error (optional), timeout (optional).
         """
         adapter = get_adapter(agent_name)
         argv = adapter.exec_argv(prompt, resume=resume, bypass=bypass)
@@ -323,6 +324,12 @@ def dispatch(
         if hasattr(adapter, "exec_env") and adapter.exec_env:
             env.update(adapter.exec_env)
         attempt_started = time.time()
+
+        events.log_event(
+            project.name, dispatch_id, "attempt_start",
+            agent=agent_name, command=" ".join(argv),
+        )
+
         try:
             proc = subprocess.Popen(
                 argv,
@@ -332,8 +339,14 @@ def dispatch(
                 stderr=subprocess.PIPE,
                 text=True,
                 env=env,
+                bufsize=1,  # line-buffered so reader threads see partial output
             )
         except FileNotFoundError:
+            events.log_event(
+                project.name, dispatch_id, "error",
+                agent=agent_name,
+                error=f"agent binary {argv[0]!r} not found on PATH",
+            )
             return {
                 "agent": agent_name,
                 "command": " ".join(argv),
@@ -344,28 +357,64 @@ def dispatch(
         with _dispatch_lock:
             entry["process"] = proc
             entry["agent"] = agent_name
+
+        stdout_lines: list[str] = []
+        stderr_lines: list[str] = []
+
+        def _reader(stream: Any, buffer: list[str], stream_name: str) -> None:
+            try:
+                for line in stream:
+                    buffer.append(line)
+                    events.log_event(
+                        project.name, dispatch_id, "output",
+                        agent=agent_name, stream=stream_name,
+                        chunk=line.rstrip("\n"),
+                    )
+            except Exception:
+                pass
+            finally:
+                try:
+                    stream.close()
+                except Exception:
+                    pass
+
+        out_t = threading.Thread(
+            target=_reader, args=(proc.stdout, stdout_lines, "stdout"),
+            daemon=True, name=f"dispatch-{dispatch_id}-stdout",
+        )
+        err_t = threading.Thread(
+            target=_reader, args=(proc.stderr, stderr_lines, "stderr"),
+            daemon=True, name=f"dispatch-{dispatch_id}-stderr",
+        )
+        out_t.start()
+        err_t.start()
+
         try:
-            stdout, stderr = proc.communicate(timeout=timeout)
+            proc.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
             proc.kill()
-            stdout, stderr = proc.communicate()
+            proc.wait()
+            out_t.join(timeout=1.0)
+            err_t.join(timeout=1.0)
             return {
                 "agent": agent_name,
                 "command": " ".join(argv),
                 "ok": False,
                 "timeout": True,
                 "error": f"timeout after {timeout}s",
-                "output": scrub(stdout or "", ansi=True, secrets=True),
-                "stderr": scrub(stderr or "", ansi=True, secrets=True),
+                "output": scrub("".join(stdout_lines), ansi=True, secrets=True),
+                "stderr": scrub("".join(stderr_lines), ansi=True, secrets=True),
                 "duration_sec": round(time.time() - attempt_started, 1),
             }
+        out_t.join(timeout=1.0)
+        err_t.join(timeout=1.0)
         return {
             "agent": agent_name,
             "command": " ".join(argv),
             "ok": proc.returncode == 0,
             "exit_code": proc.returncode,
-            "output": scrub(stdout, ansi=True, secrets=True),
-            "stderr": scrub(stderr, ansi=True, secrets=True),
+            "output": scrub("".join(stdout_lines), ansi=True, secrets=True),
+            "stderr": scrub("".join(stderr_lines), ansi=True, secrets=True),
             "duration_sec": round(time.time() - attempt_started, 1),
         }
 
@@ -438,6 +487,19 @@ def dispatch(
             entry["status"] = final_status
             entry["result"] = final_result
 
+        # Emit terminal event for the watch log.
+        events.log_event(
+            project.name, dispatch_id,
+            "error" if final_status == "error" else "complete",
+            status=final_status,
+            ok=bool(final_result and final_result.get("ok")),
+            exit_code=final_result.get("exit_code") if final_result else None,
+            agent_used=final_result.get("agent_used") if final_result else None,
+            duration_sec=final_result.get("duration_sec") if final_result else None,
+            fallback_used=bool(final_result and final_result.get("fallback_used")),
+            error=final_result.get("error") if final_result else None,
+        )
+
         # Write to persistent history (outside lock)
         try:
             _append_history(entry["project"], {
@@ -458,6 +520,12 @@ def dispatch(
 
     with _dispatch_lock:
         _dispatches[dispatch_id] = entry
+
+    events.log_event(
+        project.name, dispatch_id, "start",
+        agent=primary_agent, chain=chain,
+        prompt=prompt, command=" ".join(initial_argv), cwd=str(cwd),
+    )
 
     t = threading.Thread(target=_run_bg, daemon=True, name=f"dispatch-{dispatch_id}")
     t.start()

@@ -44,11 +44,23 @@ def _wrap(launch: str) -> str:
     return f"sh -c '{launch}; exec $SHELL'"
 
 
-def _pane_command(p: Project) -> str | None:
+def _watch_command(project_name: str) -> str:
+    """Default pane command — stream this project's dispatch events."""
+    return _wrap(f"central-mcp watch {project_name}")
+
+
+def _interactive_pane_command(p: Project) -> str | None:
+    """Legacy pane command — run the agent's own interactive CLI."""
     launch = get_adapter(p.agent).launch_command()
     if not launch:
         return None
     return _wrap(launch)
+
+
+def _pane_command(p: Project, interactive: bool = False) -> str | None:
+    if interactive:
+        return _interactive_pane_command(p)
+    return _watch_command(p.name)
 
 
 def _window_name(window_index: int) -> str:
@@ -59,6 +71,7 @@ def _window_name(window_index: int) -> str:
 def ensure_session(
     orchestrator: OrchestratorPane | None = None,
     panes_per_window: int = DEFAULT_PANES_PER_WINDOW,
+    interactive_panes: bool = False,
 ) -> tuple[bool, list[str]]:
     """Idempotently create the observation session if it doesn't exist.
 
@@ -66,6 +79,11 @@ def ensure_session(
     The full plan (orchestrator + projects) is chunked into windows of
     at most `panes_per_window` panes so tmux never runs out of pane
     space for any registry size.
+
+    When `interactive_panes` is False (default), project panes run
+    `central-mcp watch <project>` so users see dispatch activity live.
+    Set it to True to restore the legacy behavior of running each
+    agent's interactive CLI in its pane.
     """
     if panes_per_window < 1:
         raise ValueError(f"panes_per_window must be >= 1, got {panes_per_window}")
@@ -82,7 +100,7 @@ def ensure_session(
                      orchestrator.cwd,
                      _wrap(orchestrator.command)))
     for p in projects:
-        plan.append((p.name, p.path, _pane_command(p)))
+        plan.append((p.name, p.path, _pane_command(p, interactive=interactive_panes)))
 
     if not plan:
         messages.append("registry.yaml has no projects and no orchestrator — creating empty session")

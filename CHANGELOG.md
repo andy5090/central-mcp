@@ -3,6 +3,20 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+- Dispatch event log: every dispatch streams `start` / `output` / `complete` events to `~/.central-mcp/logs/<project>/dispatch.jsonl`
+- `central-mcp watch <project>` — human-readable live tail of the event log (ANSI-colored headers, exit code, duration)
+- `central-mcp up` now defaults to running `central-mcp watch` in each project pane so dispatch activity is visible; legacy behavior available via `--interactive-panes`
+- `central-mcp up`: orchestrator pane at pane 0 (auto-picks saved run preference; `--no-orchestrator` opts out, `--bypass` applies permission-skip flag)
+- `central-mcp up --panes-per-window N` (default 4) chunks panes across `projects`, `projects-2`, … so registries of any size fit
+- `codex` and `gemini` adapters now support session resume (`codex exec resume --last`, `gemini --resume latest`)
+
+### Changed
+- Dispatch subprocess stdout/stderr are now read line-by-line so they can be streamed into the event log while still returning the full output in the MCP response
+- `central-mcp up` layout re-tiles after every split and focuses pane 0 so attaching users land on the orchestrator
+
 ## [0.1.2] — 2026-04-17
 
 ### Added

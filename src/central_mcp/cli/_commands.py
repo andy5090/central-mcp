@@ -137,12 +137,18 @@ def cmd_up(args: argparse.Namespace) -> int:
     created, messages = layout.ensure_session(
         orchestrator=orchestrator,
         panes_per_window=panes_per_window,
+        interactive_panes=args.interactive_panes,
     )
     for m in messages:
         print(m)
     if not created:
         print(f"(already running — attach with: tmux attach -t {layout.SESSION})")
     return 0
+
+
+def cmd_watch(args: argparse.Namespace) -> int:
+    from central_mcp import watch
+    return watch.run(args.name, from_start=args.from_start)
 
 
 def cmd_down(args: argparse.Namespace) -> int:

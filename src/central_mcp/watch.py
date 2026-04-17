@@ -1,0 +1,181 @@
+"""`central-mcp watch <project>` — stream one project's dispatch events.
+
+Tails `~/.central-mcp/logs/<project>/dispatch.jsonl` and renders each
+event as human-readable text with ANSI colors. This is what the tmux
+observation pane runs instead of the agent's interactive CLI so users
+see dispatch activity live without having to poll MCP tools.
+
+Quiet exit on SIGINT (Ctrl+C) or broken pipe (terminal closed). If the
+log file doesn't exist yet, waits for dispatch to create it rather
+than erroring out — fresh projects should show an empty pane that
+lights up on the first dispatch.
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+import time
+from pathlib import Path
+from typing import Any, TextIO
+
+from central_mcp import events
+
+# ANSI color helpers — gracefully no-op when stdout isn't a TTY.
+_IS_TTY = sys.stdout.isatty()
+
+
+def _c(color: str, text: str) -> str:
+    if not _IS_TTY:
+        return text
+    return f"\x1b[{color}m{text}\x1b[0m"
+
+
+DIM = lambda s: _c("2", s)
+BOLD = lambda s: _c("1", s)
+RED = lambda s: _c("31", s)
+GREEN = lambda s: _c("32", s)
+YELLOW = lambda s: _c("33", s)
+BLUE = lambda s: _c("34", s)
+CYAN = lambda s: _c("36", s)
+
+
+def _fmt_ts(ts: str) -> str:
+    """Turn an ISO timestamp into a compact HH:MM:SS for pane display."""
+    if not ts:
+        return "         "
+    return ts[11:19] if "T" in ts else ts[:8]
+
+
+def _render(record: dict[str, Any], out: TextIO) -> None:
+    event = record.get("event", "?")
+    ts = _fmt_ts(record.get("ts", ""))
+    did = record.get("id", "????????")
+    agent = record.get("agent") or record.get("agent_used") or ""
+
+    if event == "start":
+        header = BOLD(CYAN(f"── {ts} [{did}] start ──"))
+        out.write(f"\n{header}\n")
+        if agent:
+            out.write(DIM(f"agent: {agent}\n"))
+        chain = record.get("chain") or []
+        if len(chain) > 1:
+            out.write(DIM(f"chain: {' → '.join(chain)}\n"))
+        prompt = record.get("prompt", "")
+        if prompt:
+            out.write(f"{BOLD('>')} {prompt}\n")
+        out.write("\n")
+
+    elif event == "attempt_start":
+        # Only worth showing when a fallback kicks in. The `start` event
+        # already covered the first attempt's agent/command.
+        out.write(DIM(f"{ts} attempting {agent}…\n"))
+
+    elif event == "output":
+        chunk = record.get("chunk", "")
+        stream = record.get("stream", "stdout")
+        if stream == "stderr":
+            out.write(RED(chunk) + "\n")
+        else:
+            out.write(chunk + "\n")
+
+    elif event == "complete":
+        ok = record.get("ok")
+        status = record.get("status", "complete")
+        exit_code = record.get("exit_code")
+        dur = record.get("duration_sec")
+        used = record.get("agent_used") or agent or ""
+        bits = []
+        if used:
+            bits.append(used)
+        if dur is not None:
+            bits.append(f"{dur}s")
+        if exit_code is not None:
+            bits.append(f"exit={exit_code}")
+        summary = " · ".join(bits)
+        if ok:
+            badge = GREEN("✓ done")
+        elif status == "timeout":
+            badge = YELLOW("⚠ timeout")
+        elif status == "cancelled":
+            badge = YELLOW("⚠ cancelled")
+        else:
+            badge = RED("✗ failed")
+        err = record.get("error")
+        footer = f"── {ts} [{did}] {badge}"
+        if summary:
+            footer += f" ({summary})"
+        footer += " " + BOLD(CYAN("─" * 2))
+        out.write(f"\n{footer}\n")
+        if err and not ok:
+            out.write(RED(f"error: {err}") + "\n")
+        out.write("\n")
+
+    elif event == "error":
+        err = record.get("error", "unknown error")
+        out.write(RED(f"\n── {ts} [{did}] ✗ error: {err} ──\n\n"))
+
+    out.flush()
+
+
+def _tail_forever(path: Path, from_start: bool) -> None:
+    """Follow a jsonl file, rendering each record as it arrives.
+
+    Handles file rotation/truncation by re-opening if the inode or size
+    changes in ways that suggest the file was replaced.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # Touch so reader below succeeds on a fresh project.
+    if not path.exists():
+        path.touch()
+
+    f = path.open("r")
+    if not from_start:
+        f.seek(0, 2)
+
+    try:
+        while True:
+            line = f.readline()
+            if not line:
+                time.sleep(0.15)
+                # Detect rotation/truncation: if the file's new size is
+                # smaller than our position, reopen from the top.
+                try:
+                    current_size = path.stat().st_size
+                    if current_size < f.tell():
+                        f.close()
+                        f = path.open("r")
+                except FileNotFoundError:
+                    pass
+                continue
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                sys.stdout.write(DIM(f"(unparseable log line: {line[:80]!r})\n"))
+                sys.stdout.flush()
+                continue
+            _render(record, sys.stdout)
+    finally:
+        try:
+            f.close()
+        except Exception:
+            pass
+
+
+def run(project: str, *, from_start: bool = False) -> int:
+    """Follow the dispatch log for one project. Blocks until Ctrl+C."""
+    path = events.log_path(project)
+    try:
+        header = BOLD(CYAN(f"[central-mcp watch] {project} → {path}"))
+        sys.stdout.write(header + "\n")
+        sys.stdout.write(DIM("(streaming — waiting for dispatches)\n\n"))
+        sys.stdout.flush()
+        _tail_forever(path, from_start=from_start)
+    except KeyboardInterrupt:
+        return 0
+    except BrokenPipeError:
+        return 0
+    return 0

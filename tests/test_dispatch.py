@@ -388,3 +388,50 @@ def test_cancel_stops_fallback_chain(
     # each chain iteration.
     agents_run = [a["agent"] for a in result["attempts"]]
     assert "backup" not in agents_run
+
+
+# ---------- event log integration ----------
+
+def _read_events(project: str) -> list[dict]:
+    import json
+    from central_mcp import events as evmod
+    path = evmod.log_path(project)
+    if not path.exists():
+        return []
+    return [json.loads(l) for l in path.read_text().splitlines() if l.strip()]
+
+
+def test_dispatch_writes_start_and_complete_events(
+    stub_project: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A successful dispatch should log start + output + complete events."""
+    _install_stub(monkeypatch, lambda p: [sys.executable, "-c", "print('hello')"])
+    r = server.dispatch(stub_project, "say hi", bypass=True)
+    _wait_for_complete(r["dispatch_id"])
+
+    records = _read_events(stub_project)
+    kinds = [r["event"] for r in records]
+    assert "start" in kinds
+    assert "complete" in kinds
+    # At least one output event from the subprocess stdout.
+    assert any(r["event"] == "output" and "hello" in r.get("chunk", "") for r in records)
+
+    # Events from a single dispatch share the dispatch id.
+    ids = {r["id"] for r in records}
+    assert r["dispatch_id"] in ids
+
+
+def test_dispatch_event_log_records_error_on_failure(
+    stub_project: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Non-zero exit should end with a complete event where ok=False."""
+    _install_stub(monkeypatch, lambda p: [sys.executable, "-c", "import sys; sys.exit(2)"])
+    r = server.dispatch(stub_project, "fail plz", bypass=True)
+    _wait_for_complete(r["dispatch_id"])
+
+    records = _read_events(stub_project)
+    terminal = [rec for rec in records if rec["event"] in ("complete", "error")]
+    assert terminal, "dispatch produced no terminal event"
+    last = terminal[-1]
+    assert last["ok"] is False
+    assert last.get("exit_code") == 2
