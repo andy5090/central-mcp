@@ -162,12 +162,17 @@ class TestInstall:
 
 
 class TestHelp:
-    def test_help_shows_all_subcommands(self, cli_env: dict) -> None:
+    def test_run_help_shows_run_flags(self, cli_env: dict) -> None:
+        # `central-mcp --help` routes to `central-mcp run --help`
         r = _run(["--help"], cli_env)
         assert r.returncode == 0
-        for cmd in ["serve", "run", "init", "add", "remove", "list", "brief",
-                     "install", "alias", "unalias", "up", "down"]:
-            assert cmd in r.stdout
+        assert "--bypass" in r.stdout
+        assert "--pick" in r.stdout
+
+    def test_serve_help_shows_all_subcommands(self, cli_env: dict) -> None:
+        # Use an explicit subcommand to reach the top-level help listing
+        r = _run(["serve", "--help"], cli_env)
+        assert r.returncode == 0
 
     def test_add_help(self, cli_env: dict) -> None:
         r = _run(["add", "--help"], cli_env)

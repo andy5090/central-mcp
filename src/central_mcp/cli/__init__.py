@@ -143,10 +143,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
-    # No args → launch orchestrator (same as `central-mcp run`).
+    # No args, or first arg is a flag (not a subcommand) → inject "run".
+    # Handles: `central-mcp`, `central-mcp --bypass`, `central-mcp --agent X`.
     # MCP clients use `central-mcp serve` explicitly, so this is safe.
-    if len(sys.argv) == 1:
-        sys.argv.append("run")
+    if len(sys.argv) == 1 or sys.argv[1].startswith("-"):
+        sys.argv.insert(1, "run")
 
     parser = build_parser()
     args = parser.parse_args()
