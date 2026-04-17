@@ -28,7 +28,6 @@ Status legend: ✅ done · 🚧 in progress · 📋 planned · 💭 idea
 📋 **tmux pane integration**
 - `central-mcp up`'s project panes run `central-mcp watch <project>` instead of the interactive agent.
 - Orchestrator pane stays interactive.
-- Opt-out: `up --interactive-panes` for legacy behavior.
 
 📋 **Tests**
 - Dispatch produces the expected event sequence.

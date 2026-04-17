@@ -174,14 +174,14 @@ On the first dispatch to a project the chosen bypass value is saved to `registry
 > - You have not read the prompt carefully or are delegating work from untrusted sources.
 > - You want to review every command the agent is about to run.
 >
-> When bypass is off, dispatches may hang at permission prompts (no TTY to answer) — use `central-mcp up --interactive-panes` so you can approve interactively, or restrict dispatches to read-only tasks.
+> When bypass is off, dispatches may hang at permission prompts (no TTY to answer) — restrict dispatches to read-only tasks, or open a regular terminal in the project's cwd and run the agent interactively there.
 >
 > **Disclaimer**: central-mcp is a routing layer and does not supervise what the agents do. You are responsible for the scope, targets, and consequences of every dispatch you run in bypass mode. The authors and contributors of central-mcp are not liable for any damage, data loss, security breach, cost, or other harm that results from enabling bypass. Use snapshots (git commits, backups, branch protection), least-privilege credentials, and offline/sandboxed environments where possible.
 
 **What happens without bypass**:
 - Safe tasks (answering questions, reading files, explaining code) → still work fine.
 - Any task that triggers a permission prompt (editing files, shell commands, installing deps) → dispatch hangs until the timeout.
-- If that happens, the orchestrator will suggest re-dispatching with `bypass=true`, or running `central-mcp up --interactive-panes` so you can type approvals yourself in a tmux pane.
+- If that happens, the orchestrator will suggest re-dispatching with `bypass=true`, or you can open a regular terminal in the project's cwd and run the agent interactively there to approve by hand.
 
 If a project deals with sensitive code and you're not comfortable granting blanket bypass, keep `bypass=false` and stick to read-only dispatches, or use interactive panes for anything that writes.
 
@@ -222,7 +222,7 @@ central-mcp add NAME PATH [--agent claude|codex|gemini|droid|opencode]
 central-mcp remove NAME
 central-mcp list                   # one-line registry dump
 central-mcp brief                  # orchestrator-ready markdown snapshot
-central-mcp up [--no-orchestrator] [--no-bypass] [--interactive-panes] [--panes-per-window N]
+central-mcp up [--no-orchestrator] [--no-bypass] [--panes-per-window N]
                                    # optional tmux observation layer
 central-mcp tmux [same flags as up]
                                    # create session if missing, then attach via tmux
@@ -241,12 +241,11 @@ central-mcp watch NAME [--from-start]
 Windows are named `cmcp-<N>` with the first window picking up a `-hub` suffix (`cmcp-1-hub`) when it holds the orchestrator — so you can tell at a glance which window to jump to. Cycle panes with `Ctrl+b n` / `Ctrl+b <digit>`. When the registry has more projects than fit in one window, extra windows (`cmcp-2`, `cmcp-3`, …) are added automatically — each holds up to `--panes-per-window` (default 4).
 
 ```bash
-central-mcp up                     # orchestrator + watch panes (bypass on by default)
-central-mcp tmux                   # create session if needed, then attach via tmux
-central-mcp up --no-bypass         # launch orchestrator without permission-bypass
-central-mcp up --no-orchestrator   # watch panes only
-central-mcp up --interactive-panes # legacy: run each project's agent CLI interactively
-central-mcp up --panes-per-window 6
+central-mcp tmux                   # one-shot: create the session if missing, then attach
+central-mcp tmux --no-bypass       # same, but launch orchestrator without permission-bypass
+central-mcp tmux --no-orchestrator # watch panes only (no orchestrator)
+central-mcp tmux --panes-per-window 6
+central-mcp up                     # create the session but don't attach (scripted flows)
 central-mcp down                   # tear the session back down
 ```
 

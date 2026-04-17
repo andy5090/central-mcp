@@ -72,14 +72,6 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="N",
         help="max panes per tmux window (default: 4); overflow spills to cmcp-2, cmcp-3, …",
     )
-    p_up.add_argument(
-        "--interactive-panes",
-        action="store_true",
-        help=(
-            "run each project's interactive agent in its pane (legacy). "
-            "Default runs `central-mcp watch <project>` to stream dispatch events."
-        ),
-    )
     p_up.set_defaults(func=cmd_up)
 
     p_watch = sub.add_parser(
@@ -116,7 +108,6 @@ def build_parser() -> argparse.ArgumentParser:
         "--panes-per-window", type=int, default=None, metavar="N",
         help="max panes per tmux window (default: 4)",
     )
-    p_tmux.add_argument("--interactive-panes", action="store_true")
     p_tmux.set_defaults(func=cmd_tmux)
 
     p_list = sub.add_parser("list", help="print the registry")

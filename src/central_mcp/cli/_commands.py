@@ -138,7 +138,6 @@ def cmd_up(args: argparse.Namespace) -> int:
     created, messages = layout.ensure_session(
         orchestrator=orchestrator,
         panes_per_window=panes_per_window,
-        interactive_panes=args.interactive_panes,
     )
     for m in messages:
         print(m)

@@ -170,7 +170,7 @@ update_project(name="my-app", fallback=["codex", "gemini"])
 > - 프롬프트를 꼼꼼히 확인하지 않았거나, 신뢰할 수 없는 소스의 작업을 위임
 > - 에이전트가 실행할 명령을 매번 리뷰하고 싶음
 >
-> bypass를 끄면 권한 프롬프트에서 dispatch가 hang할 수 있습니다 (응답할 TTY 없음) — `central-mcp up --interactive-panes`로 tmux 안에서 수동 승인하거나, 읽기 전용 dispatch만 사용하세요.
+> bypass를 끄면 권한 프롬프트에서 dispatch가 hang할 수 있습니다 (응답할 TTY 없음) — 읽기 전용 dispatch만 사용하거나, 별도 터미널에서 프로젝트 디렉토리로 이동해 에이전트를 인터랙티브로 띄워서 직접 승인하세요.
 >
 > **면책**: central-mcp는 라우팅 레이어로서 에이전트가 어떤 작업을 수행하는지 감독하지 않습니다. bypass 모드로 실행한 모든 dispatch의 범위·대상·결과에 대한 책임은 사용자 본인에게 있습니다. central-mcp 저자와 기여자는 bypass 사용으로 인한 데이터 손실·보안 침해·비용 발생·기타 피해에 대해 **어떤 책임도 지지 않습니다**. 스냅샷(git 커밋, 백업, 브랜치 보호), 최소 권한 자격증명, 오프라인/샌드박스 환경을 최대한 활용하세요.
 
@@ -211,7 +211,7 @@ central-mcp add NAME PATH [--agent claude|codex|gemini|droid|opencode]
 central-mcp remove NAME
 central-mcp list                   # 한 줄씩 레지스트리 출력
 central-mcp brief                  # 오케스트레이터용 마크다운 스냅샷
-central-mcp up [--no-orchestrator] [--no-bypass] [--interactive-panes] [--panes-per-window N]
+central-mcp up [--no-orchestrator] [--no-bypass] [--panes-per-window N]
                                    # 선택적 tmux 관찰 레이어 생성
 central-mcp tmux [up과 동일 플래그]   # 세션이 없으면 생성 후 tmux로 attach
 central-mcp down                   # 관찰 세션 종료
@@ -229,12 +229,11 @@ central-mcp watch NAME [--from-start]
 윈도우 이름은 `cmcp-<N>` 형식. 오케스트레이터가 포함된 첫 윈도우는 `-hub` 접미사(`cmcp-1-hub`)가 붙어 한눈에 구분됩니다. `Ctrl+b n` / `Ctrl+b <숫자>`로 pane 전환. 레지스트리가 한 윈도우에 담기 어려운 규모면 `cmcp-2`, `cmcp-3`, … 윈도우가 자동 생성됩니다 — 각 윈도우당 `--panes-per-window`(기본 4) 개수까지.
 
 ```bash
-central-mcp up                     # 오케스트레이터 + watch pane (bypass 기본 ON)
-central-mcp tmux                   # 세션이 없으면 생성 후 tmux로 attach
-central-mcp up --no-bypass         # bypass 끄고 오케스트레이터 기동
-central-mcp up --no-orchestrator   # watch pane만
-central-mcp up --interactive-panes # 레거시: 프로젝트별 에이전트 CLI 인터랙티브 실행
-central-mcp up --panes-per-window 6
+central-mcp tmux                   # 원샷: 세션 없으면 생성, 바로 attach
+central-mcp tmux --no-bypass       # bypass 끄고 오케스트레이터 기동
+central-mcp tmux --no-orchestrator # watch pane만
+central-mcp tmux --panes-per-window 6
+central-mcp up                     # attach 없이 세션만 생성 (스크립트용)
 central-mcp down                   # 세션 종료
 ```
 
