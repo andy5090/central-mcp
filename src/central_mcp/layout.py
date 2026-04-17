@@ -1,20 +1,26 @@
 """Optional tmux observation layer.
 
-`central-mcp up` creates a single tmux session named `central` with one
-window `projects` that contains one interactive pane per registered
-project. Each pane runs the adapter's `launch` command wrapped in
-`sh -c '<cmd>; exec $SHELL'` so the pane stays alive if the agent
+`central-mcp up` creates a single tmux session named `central`.
+The first window (`projects`) holds up to 6 panes: an orchestrator
+pane at index 0 (by default) followed by the first registered
+projects. When the registry has more projects than fit, additional
+windows (`projects-2`, `projects-3`, …) are created with up to
+6 project panes each. Each pane runs its launch command wrapped in
+`sh -c '<cmd>; exec $SHELL'` so the pane stays alive if the process
 exits. No hub window, no log tail split, no pipe-pane logging —
-everything the MCP dispatch path needs lives in `server.py` and talks
-directly to subprocesses, independent of whatever tmux is (or isn't)
-doing.
+everything the MCP dispatch path needs lives in `server.py` and
+talks directly to subprocesses, independent of whatever tmux is
+(or isn't) doing.
 
 Users `tmux attach -t central` and cycle panes with `Ctrl+b n/p` or
-`Ctrl+b <digit>` to peek at each agent. `central-mcp down` tears the
-whole session back down.
+`Ctrl+b <digit>`. Switch windows with `Ctrl+b <digit>` at the window
+level or `Ctrl+b w`. `central-mcp down` tears the whole session back
+down.
 """
 
 from __future__ import annotations
+
+from dataclasses import dataclass
 
 from central_mcp import tmux
 from central_mcp.adapters import get_adapter
@@ -22,49 +28,102 @@ from central_mcp.registry import Project, load_registry
 
 SESSION = "central"
 WINDOW = "projects"
+DEFAULT_PANES_PER_WINDOW = 4
 
 
-def _pane_command(p: Project) -> str | None:
-    """Shell command to exec in the pane, wrapped to survive agent exit."""
-    launch = get_adapter(p.agent).launch_command()
-    if not launch:
-        return None
+@dataclass
+class OrchestratorPane:
+    """Describes the orchestrator pane to prepend at index 0."""
+    command: str  # e.g. "claude" or "claude --dangerously-skip-permissions"
+    cwd: str      # launch directory (usually central-mcp home)
+    label: str    # human-readable name for status messages
+
+
+def _wrap(launch: str) -> str:
+    """Wrap a launch command so the pane survives after the process exits."""
     return f"sh -c '{launch}; exec $SHELL'"
 
 
-def ensure_session() -> tuple[bool, list[str]]:
-    """Idempotently create the observation session if it doesn't exist."""
+def _pane_command(p: Project) -> str | None:
+    launch = get_adapter(p.agent).launch_command()
+    if not launch:
+        return None
+    return _wrap(launch)
+
+
+def _window_name(window_index: int) -> str:
+    """First window keeps the canonical name; overflow windows get a suffix."""
+    return WINDOW if window_index == 0 else f"{WINDOW}-{window_index + 1}"
+
+
+def ensure_session(
+    orchestrator: OrchestratorPane | None = None,
+    panes_per_window: int = DEFAULT_PANES_PER_WINDOW,
+) -> tuple[bool, list[str]]:
+    """Idempotently create the observation session if it doesn't exist.
+
+    With `orchestrator` given it becomes pane 0 of the first window.
+    The full plan (orchestrator + projects) is chunked into windows of
+    at most `panes_per_window` panes so tmux never runs out of pane
+    space for any registry size.
+    """
+    if panes_per_window < 1:
+        raise ValueError(f"panes_per_window must be >= 1, got {panes_per_window}")
     messages: list[str] = []
     if tmux.has_session(SESSION):
         messages.append(f"session '{SESSION}' already exists — leaving as-is")
         return False, messages
 
     projects = load_registry()
-    if not projects:
-        messages.append("registry.yaml has no projects — creating empty session")
+
+    plan: list[tuple[str, str, str | None]] = []
+    if orchestrator is not None:
+        plan.append((f"orchestrator ({orchestrator.label})",
+                     orchestrator.cwd,
+                     _wrap(orchestrator.command)))
+    for p in projects:
+        plan.append((p.name, p.path, _pane_command(p)))
+
+    if not plan:
+        messages.append("registry.yaml has no projects and no orchestrator — creating empty session")
         r = tmux.new_session(SESSION, WINDOW, ".")
         if not r.ok:
             messages.append(f"new-session failed: {r.stderr.strip()}")
             return False, messages
         return True, messages
 
-    first, *rest = projects
-    r = tmux.new_session(SESSION, WINDOW, first.path, command=_pane_command(first))
-    if not r.ok:
-        messages.append(f"new-session failed: {r.stderr.strip()}")
-        return False, messages
-    messages.append(f"pane 0 -> {first.name} ({first.path})")
+    # Chunk into windows of at most panes_per_window.
+    chunks = [plan[i:i + panes_per_window] for i in range(0, len(plan), panes_per_window)]
 
-    target = f"{SESSION}:{WINDOW}"
-    for i, p in enumerate(rest, start=1):
-        r = tmux.split_window(target, p.path, command=_pane_command(p))
+    for win_idx, chunk in enumerate(chunks):
+        window_name = _window_name(win_idx)
+        target = f"{SESSION}:{window_name}"
+        first_label, first_cwd, first_cmd = chunk[0]
+
+        if win_idx == 0:
+            r = tmux.new_session(SESSION, window_name, first_cwd, command=first_cmd)
+            op = "new-session"
+        else:
+            r = tmux.new_window(SESSION, window_name, first_cwd, command=first_cmd)
+            op = "new-window"
         if not r.ok:
-            messages.append(f"split-window for {p.name} failed: {r.stderr.strip()}")
+            messages.append(f"{op} for {window_name} failed: {r.stderr.strip()}")
             continue
-        messages.append(f"pane {i} -> {p.name} ({p.path})")
+        messages.append(f"{window_name} pane 0 -> {first_label} ({first_cwd})")
 
-    if rest:
-        tmux.select_layout(target, "tiled")
+        for i, (label, cwd, cmd) in enumerate(chunk[1:], start=1):
+            r = tmux.split_window(target, cwd, command=cmd)
+            if not r.ok:
+                messages.append(f"split-window for {label} failed: {r.stderr.strip()}")
+                continue
+            messages.append(f"{window_name} pane {i} -> {label} ({cwd})")
+            # Re-tile after every split so tmux redistributes space.
+            tmux.select_layout(target, "tiled")
+
+    # Focus the first window/pane so attaching users land on pane 0
+    # (orchestrator when present) rather than the last-split pane.
+    tmux.select_window(f"{SESSION}:{WINDOW}")
+    tmux.select_pane(f"{SESSION}:{WINDOW}.0")
 
     messages.append(f"created '{SESSION}' — attach with: tmux attach -t {SESSION}")
     return True, messages

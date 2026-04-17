@@ -47,6 +47,13 @@ def new_session(name: str, window: str, cwd: str, command: str | None = None) ->
     return _run(args)
 
 
+def new_window(session: str, window: str, cwd: str, command: str | None = None) -> TmuxResult:
+    args = ["new-window", "-t", session, "-n", window, "-c", cwd]
+    if command:
+        args.append(command)
+    return _run(args)
+
+
 def split_window(target: str, cwd: str, command: str | None = None) -> TmuxResult:
     args = ["split-window", "-t", target, "-c", cwd]
     if command:
@@ -56,6 +63,16 @@ def split_window(target: str, cwd: str, command: str | None = None) -> TmuxResul
 
 def select_layout(target: str, layout: str = "tiled") -> TmuxResult:
     return _run(["select-layout", "-t", target, layout])
+
+
+def select_pane(target: str) -> TmuxResult:
+    """Focus a specific pane (e.g. `central:projects.0`)."""
+    return _run(["select-pane", "-t", target])
+
+
+def select_window(target: str) -> TmuxResult:
+    """Focus a specific window (e.g. `central:projects`)."""
+    return _run(["select-window", "-t", target])
 
 
 def kill_session(name: str) -> TmuxResult:

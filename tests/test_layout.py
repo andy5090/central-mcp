@@ -160,3 +160,227 @@ class TestUpDown:
         killed, _ = layout.kill_all()
         assert killed
         assert not tmux.has_session(layout.SESSION)
+
+
+class TestOrchestratorPane:
+    """Pane 0 is the orchestrator when OrchestratorPane is passed."""
+
+    def test_orchestrator_becomes_pane_zero(self, fake_home: Path, tmp_path: Path) -> None:
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        registry.add_project("proj", str(project_dir), agent="shell")
+
+        orch_dir = tmp_path / "orch"
+        orch_dir.mkdir()
+        orch = layout.OrchestratorPane(command=":", cwd=str(orch_dir), label="stub-orch")
+
+        created, messages = layout.ensure_session(orchestrator=orch)
+        assert created
+        # Pane 0 should be orchestrator, pane 1 project.
+        assert any("pane 0 -> orchestrator" in m and layout.WINDOW in m for m in messages)
+        assert any("pane 1 -> proj" in m for m in messages)
+
+        r = tmux._run([
+            "list-panes", "-t", f"{layout.SESSION}:{layout.WINDOW}",
+            "-F", "#{pane_index}:#{pane_current_path}",
+        ])
+        assert r.ok
+        lines = r.stdout.strip().splitlines()
+        assert len(lines) == 2
+        # Resolve paths to handle /tmp vs /private/tmp on macOS.
+        assert Path(lines[0].split(":", 1)[1]).resolve() == orch_dir.resolve()
+        assert Path(lines[1].split(":", 1)[1]).resolve() == project_dir.resolve()
+
+    def test_no_orchestrator_keeps_projects_at_index_zero(
+        self, fake_home: Path, tmp_path: Path
+    ) -> None:
+        d = tmp_path / "only-proj"
+        d.mkdir()
+        registry.add_project("only-proj", str(d), agent="shell")
+
+        created, messages = layout.ensure_session(orchestrator=None)
+        assert created
+        assert any("pane 0 -> only-proj" in m for m in messages)
+
+    def test_orchestrator_only_empty_registry(self, fake_home: Path, tmp_path: Path) -> None:
+        """Orchestrator still spawns even when no projects are registered."""
+        orch_dir = tmp_path / "orch"
+        orch_dir.mkdir()
+        orch = layout.OrchestratorPane(command=":", cwd=str(orch_dir), label="stub")
+
+        created, messages = layout.ensure_session(orchestrator=orch)
+        assert created
+        assert any("pane 0 -> orchestrator" in m for m in messages)
+
+
+def _window_names(session: str) -> list[str]:
+    r = tmux._run(["list-windows", "-t", session, "-F", "#{window_name}"])
+    assert r.ok
+    return r.stdout.strip().splitlines()
+
+
+def _pane_count(session: str, window: str) -> int:
+    r = tmux._run(["list-panes", "-t", f"{session}:{window}", "-F", "#{pane_index}"])
+    assert r.ok
+    return len(r.stdout.strip().splitlines())
+
+
+class TestWindowChunking:
+    """Panes are split across windows at PANES_PER_WINDOW boundaries."""
+
+    def test_four_items_fit_in_one_window(self, fake_home: Path, tmp_path: Path) -> None:
+        for i in range(4):
+            d = tmp_path / f"p{i}"
+            d.mkdir()
+            registry.add_project(f"p{i}", str(d), agent="shell")
+
+        created, messages = layout.ensure_session()
+        assert created
+        assert not any("failed" in m for m in messages), messages
+        assert _window_names(layout.SESSION) == [layout.WINDOW]
+        assert _pane_count(layout.SESSION, layout.WINDOW) == 4
+
+    def test_five_items_overflow_to_second_window(
+        self, fake_home: Path, tmp_path: Path
+    ) -> None:
+        for i in range(5):
+            d = tmp_path / f"p{i}"
+            d.mkdir()
+            registry.add_project(f"p{i}", str(d), agent="shell")
+
+        created, messages = layout.ensure_session()
+        assert created
+        assert not any("failed" in m for m in messages), messages
+        assert _window_names(layout.SESSION) == [layout.WINDOW, f"{layout.WINDOW}-2"]
+        assert _pane_count(layout.SESSION, layout.WINDOW) == 4
+        assert _pane_count(layout.SESSION, f"{layout.WINDOW}-2") == 1
+
+    def test_orchestrator_counts_toward_window_capacity(
+        self, fake_home: Path, tmp_path: Path
+    ) -> None:
+        # Orchestrator + 3 projects = 4 panes in window 1, none overflow.
+        for i in range(3):
+            d = tmp_path / f"p{i}"
+            d.mkdir()
+            registry.add_project(f"p{i}", str(d), agent="shell")
+
+        orch_dir = tmp_path / "orch"
+        orch_dir.mkdir()
+        orch = layout.OrchestratorPane(command=":", cwd=str(orch_dir), label="stub")
+
+        created, messages = layout.ensure_session(orchestrator=orch)
+        assert created
+        assert _window_names(layout.SESSION) == [layout.WINDOW]
+        assert _pane_count(layout.SESSION, layout.WINDOW) == 4
+
+    def test_orchestrator_plus_four_projects_overflows(
+        self, fake_home: Path, tmp_path: Path
+    ) -> None:
+        # Orchestrator + 4 projects = 5 panes → window 1 (4) + window 2 (1).
+        for i in range(4):
+            d = tmp_path / f"p{i}"
+            d.mkdir()
+            registry.add_project(f"p{i}", str(d), agent="shell")
+
+        orch_dir = tmp_path / "orch"
+        orch_dir.mkdir()
+        orch = layout.OrchestratorPane(command=":", cwd=str(orch_dir), label="stub")
+
+        created, messages = layout.ensure_session(orchestrator=orch)
+        assert created
+        assert not any("failed" in m for m in messages), messages
+        assert _window_names(layout.SESSION) == [layout.WINDOW, f"{layout.WINDOW}-2"]
+        assert _pane_count(layout.SESSION, layout.WINDOW) == 4
+        assert _pane_count(layout.SESSION, f"{layout.WINDOW}-2") == 1
+
+    def test_twenty_projects_span_multiple_windows(
+        self, fake_home: Path, tmp_path: Path
+    ) -> None:
+        # 20 projects → ceil(20/4) = 5 windows: 4 + 4 + 4 + 4 + 4.
+        for i in range(20):
+            d = tmp_path / f"p{i:02d}"
+            d.mkdir()
+            registry.add_project(f"p{i:02d}", str(d), agent="shell")
+
+        created, messages = layout.ensure_session()
+        assert created
+        assert not any("failed" in m for m in messages), messages
+
+        names = _window_names(layout.SESSION)
+        assert names == [
+            layout.WINDOW,
+            f"{layout.WINDOW}-2",
+            f"{layout.WINDOW}-3",
+            f"{layout.WINDOW}-4",
+            f"{layout.WINDOW}-5",
+        ]
+        for name in names:
+            assert _pane_count(layout.SESSION, name) == 4
+
+    def test_custom_panes_per_window(self, fake_home: Path, tmp_path: Path) -> None:
+        # 8 projects with panes_per_window=2 → 4 windows of 2 panes each.
+        for i in range(8):
+            d = tmp_path / f"p{i}"
+            d.mkdir()
+            registry.add_project(f"p{i}", str(d), agent="shell")
+
+        created, messages = layout.ensure_session(panes_per_window=2)
+        assert created
+        assert not any("failed" in m for m in messages), messages
+
+        names = _window_names(layout.SESSION)
+        assert len(names) == 4
+        for name in names:
+            assert _pane_count(layout.SESSION, name) == 2
+
+    def test_invalid_panes_per_window_rejected(
+        self, fake_home: Path, tmp_path: Path
+    ) -> None:
+        with pytest.raises(ValueError, match="panes_per_window"):
+            layout.ensure_session(panes_per_window=0)
+
+
+class TestActivePane:
+    """After setup, attaching users should land on the orchestrator pane."""
+
+    def _active(self, session: str) -> tuple[str, int]:
+        r = tmux._run([
+            "display-message", "-p", "-t", session,
+            "-F", "#{window_name}:#{pane_index}",
+        ])
+        assert r.ok, r.stderr
+        window, pane = r.stdout.strip().split(":")
+        return window, int(pane)
+
+    def test_orchestrator_is_active_pane_after_setup(
+        self, fake_home: Path, tmp_path: Path
+    ) -> None:
+        # Orchestrator + 3 projects = 4 panes; last split normally leaves
+        # pane 3 active, but we force focus back to pane 0.
+        for i in range(3):
+            d = tmp_path / f"p{i}"
+            d.mkdir()
+            registry.add_project(f"p{i}", str(d), agent="shell")
+
+        orch_dir = tmp_path / "orch"
+        orch_dir.mkdir()
+        orch = layout.OrchestratorPane(command=":", cwd=str(orch_dir), label="stub")
+
+        layout.ensure_session(orchestrator=orch)
+        window, pane = self._active(layout.SESSION)
+        assert window == layout.WINDOW
+        assert pane == 0
+
+    def test_first_window_is_active_with_overflow(
+        self, fake_home: Path, tmp_path: Path
+    ) -> None:
+        # Even when overflow windows exist, focus stays on the first one.
+        for i in range(6):
+            d = tmp_path / f"p{i}"
+            d.mkdir()
+            registry.add_project(f"p{i}", str(d), agent="shell")
+
+        layout.ensure_session()
+        window, pane = self._active(layout.SESSION)
+        assert window == layout.WINDOW
+        assert pane == 0

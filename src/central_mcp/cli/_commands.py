@@ -85,8 +85,59 @@ def cmd_brief(args: argparse.Namespace) -> int:
 
 # ---------- observation layer (optional tmux) ----------
 
+def _orchestrator_pane_for_up(args: argparse.Namespace) -> layout.OrchestratorPane | None:
+    """Pick an orchestrator for pane 0 or return None to skip.
+
+    Non-interactive resolution: saved preference → first installed.
+    No picker, no prompting — `up` is meant to be scriptable.
+    """
+    if args.no_orchestrator:
+        return None
+
+    installed = _detect_installed()
+    if not installed:
+        print(
+            "warning: no orchestrator CLI on PATH — skipping orchestrator pane",
+            file=sys.stderr,
+        )
+        return None
+
+    choice: tuple[str, str, str] | None = None
+    pref = _load_preference()
+    if pref:
+        for entry in installed:
+            if entry[0] == pref:
+                choice = entry
+                break
+    if choice is None:
+        choice = installed[0]
+
+    key, binary, label = choice
+    launch_dir = paths.central_mcp_home()
+    _ensure_launch_dir(launch_dir)
+
+    command = binary
+    if args.bypass:
+        flags = BYPASS_FLAGS.get(key)
+        if flags:
+            command = " ".join([binary, *flags])
+
+    return layout.OrchestratorPane(command=command, cwd=str(launch_dir), label=label)
+
+
 def cmd_up(args: argparse.Namespace) -> int:
-    created, messages = layout.ensure_session()
+    orchestrator = _orchestrator_pane_for_up(args)
+    panes_per_window = args.panes_per_window or layout.DEFAULT_PANES_PER_WINDOW
+    if panes_per_window < 1:
+        print(
+            f"error: --panes-per-window must be >= 1 (got {panes_per_window})",
+            file=sys.stderr,
+        )
+        return 1
+    created, messages = layout.ensure_session(
+        orchestrator=orchestrator,
+        panes_per_window=panes_per_window,
+    )
     for m in messages:
         print(m)
     if not created:

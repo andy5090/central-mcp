@@ -43,7 +43,24 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_up = sub.add_parser(
         "up",
-        help="create the optional tmux observation session (one pane per project)",
+        help="create the optional tmux observation session (orchestrator + one pane per project)",
+    )
+    p_up.add_argument(
+        "--no-orchestrator",
+        action="store_true",
+        help="skip the orchestrator pane at index 0 (project panes only)",
+    )
+    p_up.add_argument(
+        "--bypass",
+        action="store_true",
+        help="launch the orchestrator pane with its permission-bypass flag",
+    )
+    p_up.add_argument(
+        "--panes-per-window",
+        type=int,
+        default=None,
+        metavar="N",
+        help="max panes per tmux window (default: 4); overflow spills to projects-2, projects-3, …",
     )
     p_up.set_defaults(func=cmd_up)
 
