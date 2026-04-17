@@ -3,6 +3,12 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+- Zellij observation backend — `central-mcp zellij` generates a KDL layout file (hub tab `cmcp-1-hub` with orchestrator on the left half + project panes stacked on the right, overflow tabs `cmcp-2`, `cmcp-3`, … for larger registries) and launches or attaches to a zellij session named `central`. Project panes run `central-mcp watch <project>` exactly like tmux mode, so dispatch streams look identical across backends.
+- README / README_KO observation-layer section now documents both backends.
+
 ## [0.3.2] — 2026-04-18
 
 ### Fixed

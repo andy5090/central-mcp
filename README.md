@@ -256,6 +256,8 @@ central-mcp up [--no-orchestrator] [--no-bypass] [--panes-per-window N]
                                    # optional tmux observation layer
 central-mcp tmux [same flags as up]
                                    # create session if missing, then attach via tmux
+central-mcp zellij [same flags as up]
+                                   # same, but via zellij (generates a KDL layout)
 central-mcp down                   # kill observation session
 central-mcp watch NAME [--from-start]
                                    # stream one project's dispatch events
@@ -263,6 +265,13 @@ central-mcp upgrade [--check]      # self-update from PyPI (uv → pip fallback)
 ```
 
 ## Optional observation layer
+
+Two multiplexer backends are supported:
+
+- **tmux** — `central-mcp tmux` (creates the session if missing, then attaches)
+- **zellij** — `central-mcp zellij` (generates a KDL layout, launches a zellij session named `central` or attaches to an existing one)
+
+Both produce the same logical layout (hub tab + overflow tabs, project panes running `central-mcp watch <project>`). Pick the one you already have installed; you can use both from different terminals as long as they don't share a session name at the same time.
 
 `central-mcp up` creates a tmux session `central` with:
 

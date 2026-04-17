@@ -35,22 +35,21 @@ Status legend: ✅ done · 🚧 in progress · 📋 planned · 💭 idea
 
 ---
 
-## Phase 2 — Zellij support (next up)
+## Phase 2 — Zellij support (shipped, unreleased)
 
 **Goal**: provide the same layout experience on Zellij for users who prefer it over tmux.
 
-📋 **Abstract the layout backend**
-- Extract a `LayoutBackend` interface from `layout.py`/`tmux.py`.
-- Keep tmux backend as default, add Zellij backend.
-- `central-mcp up --backend zellij` or auto-detect installed multiplexer.
+✅ **Zellij implementation**
+- New `central_mcp/zellij.py` builds a KDL layout for the current registry and launches (or attaches to) a session named `central`.
+- Same chunking / hub / pane-title semantics as tmux mode; project panes run `central-mcp watch <project>`.
+- Exposed as `central-mcp zellij` — backend-named subcommand, matching `central-mcp tmux`.
 
-📋 **Zellij implementation**
-- Use Zellij's YAML layout files to declare the pane/window plan.
-- Spawn via `zellij --layout <file>` or equivalent.
-- Support the same orchestrator pane + window chunking semantics.
+✅ **Tests**
+- Unit tests for KDL generation across empty registry / orchestrator present / absent / overflow. Live validation deferred to manual usage because zellij needs a TTY.
 
-📋 **Tests**
-- Zellij backend smoke tests (skip if zellij not installed, mirrors tmux skip).
+💭 **Deferred**
+- `LayoutBackend` interface extraction. Kept the two modules independent for now — duplication is mild, and a single abstraction is easier to design after a third backend appears (or a real pain point shows up).
+- Auto-detect mode (`central-mcp up --backend auto`). Explicit picks (`tmux` / `zellij`) keep the contract obvious.
 
 ---
 
