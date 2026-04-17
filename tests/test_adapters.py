@@ -46,26 +46,45 @@ class TestClaude:
 
 class TestCodex:
     def test_basic(self) -> None:
+        # resume=True (default) uses `codex exec resume --last`
         argv = get_adapter("codex").exec_argv("fix bug")
-        assert argv == ["codex", "exec", "fix bug"]
+        assert argv == ["codex", "exec", "resume", "--last", "fix bug"]
 
-    def test_resume_ignored(self) -> None:
-        # codex exec is stateless — resume flag is accepted but has no effect
-        argv = get_adapter("codex").exec_argv("fix bug", resume=True)
+    def test_no_resume(self) -> None:
+        argv = get_adapter("codex").exec_argv("fix bug", resume=False)
         assert argv == ["codex", "exec", "fix bug"]
+        assert "resume" not in argv
+        assert "--last" not in argv
 
     def test_bypass(self) -> None:
         argv = get_adapter("codex").exec_argv("fix bug", bypass=True)
         assert "--dangerously-bypass-approvals-and-sandbox" in argv
 
+    def test_bypass_and_resume(self) -> None:
+        argv = get_adapter("codex").exec_argv("fix bug", resume=True, bypass=True)
+        assert argv[:4] == ["codex", "exec", "resume", "--last"]
+        assert "--dangerously-bypass-approvals-and-sandbox" in argv
+
 
 class TestGemini:
     def test_basic(self) -> None:
+        # resume=True (default) adds --resume latest
         argv = get_adapter("gemini").exec_argv("analyze code")
+        assert argv == ["gemini", "-p", "analyze code", "--resume", "latest"]
+
+    def test_no_resume(self) -> None:
+        argv = get_adapter("gemini").exec_argv("analyze code", resume=False)
         assert argv == ["gemini", "-p", "analyze code"]
+        assert "--resume" not in argv
 
     def test_bypass(self) -> None:
         argv = get_adapter("gemini").exec_argv("analyze code", bypass=True)
+        assert "--yolo" in argv
+
+    def test_bypass_and_resume(self) -> None:
+        argv = get_adapter("gemini").exec_argv("analyze code", resume=True, bypass=True)
+        assert "--resume" in argv
+        assert "latest" in argv
         assert "--yolo" in argv
 
 

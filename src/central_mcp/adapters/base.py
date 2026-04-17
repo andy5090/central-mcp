@@ -58,7 +58,10 @@ class _Claude(Adapter):
 
 class _Codex(Adapter):
     def exec_argv(self, prompt: str, *, resume: bool = True, bypass: bool = False) -> list[str] | None:
-        argv = ["codex", "exec", prompt]
+        if resume:
+            argv = ["codex", "exec", "resume", "--last", prompt]
+        else:
+            argv = ["codex", "exec", prompt]
         if bypass:
             argv.append("--dangerously-bypass-approvals-and-sandbox")
         return argv
@@ -67,6 +70,8 @@ class _Codex(Adapter):
 class _Gemini(Adapter):
     def exec_argv(self, prompt: str, *, resume: bool = True, bypass: bool = False) -> list[str] | None:
         argv = ["gemini", "-p", prompt]
+        if resume:
+            argv += ["--resume", "latest"]
         if bypass:
             argv.append("--yolo")
         return argv
