@@ -2,7 +2,7 @@
 
 **여러 코딩 에이전트를 하나의 허브에서 디스패치하는, 오케스트레이터 비종속 MCP 서버.**
 
-하나의 MCP 서버로 어떤 MCP 클라이언트(Claude Code, Codex CLI, Gemini CLI, Droid 등)든 여러 코딩 에이전트 프로젝트의 컨트롤 플레인이 됩니다. 자연어로 요청하면 오케스트레이터가 해당 프로젝트의 에이전트에게 작업을 보내고, 논블로킹으로 결과를 비동기 보고합니다.
+하나의 MCP 서버로 어떤 MCP 클라이언트(Claude Code, Codex CLI, Gemini CLI, opencode 등)든 여러 코딩 에이전트 프로젝트의 컨트롤 플레인이 됩니다. 자연어로 요청하면 오케스트레이터가 해당 프로젝트의 에이전트에게 작업을 보내고, 논블로킹으로 결과를 비동기 보고합니다.
 
 ## 왜 필요한가
 
@@ -166,6 +166,7 @@ dispatch_history(n=50)            # 최근 50개
 | Claude Code | `/model sonnet` — 턴당 ~1-2초 vs Opus ~5-8초 |
 | Codex CLI | 경량 모델 사용 (예: `-spark` 변형) `/model` 또는 `config.toml`에서 설정 |
 | Gemini CLI | 가능하면 Pro 대신 Flash 사용 |
+| opencode | `-m provider/model` 또는 `opencode.json`에서 빠른 모델 선택 |
 
 서브에이전트 모델은 독립적 — 각 `dispatch`는 프로젝트 에이전트의 기본 모델로 자체 프로세스를 생성합니다.
 

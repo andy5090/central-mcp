@@ -2,7 +2,7 @@
 
 **Orchestrator-agnostic MCP hub for dispatching to multiple coding agents.**
 
-One MCP server turns any MCP-capable client (Claude Code, Codex CLI, Gemini CLI, Droid, …) into a control plane for your portfolio of coding-agent projects. Ask in natural language, and the orchestrator routes the request to the right project's agent — non-blocking, with results reported back asynchronously.
+One MCP server turns any MCP-capable client (Claude Code, Codex CLI, Gemini CLI, opencode, …) into a control plane for your portfolio of coding-agent projects. Ask in natural language, and the orchestrator routes the request to the right project's agent — non-blocking, with results reported back asynchronously.
 
 ## Why
 
@@ -166,6 +166,7 @@ The orchestrator's job is just routing — it doesn't need top-tier reasoning:
 | Claude Code | `/model sonnet` — ~1-2s/turn vs ~5-8s on Opus |
 | Codex CLI | Use a lighter model (e.g. `-spark` variant) via `/model` or `config.toml` |
 | Gemini CLI | Use Flash instead of Pro if available via model config |
+| opencode | Select a faster model via `-m provider/model` or in `opencode.json` |
 
 The sub-agent model is independent — each `dispatch` spawns its own process with whatever model the project's agent defaults to.
 
