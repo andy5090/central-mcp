@@ -26,17 +26,15 @@
 
 ## 상태
 
-프리릴리즈. `uv tool install --editable .`로 로컬 체크아웃에서 설치.
+[PyPI](https://pypi.org/project/central-mcp/)에서 설치 가능합니다.
 
 ## 빠른 시작
 
 [`uv`](https://docs.astral.sh/uv/) 필수. (선택적 관찰 레이어를 쓰려면 `tmux`도.)
 
 ```bash
-# 1. 클론 및 설치 (editable, 개발 모드)
-git clone https://github.com/andy5090/central-mcp.git ~/Projects/central-mcp
-cd ~/Projects/central-mcp
-uv tool install --editable .
+# 1. 설치
+uv tool install central-mcp
 
 # 2. 빈 레지스트리 생성 (~/.central-mcp/registry.yaml)
 central-mcp init

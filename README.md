@@ -26,17 +26,15 @@ Every dispatch is a fresh subprocess in the project's cwd (e.g. `claude -p "..."
 
 ## Status
 
-Pre-release. Install from a local checkout with `uv tool install --editable .`.
+Available on [PyPI](https://pypi.org/project/central-mcp/).
 
 ## Quickstart
 
 Requires [`uv`](https://docs.astral.sh/uv/). (`tmux` only if you want the optional observation layer.)
 
 ```bash
-# 1. Clone and install (editable, dev mode)
-git clone https://github.com/andy5090/central-mcp.git ~/Projects/central-mcp
-cd ~/Projects/central-mcp
-uv tool install --editable .
+# 1. Install
+uv tool install central-mcp
 
 # 2. Scaffold an empty registry at ~/.central-mcp/registry.yaml
 central-mcp init
