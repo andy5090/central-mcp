@@ -6,37 +6,36 @@ Status legend: ✅ done · 🚧 in progress · 📋 planned · 💭 idea
 
 ---
 
-## Phase 1 — Observable dispatch (next up)
+## Phase 1 — Observable dispatch (shipped in 0.2.0)
 
 **Goal**: make `central-mcp up` actually observable. Every dispatch writes structured events to a per-project log; panes stream those events live.
 
-📋 **jsonl event log**
-- Path: `~/.central-mcp/logs/<project>/dispatch.jsonl` (append-only JSON Lines)
-- Events: `start`, `output` (streaming chunks), `complete`, `error`
-- Schema example:
-  ```json
-  {"ts":"2026-04-17T10:23:45Z","id":"abc123","event":"start","prompt":"fix the bug"}
-  {"ts":"2026-04-17T10:23:47Z","id":"abc123","event":"output","chunk":"Analyzing parser.py..."}
-  {"ts":"2026-04-17T10:23:49Z","id":"abc123","event":"complete","exit":0,"duration":2.3}
-  ```
-- `server.py dispatch()` tees subprocess stdout into the jsonl file while still returning the full response as the MCP result.
+✅ **jsonl event log**
+- Path: `~/.central-mcp/logs/<project>/dispatch.jsonl` (append-only JSON Lines).
+- Events: `start`, `attempt_start`, `output` (line-oriented chunks), `complete`, `error`.
+- `server.py dispatch()` streams subprocess stdout/stderr into the jsonl via reader threads while still returning the full response as the MCP result.
 
-📋 **`central-mcp watch <project>` CLI**
-- Wraps `tail -f` on the project's jsonl with human-readable formatting (headers, colors, duration, exit code).
-- Handles log-file-not-yet-existing (blocks until first dispatch).
+✅ **`central-mcp watch <project>` CLI**
+- Tails the project's jsonl with human-readable formatting (ANSI colors, headers, exit code, duration).
+- Touches the log file if missing so fresh projects wait silently for the first dispatch.
 
-📋 **tmux pane integration**
-- `central-mcp up`'s project panes run `central-mcp watch <project>` instead of the interactive agent.
-- Orchestrator pane stays interactive.
+✅ **tmux pane integration**
+- Project panes run `central-mcp watch <project>`; orchestrator pane stays interactive.
+- Hub window uses `main-vertical` with `main-pane-width 50%` so the orchestrator takes the left half; overflow projects chunk into `cmcp-2`, `cmcp-3`, … with the first window picking up a `-hub` suffix.
+- Pane border titles + conditional `pane-border-format` highlight the orchestrator in bold yellow.
 
-📋 **Tests**
-- Dispatch produces the expected event sequence.
-- Watch formatter parses and renders correctly.
-- Concurrent dispatches per project serialize in the log.
+✅ **Tests**
+- Dispatch event sequence end-to-end, watch renderer unit tests, layout invariants (main-vertical coordinates, window/pane counts, active-pane focus).
+
+✅ **Related quality-of-life shipped alongside**
+- Default bypass flipped to ON with a README risk disclaimer (`--no-bypass` opts out).
+- `central-mcp tmux` one-shot (create-if-missing + attach) named after the backend so `central-mcp zellij` can sit beside it in Phase 2.
+- `central-mcp upgrade` for PyPI-driven self-update (0.2.1).
+- `codex` / `gemini` adapters now resume the last session (`codex exec resume --last`, `gemini --resume latest`).
 
 ---
 
-## Phase 2 — Zellij support
+## Phase 2 — Zellij support (next up)
 
 **Goal**: provide the same layout experience on Zellij for users who prefer it over tmux.
 
