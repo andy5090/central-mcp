@@ -3,6 +3,12 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.4.1] — 2026-04-18
+
+### Fixed
+- Zellij hub tab now holds `panes_per_window - 1` panes (orchestrator + `panes_per_window - 2` projects), matching the tmux contract. Previously it held `panes_per_window` panes, crowding the hub.
+- Zellij overflow tabs tile panes in a 2-column grid instead of a single vertical list, so 4 watch panes fill the screen as a 2×2 grid.
+
 ## [0.4.0] — 2026-04-18
 
 ### Added
