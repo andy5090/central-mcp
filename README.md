@@ -229,6 +229,7 @@ central-mcp tmux [same flags as up]
 central-mcp down                   # kill observation session
 central-mcp watch NAME [--from-start]
                                    # stream one project's dispatch events
+central-mcp upgrade [--check]      # self-update from PyPI (uv → pip fallback)
 ```
 
 ## Optional observation layer

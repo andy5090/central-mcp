@@ -217,6 +217,7 @@ central-mcp tmux [up과 동일 플래그]   # 세션이 없으면 생성 후 tmu
 central-mcp down                   # 관찰 세션 종료
 central-mcp watch NAME [--from-start]
                                    # 프로젝트의 dispatch 이벤트 실시간 스트리밍
+central-mcp upgrade [--check]      # PyPI에서 최신 버전 확인 후 자동 업그레이드 (uv → pip fallback)
 ```
 
 ## 선택적 관찰 레이어
