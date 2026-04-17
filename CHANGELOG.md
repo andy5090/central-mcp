@@ -3,11 +3,21 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [0.4.0] — 2026-04-18
 
 ### Added
-- Zellij observation backend — `central-mcp zellij` generates a KDL layout file (hub tab `cmcp-1-hub` with orchestrator on the left half + project panes stacked on the right, overflow tabs `cmcp-2`, `cmcp-3`, … for larger registries) and launches or attaches to a zellij session named `central`. Project panes run `central-mcp watch <project>` exactly like tmux mode, so dispatch streams look identical across backends.
-- README / README_KO observation-layer section now documents both backends.
+- **Zellij observation backend** — `central-mcp zellij` generates a KDL layout (hub tab `cmcp-1-hub` with orchestrator on the left half + project panes stacked on the right, overflow tabs `cmcp-2`, `cmcp-3`, … for larger registries) and launches or attaches to a zellij session named `central`.
+- **`central-mcp up` is now a backend picker** — detects both tmux and zellij on PATH. With only one installed it uses it silently; with both, prompts every launch (no preference saved) and delegates to `cmd_tmux` / `cmd_zellij`. `central-mcp tmux` / `central-mcp zellij` remain as explicit backend entry points.
+- **Read-only observation panes** — project watch panes wrap the command with `stty -echo -icanon </dev/null; …; sleep infinity` so keystrokes in a watch pane produce no visible effect, the watch can't read stdin, and the pane doesn't drop to a shell on exit. Applies to both tmux and zellij layouts.
+- **Backend-agnostic `central-mcp down`** — tears down whichever backend holds the `central` session (or both).
+
+### Fixed
+- Zellij session launch used `--layout` which in zellij 0.43 means "append to existing session"; switched to `--new-session-with-layout` (`-n`) + `--session NAME` so a fresh session is created with the desired name.
+- Zellij layout now has a `default_tab_template` with the `tab-bar` plugin so tab names are visible at the top of every tab.
+- `cmd_down`'s zellij branch replaced `kill-session` (which returned empty stderr for stale sessions) with `delete-session --force` so both active and EXITED sessions are cleaned up.
+
+### Changed
+- README / README_KO document both backends in the observation-layer section and the CLI reference.
 
 ## [0.3.2] — 2026-04-18
 
