@@ -34,7 +34,14 @@
 
 ## 빠른 시작
 
-[`uv`](https://docs.astral.sh/uv/) 필수. (선택적 관찰 레이어를 쓰려면 `tmux`도.)
+```bash
+# uv가 없다면 먼저 설치 (https://docs.astral.sh/uv/)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+> pip도 사용 가능합니다: `pip install central-mcp`
+
+(선택적 관찰 레이어를 쓰려면 `tmux`도.)
 
 ```bash
 # 1. 설치

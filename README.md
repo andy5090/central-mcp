@@ -38,7 +38,14 @@ Available on [PyPI](https://pypi.org/project/central-mcp/).
 
 ## Quickstart
 
-Requires [`uv`](https://docs.astral.sh/uv/). (`tmux` only if you want the optional observation layer.)
+```bash
+# Install uv if you don't have it yet (https://docs.astral.sh/uv/)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+> Or use pip: `pip install central-mcp`
+
+(`tmux` only if you want the optional observation layer.)
 
 ```bash
 # 1. Install
