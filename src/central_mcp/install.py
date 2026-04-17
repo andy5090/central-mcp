@@ -40,9 +40,11 @@ def install(client: str, *, dry_run: bool = False) -> int:
         return _install_codex(dry_run=dry_run)
     if client == "gemini":
         return _install_gemini(dry_run=dry_run)
+    if client == "opencode":
+        return _install_opencode(dry_run=dry_run)
     print(
         f"error: unknown client {client!r}. "
-        "Supported: claude, codex, gemini.",
+        "Supported: claude, codex, gemini, opencode.",
         file=sys.stderr,
     )
     return 1
@@ -136,6 +138,61 @@ def _install_codex(*, dry_run: bool) -> int:
     cfg.write_text(tomlkit.dumps(doc))
     _say(f"updated {cfg}")
     _say(f"backup: {bak}")
+    return 0
+
+
+def _install_opencode(*, dry_run: bool) -> int:
+    """Register central-mcp inside opencode's config.json.
+
+    opencode reads MCP servers from ~/.config/opencode/opencode.json under
+    the top-level ``mcp`` object. Entry shape:
+
+        {"mcp": {"central": {"type": "local", "command": ["central-mcp", "serve"]}}}
+    """
+    cfg_dir = Path.home() / ".config" / "opencode"
+    cfg = cfg_dir / "opencode.json"
+
+    if cfg.exists():
+        try:
+            doc = json.loads(cfg.read_text() or "{}")
+        except json.JSONDecodeError as exc:
+            print(f"error: {cfg} is not valid JSON: {exc}", file=sys.stderr)
+            return 1
+    else:
+        doc = {}
+    if not isinstance(doc, dict):
+        print(f"error: {cfg} root must be a JSON object", file=sys.stderr)
+        return 1
+
+    servers = doc.setdefault("mcp", {})
+    if not isinstance(servers, dict):
+        print(f"error: {cfg} mcp must be an object", file=sys.stderr)
+        return 1
+
+    desired_cmd = [LAUNCH_COMMAND, *LAUNCH_ARGS]
+    existing = servers.get(SERVER_NAME)
+    if (
+        isinstance(existing, dict)
+        and existing.get("type") == "local"
+        and list(existing.get("command") or []) == desired_cmd
+    ):
+        _say(f"already registered in {cfg} — no change")
+        return 0
+
+    servers[SERVER_NAME] = {"type": "local", "command": desired_cmd}
+    new_text = json.dumps(doc, indent=2) + "\n"
+
+    if dry_run:
+        _say(f"Would write to {cfg}:")
+        _say(new_text)
+        return 0
+
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    bak = _backup(cfg) if cfg.exists() else None
+    cfg.write_text(new_text)
+    _say(f"updated {cfg}")
+    if bak:
+        _say(f"backup: {bak}")
     return 0
 
 

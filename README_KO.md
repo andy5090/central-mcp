@@ -45,6 +45,7 @@ central-mcp init
 central-mcp install claude    # Claude Code MCP 설정에 추가
 central-mcp install codex     # ~/.codex/config.toml 패치
 central-mcp install gemini    # ~/.gemini/settings.json 패치
+central-mcp install opencode  # ~/.config/opencode/opencode.json 패치
 
 # 4. 오케스트레이터 기동
 central-mcp run
@@ -174,7 +175,7 @@ dispatch_history(n=50)            # 최근 50개
 central-mcp                        # 인자 없음 → stdio에서 MCP 서버 실행
 central-mcp serve                  # 동일, 명시적
 central-mcp run [--agent X] [--pick] [--bypass]  # 오케스트레이터 기동
-central-mcp install CLIENT         # claude | codex | gemini에 등록
+central-mcp install CLIENT         # claude | codex | gemini | opencode에 등록
 central-mcp alias [NAME]           # 짧은 이름 심링크 (기본: cmcp)
 central-mcp unalias [NAME]
 central-mcp init [PATH]            # registry.yaml 스캐폴드 (기본: ~/.central-mcp)

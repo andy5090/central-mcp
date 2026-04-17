@@ -45,6 +45,7 @@ central-mcp init
 central-mcp install claude    # adds to Claude Code MCP config
 central-mcp install codex     # patches ~/.codex/config.toml
 central-mcp install gemini    # patches ~/.gemini/settings.json
+central-mcp install opencode  # patches ~/.config/opencode/opencode.json
 
 # 4. Launch the orchestrator
 central-mcp run
@@ -174,7 +175,7 @@ The sub-agent model is independent — each `dispatch` spawns its own process wi
 central-mcp                        # no-arg → run MCP server on stdio
 central-mcp serve                  # same, explicit
 central-mcp run [--agent X] [--pick] [--bypass]  # launch orchestrator
-central-mcp install CLIENT         # register with claude | codex | gemini
+central-mcp install CLIENT         # register with claude | codex | gemini | opencode
 central-mcp alias [NAME]           # short-name symlink (default: cmcp)
 central-mcp unalias [NAME]
 central-mcp init [PATH]            # scaffold registry.yaml (default: ~/.central-mcp)

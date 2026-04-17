@@ -136,3 +136,69 @@ def test_install_gemini_rejects_invalid_json(
     monkeypatch.setenv("HOME", str(home))
     assert install.install("gemini") == 1
 
+
+# ---------------------------------------------------------------------------
+# opencode
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def fake_opencode_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Point $HOME at a temp dir with a pre-existing opencode config."""
+    home = tmp_path / "home"
+    home.mkdir()
+    cfg_dir = home / ".config" / "opencode"
+    cfg_dir.mkdir(parents=True)
+    cfg = cfg_dir / "opencode.json"
+    cfg.write_text(
+        json.dumps(
+            {
+                "mcp": {
+                    "other": {"type": "local", "command": ["other-binary"]}
+                },
+            }
+        )
+    )
+    monkeypatch.setenv("HOME", str(home))
+    return cfg
+
+
+def test_install_opencode_adds_entry(fake_opencode_config: Path) -> None:
+    rc = install.install("opencode")
+    assert rc == 0
+    data = json.loads(fake_opencode_config.read_text())
+    assert "central" in data["mcp"]
+    assert data["mcp"]["central"]["type"] == "local"
+    assert data["mcp"]["central"]["command"] == ["central-mcp", "serve"]
+    assert "other" in data["mcp"]
+
+
+def test_install_opencode_is_idempotent(fake_opencode_config: Path) -> None:
+    assert install.install("opencode") == 0
+    first = fake_opencode_config.read_text()
+    assert install.install("opencode") == 0
+    assert fake_opencode_config.read_text() == first
+
+
+def test_install_opencode_creates_config_if_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    rc = install.install("opencode")
+    assert rc == 0
+    cfg = home / ".config" / "opencode" / "opencode.json"
+    assert cfg.exists()
+    data = json.loads(cfg.read_text())
+    assert data["mcp"]["central"]["command"] == ["central-mcp", "serve"]
+
+
+def test_install_opencode_rejects_invalid_json(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "home"
+    (home / ".config" / "opencode").mkdir(parents=True)
+    (home / ".config" / "opencode" / "opencode.json").write_text("{not json")
+    monkeypatch.setenv("HOME", str(home))
+    assert install.install("opencode") == 1
+
