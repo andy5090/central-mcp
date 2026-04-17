@@ -84,6 +84,16 @@ class _Droid(Adapter):
         return argv
 
 
+class _OpenCode(Adapter):
+    def exec_argv(self, prompt: str, *, resume: bool = True, bypass: bool = False) -> list[str] | None:
+        argv = ["opencode", "run", prompt]
+        if resume:
+            argv.append("--continue")
+        if bypass:
+            argv.append("--dangerously-skip-permissions")
+        return argv
+
+
 # `amp` was previously supported as a dispatch target but has been
 # removed: Amp Free rejects `amp -x` with "Execute mode ... require
 # paid credits", making the adapter unusable for the majority of
@@ -95,6 +105,7 @@ _ADAPTERS: dict[str, Adapter] = {
     "codex": _Codex("codex", launch=("codex",), has_exec=True),
     "gemini": _Gemini("gemini", launch=("gemini",), has_exec=True),
     "droid": _Droid("droid", launch=("droid",), has_exec=True),
+    "opencode": _OpenCode("opencode", launch=("opencode",), has_exec=True),
 }
 
 # Internal fallback for `get_adapter(unknown)` — no launch, no exec.
@@ -102,7 +113,7 @@ _ADAPTERS: dict[str, Adapter] = {
 # have to special-case missing adapters.
 _FALLBACK_ADAPTER = Adapter("(unknown)", launch=(), has_exec=False)
 
-VALID_AGENTS = {"claude", "codex", "gemini", "droid"}
+VALID_AGENTS = {"claude", "codex", "gemini", "droid", "opencode"}
 
 
 def get_adapter(name: str) -> Adapter:

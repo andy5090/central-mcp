@@ -26,7 +26,7 @@ from central_mcp.adapters.base import get_adapter
 
 pytestmark = pytest.mark.live
 
-AGENTS_UNDER_TEST = ["claude", "codex", "gemini", "droid"]
+AGENTS_UNDER_TEST = ["claude", "codex", "gemini", "droid", "opencode"]
 
 
 def _run_help(argv: list[str]) -> str:

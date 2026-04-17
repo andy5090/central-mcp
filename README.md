@@ -100,6 +100,7 @@ dispatch("my-app", "add error handling to auth")
 | `codex` | `codex exec "<prompt>"` | `--dangerously-bypass-approvals-and-sandbox` |
 | `gemini` | `gemini -p "<prompt>"` | `--yolo` |
 | `droid` | `droid exec "<prompt>"` | `--skip-permissions-unsafe` |
+| `opencode` | `opencode run "<prompt>" --continue` | `--dangerously-skip-permissions` |
 
 Agent names are validated at registration time — typos like `cursor-agent` are caught immediately, not at dispatch time.
 
@@ -177,7 +178,7 @@ central-mcp install CLIENT         # register with claude | codex | gemini
 central-mcp alias [NAME]           # short-name symlink (default: cmcp)
 central-mcp unalias [NAME]
 central-mcp init [PATH]            # scaffold registry.yaml (default: ~/.central-mcp)
-central-mcp add NAME PATH [--agent claude|codex|gemini|droid]
+central-mcp add NAME PATH [--agent claude|codex|gemini|droid|opencode]
 central-mcp remove NAME
 central-mcp list                   # one-line registry dump
 central-mcp brief                  # orchestrator-ready markdown snapshot

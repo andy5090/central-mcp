@@ -92,6 +92,25 @@ class TestDroid:
             assert argv[r_idx + 1] != "--skip-permissions-unsafe"
 
 
+class TestOpenCode:
+    def test_basic(self) -> None:
+        argv = get_adapter("opencode").exec_argv("fix tests")
+        assert argv == ["opencode", "run", "fix tests", "--continue"]
+
+    def test_no_resume(self) -> None:
+        argv = get_adapter("opencode").exec_argv("fix tests", resume=False)
+        assert "--continue" not in argv
+
+    def test_bypass(self) -> None:
+        argv = get_adapter("opencode").exec_argv("fix tests", bypass=True)
+        assert "--dangerously-skip-permissions" in argv
+
+    def test_bypass_and_resume(self) -> None:
+        argv = get_adapter("opencode").exec_argv("x", resume=True, bypass=True)
+        assert "--continue" in argv
+        assert "--dangerously-skip-permissions" in argv
+
+
 class TestAmpRemoved:
     """Regression: amp was dropped because Amp Free rejects non-
     interactive `amp -x`. Make sure nobody silently re-adds it without

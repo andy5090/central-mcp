@@ -100,6 +100,7 @@ dispatch("my-app", "auth에 에러 핸들링 추가")
 | `codex` | `codex exec "<프롬프트>"` | `--dangerously-bypass-approvals-and-sandbox` |
 | `gemini` | `gemini -p "<프롬프트>"` | `--yolo` |
 | `droid` | `droid exec "<프롬프트>"` | `--skip-permissions-unsafe` |
+| `opencode` | `opencode run "<프롬프트>" --continue` | `--dangerously-skip-permissions` |
 
 에이전트 이름은 등록 시점에 검증됩니다 — `cursor-agent` 같은 오타는 dispatch 시점이 아니라 즉시 잡힙니다.
 
@@ -177,7 +178,7 @@ central-mcp install CLIENT         # claude | codex | gemini에 등록
 central-mcp alias [NAME]           # 짧은 이름 심링크 (기본: cmcp)
 central-mcp unalias [NAME]
 central-mcp init [PATH]            # registry.yaml 스캐폴드 (기본: ~/.central-mcp)
-central-mcp add NAME PATH [--agent claude|codex|gemini|droid]
+central-mcp add NAME PATH [--agent claude|codex|gemini|droid|opencode]
 central-mcp remove NAME
 central-mcp list                   # 한 줄씩 레지스트리 출력
 central-mcp brief                  # 오케스트레이터용 마크다운 스냅샷
