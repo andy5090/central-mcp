@@ -227,4 +227,4 @@ uv run --group dev pytest -m live     # 15 live tests — shell out to real agen
 
 ## License
 
-MIT (planned).
+MIT.

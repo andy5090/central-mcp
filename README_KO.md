@@ -227,4 +227,4 @@ uv run --group dev pytest -m live     # 15개 라이브 테스트 — 실제 에
 
 ## 라이선스
 
-MIT (예정).
+MIT.
