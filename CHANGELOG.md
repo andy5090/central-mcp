@@ -3,6 +3,14 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.3.2] — 2026-04-18
+
+### Fixed
+- `central-mcp install claude` / `install all` is now truly idempotent — probes with `claude mcp get central` first and returns "no change" when already registered, instead of surfacing `claude mcp add`'s "already exists" stderr on every rerun.
+
+### Changed
+- Quickstart in both READMEs collapsed to a single command (`central-mcp`) — relies on the 0.3.1 cold-start bootstrap.
+
 ## [0.3.1] — 2026-04-18
 
 ### Added
