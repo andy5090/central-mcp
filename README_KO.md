@@ -152,9 +152,20 @@ update_project(name="my-app", fallback=["codex", "gemini"])
 
 ### 프로젝트별 bypass 모드
 
-첫 dispatch 시 "전체 권한으로 실행할지(bypass), 제한 모드로 실행할지?" 물어봅니다. 선택은 `registry.yaml`에 저장되어 이후 dispatch에 자동 적용. `bypass=true` 또는 `bypass=false`를 명시하면 언제든 전환 + 저장됩니다.
+대부분의 코딩 에이전트는 파일 수정·명령어 실행·패키지 설치 같은 동작을 하기 전에 "이거 해도 돼?"라고 물어봅니다. 사람이 터미널 앞에 있을 땐 괜찮지만, dispatch는 백그라운드에서 돌아가 **승인을 기다리며 영원히 멈출 수 있습니다**.
 
-bypass=false에서 에이전트가 권한 벽에 부딪히면, 오케스트레이터가 bypass=true 재시도 또는 tmux 관찰 레이어에서 수동 승인을 제안합니다.
+**bypass 모드**는 에이전트에게 스스로의 동작을 자동 승인하라고 알려줍니다. 프로젝트 첫 dispatch 시 한 번 묻습니다:
+
+> *"전체 권한으로 실행(bypass=true)해서 dispatch가 실제로 작업을 수행하도록 할까요, 아니면 제한 모드(bypass=false)로 유지할까요?"*
+
+답변은 `registry.yaml`에 저장되어 이후 dispatch에 자동 적용. `bypass=true` / `bypass=false`를 명시하면 언제든 전환됩니다.
+
+**bypass 없이 실행하면**:
+- 안전한 작업(질문 답변, 파일 읽기, 코드 설명)은 정상 동작.
+- 권한 프롬프트가 뜨는 작업(파일 편집, 쉘 명령, 의존성 설치)은 **타임아웃까지 hang**.
+- 이런 경우 오케스트레이터가 `bypass=true`로 재시도하거나, `central-mcp up --interactive-panes` 실행 후 tmux pane 안에서 직접 승인하도록 제안합니다.
+
+민감한 코드베이스라 blanket bypass가 불편하다면, `bypass=false` 유지하면서 읽기 전용 dispatch만 사용하거나, 쓰기 작업은 인터랙티브 pane에서 수동 승인하세요.
 
 ### 디스패치 히스토리
 
@@ -193,13 +204,32 @@ central-mcp add NAME PATH [--agent claude|codex|gemini|droid|opencode]
 central-mcp remove NAME
 central-mcp list                   # 한 줄씩 레지스트리 출력
 central-mcp brief                  # 오케스트레이터용 마크다운 스냅샷
-central-mcp up                     # 선택적 tmux 관찰 (프로젝트당 pane 1개)
+central-mcp up [--no-orchestrator] [--bypass] [--interactive-panes] [--panes-per-window N]
+                                   # 선택적 tmux 관찰 레이어
 central-mcp down                   # 관찰 세션 종료
+central-mcp watch NAME [--from-start]
+                                   # 프로젝트의 dispatch 이벤트 실시간 스트리밍
 ```
 
 ## 선택적 관찰 레이어
 
-`central-mcp up`은 tmux 세션 `central`에 프로젝트당 인터랙티브 pane을 하나씩 만듭니다. `Ctrl+b n` / `Ctrl+b <숫자>`로 pane 전환. **순수 시각적** — MCP 디스패치 경로는 이 pane을 읽거나 쓰지 않습니다. `central-mcp down`으로 종료해도 오케스트레이터에 영향 없음.
+`central-mcp up`은 tmux 세션 `central`을 만듭니다:
+
+- **Pane 0 — 오케스트레이터** (Claude Code / Codex / Gemini / opencode). `~/.central-mcp`에서 기동되어 허브의 `CLAUDE.md` / `AGENTS.md`를 읽음.
+- **Pane 1…N — 프로젝트당 하나**. 각 pane은 `central-mcp watch <project>`를 실행해 해당 프로젝트의 dispatch 활동(프롬프트, 출력, exit code, duration)을 실시간 스트리밍.
+
+`Ctrl+b n` / `Ctrl+b <숫자>`로 pane 전환. 레지스트리가 한 윈도우에 담기 어려운 규모면 `projects-2`, `projects-3`, … 윈도우가 자동 생성됩니다 — 각 윈도우당 `--panes-per-window`(기본 4) 개수까지.
+
+```bash
+central-mcp up                     # 오케스트레이터 + watch pane (기본)
+central-mcp up --no-orchestrator   # watch pane만
+central-mcp up --interactive-panes # 레거시: 프로젝트별 에이전트 CLI 인터랙티브 실행
+central-mcp up --bypass            # 오케스트레이터 bypass 플래그 적용
+central-mcp up --panes-per-window 6
+central-mcp down                   # 세션 종료
+```
+
+`central-mcp down`으로 종료해도 MCP 디스패치 경로는 이 레이어에 의존하지 않으므로 진행 중인 dispatch에 영향 없습니다. `watch`는 `~/.central-mcp/logs/<project>/dispatch.jsonl`을 읽기 전용으로 tail하는 구조라 어떤 터미널에서도 독립 실행 가능합니다.
 
 ## 레지스트리 경로 해결
 
@@ -228,8 +258,8 @@ $EDITOR ~/.central-mcp/config.toml
 
 ```bash
 uv tool install --editable .
-uv run --group dev pytest             # 97개 단위 테스트 (빠름, 실제 CLI 호출 없음)
-uv run --group dev pytest -m live     # 15개 라이브 테스트 — 실제 에이전트 바이너리
+uv run --group dev pytest             # 141개 단위 테스트 (빠름, 실제 CLI 호출 없음)
+uv run --group dev pytest -m live     # 20개 라이브 테스트 — 실제 에이전트 바이너리
                                       # (claude/codex/gemini/droid) 호출.
                                       # 해당 바이너리가 PATH에 없으면 자동 skip
 ```

@@ -156,9 +156,20 @@ Pass `fallback=[]` to explicitly disable the saved chain for a one-shot dispatch
 
 ### Per-project bypass mode
 
-On the first dispatch to a project, central-mcp asks: *"Run with full permissions (bypass) or restricted?"* The choice is saved to `registry.yaml` for all future dispatches. Change it anytime by passing `bypass=true` or `bypass=false` explicitly.
+Most coding agents ask "is this OK?" before editing files, running commands, or installing packages. That's fine when a human is sitting at the terminal — but dispatches run in the background with no one watching, so those approval prompts have no one to answer them and the dispatch can **hang forever waiting for a reply that never comes**.
 
-If bypass=false and the agent hits a permission wall, the orchestrator will suggest either re-dispatching with bypass=true or using the tmux observation layer for interactive approval.
+**Bypass mode** tells the agent to auto-approve its own actions and just get the work done. On the first dispatch to a project, central-mcp asks you once:
+
+> *"Run with full permissions (bypass=true) so dispatches can actually do things, or stay restricted (bypass=false)?"*
+
+Your answer is saved to `registry.yaml` and reused for every future dispatch. Change it any time by passing `bypass=true` / `bypass=false` explicitly.
+
+**What happens without bypass**:
+- Safe tasks (answering questions, reading files, explaining code) → still work fine.
+- Any task that triggers a permission prompt (editing files, shell commands, installing deps) → dispatch hangs until the timeout.
+- If that happens, the orchestrator will suggest re-dispatching with `bypass=true`, or running `central-mcp up --interactive-panes` so you can type approvals yourself in a tmux pane.
+
+If a project deals with sensitive code and you're not comfortable granting blanket bypass, keep `bypass=false` and stick to read-only dispatches, or use interactive panes for anything that writes.
 
 ### Dispatch history
 
@@ -197,13 +208,32 @@ central-mcp add NAME PATH [--agent claude|codex|gemini|droid|opencode]
 central-mcp remove NAME
 central-mcp list                   # one-line registry dump
 central-mcp brief                  # orchestrator-ready markdown snapshot
-central-mcp up                     # optional tmux observation (one pane per project)
+central-mcp up [--no-orchestrator] [--bypass] [--interactive-panes] [--panes-per-window N]
+                                   # optional tmux observation layer
 central-mcp down                   # kill observation session
+central-mcp watch NAME [--from-start]
+                                   # stream one project's dispatch events
 ```
 
 ## Optional observation layer
 
-`central-mcp up` creates a tmux session `central` with one interactive pane per project. Cycle panes with `Ctrl+b n` / `Ctrl+b <digit>`. This is **purely visual** — the MCP dispatch path never reads from or writes to these panes. Kill with `central-mcp down` without affecting anything.
+`central-mcp up` creates a tmux session `central` with:
+
+- **Pane 0 — orchestrator** (Claude Code / Codex / Gemini / opencode), launched in `~/.central-mcp` so it picks up the hub's `CLAUDE.md` / `AGENTS.md`.
+- **Panes 1…N — one per registered project**, each streaming that project's dispatch activity live via `central-mcp watch <project>`. Every dispatch's prompt, output, exit code, and duration scrolls past in real time.
+
+Cycle panes with `Ctrl+b n` / `Ctrl+b <digit>`. When the registry has more projects than fit in one window, extra windows (`projects-2`, `projects-3`, …) are added automatically — each holds up to `--panes-per-window` (default 4).
+
+```bash
+central-mcp up                     # orchestrator + watch panes (default)
+central-mcp up --no-orchestrator   # watch panes only
+central-mcp up --interactive-panes # legacy: run each project's agent CLI interactively
+central-mcp up --bypass            # apply orchestrator's bypass flag
+central-mcp up --panes-per-window 6
+central-mcp down                   # tear the session back down
+```
+
+Kill with `central-mcp down` — the MCP dispatch path never depends on this layer, so tearing it down doesn't affect in-flight dispatches. The `watch` command is a read-only tail of `~/.central-mcp/logs/<project>/dispatch.jsonl`; you can also run it standalone in any terminal.
 
 ## Registry resolution
 
@@ -232,8 +262,8 @@ $EDITOR ~/.central-mcp/config.toml
 
 ```bash
 uv tool install --editable .
-uv run --group dev pytest             # 97 unit tests (fast, no real CLIs)
-uv run --group dev pytest -m live     # 15 live tests — shell out to real agent binaries
+uv run --group dev pytest             # 141 unit tests (fast, no real CLIs)
+uv run --group dev pytest -m live     # 20 live tests — shell out to real agent binaries
                                       # (claude/codex/gemini/droid); each case skips
                                       # cleanly if that binary isn't on PATH
 ```
