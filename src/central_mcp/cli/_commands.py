@@ -236,15 +236,17 @@ def cmd_down(args: argparse.Namespace) -> int:
     if shutil.which("zellij"):
         from central_mcp import zellij as zj
         if zj.has_session(zj.SESSION):
-            r = zj.kill_session(zj.SESSION)
+            # `delete-session --force` is the universal "make this
+            # session go away" command — it kills active sessions AND
+            # purges serialized state for EXITED sessions, so reruns
+            # after a crash don't fail on the stale name.
+            r = zj._run(["delete-session", zj.SESSION, "--force"])
             if r.ok:
-                print(f"zellij: killed session '{zj.SESSION}'")
-                # Forget any serialized state so a future `cmcp zellij`
-                # starts fresh instead of resurrecting the dead session.
-                zj._run(["delete-session", zj.SESSION, "--force"])
+                print(f"zellij: deleted session '{zj.SESSION}'")
                 any_killed = True
             else:
-                print(f"zellij: kill-session failed: {r.stderr.strip()}")
+                detail = (r.stderr or r.stdout or "").strip()
+                print(f"zellij: delete-session failed{': ' + detail if detail else ''}")
                 any_error = True
         else:
             print(f"zellij: no session named '{zj.SESSION}'")

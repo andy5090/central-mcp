@@ -58,8 +58,22 @@ def _wrap(launch: str) -> str:
 
 
 def _pane_command(p: Project) -> str:
-    """Project pane command — stream this project's dispatch events."""
-    return _wrap(f"central-mcp watch {p.name}")
+    """Project pane command — stream this project's dispatch events.
+
+    Observation panes are read-only: the pty drops `echo` and
+    canonical input so keystrokes produce no output, stdin comes from
+    /dev/null so the watch can't read them either, and the pane ends
+    in `sleep infinity` instead of a live shell so nothing is waiting
+    to accept commands.
+    """
+    return (
+        "sh -c '"
+        "stty -echo -icanon 2>/dev/null; "
+        f"central-mcp watch {p.name} </dev/null; "
+        "stty echo icanon 2>/dev/null; "
+        "sleep infinity"
+        "'"
+    )
 
 
 def ensure_session(

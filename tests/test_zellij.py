@@ -95,10 +95,13 @@ class TestBuildLayout:
         registry.add_project("alpha", str(d), agent="shell")
 
         kdl = zellij.build_layout()
-        # Each project pane must launch `central-mcp watch <project>`.
-        assert 'command="central-mcp"' in kdl
-        assert '"watch"' in kdl
-        assert '"alpha"' in kdl
+        # Each project pane is wrapped in `sh -c '<cmd> </dev/null; sleep infinity'`
+        # so the pane is read-only (stdin piped from /dev/null) and
+        # stays alive on exit without dropping to a shell.
+        assert 'command="sh"' in kdl
+        assert "central-mcp watch alpha" in kdl
+        assert "</dev/null" in kdl
+        assert "sleep infinity" in kdl
 
 
 class TestWriteLayout:

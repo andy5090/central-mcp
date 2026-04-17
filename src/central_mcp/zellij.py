@@ -80,26 +80,39 @@ def _kdl_escape(s: str) -> str:
     return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
-def _command_pane(name: str, cwd: str, command: str) -> str:
+def _command_pane(name: str, cwd: str, command: str, readonly: bool = False) -> str:
     """Build a KDL `pane` block that runs a command in a cwd with a display name.
 
-    The command arrives as a shell string — we split it into argv so
-    Zellij's `command="…"` + `args` shape works (it does not pipe through
-    a shell). That means simple `command_line arg1 arg2` is supported;
-    shell operators like `;` / `&&` are not. Good enough for our watch/
-    orchestrator invocations.
+    When `readonly` is True (observation panes — `central-mcp watch`)
+    the command runs with stdin from /dev/null and falls through to
+    `sleep infinity` on exit so the pane stays alive but never drops
+    into a shell that would accept keystrokes. When False (orchestrator
+    pane), the command is wrapped in `sh -c '<cmd>; exec $SHELL'` so
+    a human can keep typing after the agent exits, mirroring the tmux
+    layer's pane-survival trick.
     """
     argv = shlex.split(command)
     if not argv:
         raise ValueError(f"empty command for pane {name!r}")
-    head, *rest = argv
+    quoted = " ".join(shlex.quote(a) for a in argv)
+    if readonly:
+        # `stty -echo -icanon` silences the pty so typing in the pane
+        # has no visible effect; stdin from /dev/null makes sure the
+        # watch command can't read input; `sleep infinity` keeps the
+        # pane alive after watch exits without dropping to a shell.
+        wrapped = (
+            f"stty -echo -icanon 2>/dev/null; "
+            f"{quoted} </dev/null; "
+            "stty echo icanon 2>/dev/null; "
+            "sleep infinity"
+        )
+    else:
+        wrapped = f"{quoted}; exec $SHELL"
     lines = [
-        f'pane name={_kdl_escape(name)} cwd={_kdl_escape(cwd)} command={_kdl_escape(head)} {{'
+        f'pane name={_kdl_escape(name)} cwd={_kdl_escape(cwd)} command="sh" {{',
+        f"    args \"-c\" {_kdl_escape(wrapped)}",
+        "}",
     ]
-    if rest:
-        args_kdl = " ".join(_kdl_escape(a) for a in rest)
-        lines.append(f"    args {args_kdl}")
-    lines.append("}")
     return "\n".join(lines)
 
 
@@ -167,7 +180,7 @@ def build_layout(
         if orchestrator is not None else None
     )
     project_kdls = [
-        _command_pane(p.name, p.path, f"central-mcp watch {p.name}")
+        _command_pane(p.name, p.path, f"central-mcp watch {p.name}", readonly=True)
         for p in projects
     ]
 
@@ -204,7 +217,22 @@ def build_layout(
     # handled it; otherwise fall through.
 
     body = "\n".join(tabs) if tabs else 'tab name="cmcp-1" {\n    pane\n}'
-    return "layout {\n" + body + "\n}\n"
+    # `default_tab_template` ensures every tab has zellij's standard
+    # tab-bar + status-bar plugins so shortcut hints show up at top
+    # and bottom, same as the layout zellij boots with by default.
+    # `compact-bar` is the slim status plugin — it shows zellij's
+    # shortcut hints at the bottom without the extra "ENTER to rerun /
+    # ESC to drop to shell" controls that `status-bar` adds on top of
+    # `command=` panes.
+    template = (
+        'default_tab_template {\n'
+        '    pane size=1 borderless=true {\n'
+        '        plugin location="tab-bar"\n'
+        '    }\n'
+        '    children\n'
+        '}'
+    )
+    return "layout {\n" + template + "\n" + body + "\n}\n"
 
 
 def write_layout(
