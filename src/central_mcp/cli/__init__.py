@@ -143,6 +143,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    # Version check before any routing.
+    if len(sys.argv) > 1 and sys.argv[1] in ("-v", "--version"):
+        from importlib.metadata import version
+        print(version("central-mcp"))
+        return
+
     # No args, or first arg is a flag (not a subcommand) → inject "run".
     # Handles: `central-mcp`, `central-mcp --bypass`, `central-mcp --agent X`.
     # MCP clients use `central-mcp serve` explicitly, so this is safe.
