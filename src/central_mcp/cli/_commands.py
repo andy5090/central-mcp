@@ -126,24 +126,82 @@ def _orchestrator_pane_for_up(args: argparse.Namespace) -> layout.OrchestratorPa
     return layout.OrchestratorPane(command=command, cwd=str(launch_dir), label=label)
 
 
-def cmd_up(args: argparse.Namespace) -> int:
-    orchestrator = _orchestrator_pane_for_up(args)
-    panes_per_window = args.panes_per_window or layout.DEFAULT_PANES_PER_WINDOW
-    if panes_per_window < 1:
+MULTIPLEXERS: list[tuple[str, str]] = [
+    ("tmux", "tmux"),
+    ("zellij", "zellij"),
+]
+
+
+def _detect_multiplexers() -> list[tuple[str, str]]:
+    """Return (name, binary) pairs for every installed multiplexer."""
+    return [(name, binary) for name, binary in MULTIPLEXERS if shutil.which(binary)]
+
+
+def _pick_multiplexer_interactive(installed: list[tuple[str, str]]) -> str:
+    print("Multiple multiplexers detected — which should `central-mcp up` use?")
+    for i, (name, _bin) in enumerate(installed, 1):
+        print(f"  {i}. {name}")
+    while True:
+        raw = input(f"Pick one [1-{len(installed)}] (default 1): ").strip()
+        if not raw:
+            return installed[0][0]
+        try:
+            idx = int(raw) - 1
+        except ValueError:
+            print("enter a number")
+            continue
+        if 0 <= idx < len(installed):
+            return installed[idx][0]
+        print("out of range")
+
+
+def _resolve_multiplexer_for_up() -> str | None:
+    """Decide which multiplexer backend `central-mcp up` should use.
+
+    No persistent preference — `up` always prompts when both backends
+    are available so users can pick per launch. If only one is
+    installed, uses it without prompting. For a permanent choice, use
+    `central-mcp tmux` or `central-mcp zellij` directly.
+    """
+    installed = _detect_multiplexers()
+    if not installed:
+        return None
+    if len(installed) == 1:
+        return installed[0][0]
+    if not sys.stdin.isatty():
         print(
-            f"error: --panes-per-window must be >= 1 (got {panes_per_window})",
+            "error: multiple multiplexers detected and this is not a TTY.\n"
+            "       run `central-mcp up` interactively, or call\n"
+            "       `central-mcp tmux` / `central-mcp zellij` directly.",
+            file=sys.stderr,
+        )
+        return None
+    return _pick_multiplexer_interactive(installed)
+
+
+def cmd_up(args: argparse.Namespace) -> int:
+    """Launch the observation session, picking the backend interactively.
+
+    Detects tmux / zellij on PATH. If both are installed, prompts every
+    time (no saved preference — users pick per launch). If only one is
+    installed, uses it silently. Delegates to the backend-specific
+    handler (`cmd_tmux` / `cmd_zellij`), which in turn creates the
+    session if missing and attaches.
+    """
+    backend = _resolve_multiplexer_for_up()
+    if backend is None:
+        print(
+            "error: no supported multiplexer installed (tmux or zellij)",
             file=sys.stderr,
         )
         return 1
-    created, messages = layout.ensure_session(
-        orchestrator=orchestrator,
-        panes_per_window=panes_per_window,
-    )
-    for m in messages:
-        print(m)
-    if not created:
-        print("(already running — attach with: central-mcp tmux)")
-    return 0
+    print(f"(using {backend})")
+    if backend == "tmux":
+        return cmd_tmux(args)
+    if backend == "zellij":
+        return cmd_zellij(args)
+    print(f"error: unsupported multiplexer {backend!r}", file=sys.stderr)
+    return 1
 
 
 def cmd_watch(args: argparse.Namespace) -> int:
@@ -177,10 +235,22 @@ def cmd_tmux(args: argparse.Namespace) -> int:
         return 1
 
     if not tmux.has_session(layout.SESSION):
-        print(f"session '{layout.SESSION}' not running — creating it first")
-        rc = cmd_up(args)
-        if rc:
-            return rc
+        orchestrator = _orchestrator_pane_for_up(args)
+        panes_per_window = args.panes_per_window or layout.DEFAULT_PANES_PER_WINDOW
+        if panes_per_window < 1:
+            print(
+                f"error: --panes-per-window must be >= 1 (got {panes_per_window})",
+                file=sys.stderr,
+            )
+            return 1
+        created, messages = layout.ensure_session(
+            orchestrator=orchestrator,
+            panes_per_window=panes_per_window,
+        )
+        for m in messages:
+            print(m)
+        if not created:
+            return 1
 
     os.execvp("tmux", ["tmux", "attach", "-t", layout.SESSION])
 
