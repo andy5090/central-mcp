@@ -29,6 +29,7 @@ from central_mcp.cli._commands import (
     cmd_tmux,
     cmd_unalias,
     cmd_up,
+    cmd_upgrade,
     cmd_watch,
 )
 
@@ -85,6 +86,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="replay the whole log from the beginning instead of following from end",
     )
     p_watch.set_defaults(func=cmd_watch)
+
+    p_upgrade = sub.add_parser(
+        "upgrade",
+        help="check PyPI for a newer central-mcp and upgrade via uv (or pip fallback)",
+    )
+    p_upgrade.add_argument(
+        "--check",
+        action="store_true",
+        help="only check for a newer version; do not install",
+    )
+    p_upgrade.set_defaults(func=cmd_upgrade)
 
     p_down = sub.add_parser("down", help="kill the observation tmux session")
     p_down.set_defaults(func=cmd_down)

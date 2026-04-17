@@ -151,6 +151,11 @@ def cmd_watch(args: argparse.Namespace) -> int:
     return watch.run(args.name, from_start=args.from_start)
 
 
+def cmd_upgrade(args: argparse.Namespace) -> int:
+    from central_mcp import upgrade
+    return upgrade.run(check_only=args.check)
+
+
 def cmd_down(args: argparse.Namespace) -> int:
     killed, message = layout.kill_all()
     print(message)
