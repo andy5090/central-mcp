@@ -184,8 +184,14 @@ def build_layout(
         for p in projects
     ]
 
-    hub_project_count = (panes_per_window - 1) if has_orchestrator else panes_per_window
-    hub_project_count = max(hub_project_count, 1)
+    # Orchestrator visually takes two cells (it's the wide left pane in
+    # the hub split), so the hub window matches the tmux contract: total
+    # panes = panes_per_window - 1 (= orch + panes_per_window - 2 projects).
+    # Overflow windows still take the full panes_per_window projects.
+    if has_orchestrator:
+        hub_project_count = max(panes_per_window - 2, 0)
+    else:
+        hub_project_count = panes_per_window
 
     hub_projects = project_kdls[:hub_project_count] if has_orchestrator else []
     overflow_start = hub_project_count if has_orchestrator else 0

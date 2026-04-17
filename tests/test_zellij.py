@@ -87,6 +87,36 @@ class TestBuildLayout:
         with pytest.raises(ValueError, match="panes_per_window"):
             zellij.build_layout(panes_per_window=0)
 
+    def test_hub_holds_panes_per_window_minus_one(
+        self, fake_home: Path, tmp_path: Path
+    ) -> None:
+        """panes_per_window=4 + orchestrator → hub has 1 orch + 2 projects.
+
+        Mirrors tmux: the orchestrator visually takes 2 cells (main-
+        vertical left half), so the hub window only holds
+        panes_per_window - 1 panes total.
+        """
+        for i in range(6):
+            d = tmp_path / f"p{i}"
+            d.mkdir()
+            registry.add_project(f"p{i}", str(d), agent="shell")
+
+        orch = OrchestratorPane(command="echo hi", cwd=str(tmp_path), label="stub")
+        kdl = zellij.build_layout(orchestrator=orch, panes_per_window=4)
+
+        # Hub tab should reference p0 and p1 only (not p2+).
+        hub_start = kdl.index(f'tab name="{window_name(0, has_orchestrator=True)}"')
+        # Find the end of the hub tab block. Hub spans until next `tab name=` or EOF.
+        next_tab = kdl.find('tab name="', hub_start + 1)
+        hub_block = kdl[hub_start:next_tab] if next_tab != -1 else kdl[hub_start:]
+        assert '"p0"' in hub_block
+        assert '"p1"' in hub_block
+        assert '"p2"' not in hub_block
+        # p2..p5 should be in overflow tabs.
+        tail = kdl[next_tab:] if next_tab != -1 else ""
+        for i in range(2, 6):
+            assert f'"p{i}"' in tail
+
     def test_project_pane_invokes_central_mcp_watch(
         self, fake_home: Path, tmp_path: Path
     ) -> None:
