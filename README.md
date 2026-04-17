@@ -50,21 +50,19 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 (`tmux` only if you want the optional observation layer.)
 
 ```bash
-# 1. Install
+# 1. Install central-mcp
 uv tool install central-mcp
 
-# 2. Scaffold an empty registry at ~/.central-mcp/registry.yaml
-central-mcp init
-
-# 3. Register central-mcp with your MCP client(s) — once per client
-central-mcp install claude    # adds to Claude Code MCP config
-central-mcp install codex     # patches ~/.codex/config.toml
-central-mcp install gemini    # patches ~/.gemini/settings.json
-central-mcp install opencode  # patches ~/.config/opencode/opencode.json
-
-# 4. Launch the orchestrator
-central-mcp run
+# 2. Launch — one command does everything
+central-mcp
 ```
+
+The first `central-mcp` run auto-creates `~/.central-mcp/registry.yaml` and registers central-mcp with every MCP client binary it finds on PATH (claude, codex, gemini, opencode). After that it launches the orchestrator in your preferred agent.
+
+> **Manual install** if you want fine-grained control:
+> - `central-mcp install all` — re-detect + register everywhere
+> - `central-mcp install claude` — register with a single client
+> - `central-mcp init` — create the registry without launching
 
 Inside the orchestrator session, speak naturally:
 

@@ -46,21 +46,19 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 (선택적 관찰 레이어를 쓰려면 `tmux`도.)
 
 ```bash
-# 1. 설치
+# 1. central-mcp 설치
 uv tool install central-mcp
 
-# 2. 빈 레지스트리 생성 (~/.central-mcp/registry.yaml)
-central-mcp init
-
-# 3. MCP 클라이언트에 central-mcp 등록 — 클라이언트당 1회
-central-mcp install claude    # Claude Code MCP 설정에 추가
-central-mcp install codex     # ~/.codex/config.toml 패치
-central-mcp install gemini    # ~/.gemini/settings.json 패치
-central-mcp install opencode  # ~/.config/opencode/opencode.json 패치
-
-# 4. 오케스트레이터 기동
-central-mcp run
+# 2. 바로 실행 — 한 번에 모든 설정
+central-mcp
 ```
+
+첫 실행 시 `~/.central-mcp/registry.yaml`이 자동 생성되고, PATH에서 발견된 모든 MCP 클라이언트(claude, codex, gemini, opencode)에 central-mcp가 자동 등록됩니다. 그 다음 선택된 에이전트로 오케스트레이터가 기동됩니다.
+
+> 수동으로 세밀하게 제어하려면:
+> - `central-mcp install all` — 다시 감지 후 모든 클라이언트에 재등록
+> - `central-mcp install claude` — 특정 클라이언트만 등록
+> - `central-mcp init` — 레지스트리만 생성 (기동 안 함)
 
 오케스트레이터 세션 안에서 자연어로:
 
