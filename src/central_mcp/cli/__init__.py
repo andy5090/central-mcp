@@ -53,15 +53,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_up.add_argument(
         "--bypass",
+        dest="bypass",
         action="store_true",
-        help="launch the orchestrator pane with its permission-bypass flag",
+        default=True,
+        help="launch the orchestrator pane with its permission-bypass flag (default: on)",
+    )
+    p_up.add_argument(
+        "--no-bypass",
+        dest="bypass",
+        action="store_false",
+        help="launch the orchestrator pane without the permission-bypass flag",
     )
     p_up.add_argument(
         "--panes-per-window",
         type=int,
         default=None,
         metavar="N",
-        help="max panes per tmux window (default: 4); overflow spills to projects-2, projects-3, …",
+        help="max panes per tmux window (default: 4); overflow spills to cmcp-2, cmcp-3, …",
     )
     p_up.add_argument(
         "--interactive-panes",
@@ -167,12 +175,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_run.add_argument(
         "--bypass",
+        dest="bypass",
         action="store_true",
+        default=True,
         help=(
             "launch the agent in its permission-bypass / yolo mode when supported "
             "(claude: --dangerously-skip-permissions, codex: "
-            "--dangerously-bypass-approvals-and-sandbox, gemini: --yolo)"
+            "--dangerously-bypass-approvals-and-sandbox, gemini: --yolo). "
+            "Default: on — central-mcp is a non-stop orchestration hub; "
+            "permission prompts stall dispatches since there's no one to answer them. "
+            "Pass --no-bypass to opt out."
         ),
+    )
+    p_run.add_argument(
+        "--no-bypass",
+        dest="bypass",
+        action="store_false",
+        help="launch the agent without the permission-bypass flag",
     )
     p_run.add_argument("--dry-run", action="store_true", help="print the plan without executing")
     p_run.set_defaults(func=cmd_run)

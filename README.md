@@ -10,6 +10,8 @@
 
 **Orchestrator-agnostic MCP hub for dispatching to multiple coding agents.**
 
+> **Never stop. Run agents across every project in parallel — 10×, 100× your throughput.**
+
 One MCP server turns any MCP-capable client (Claude Code, Codex CLI, Gemini CLI, opencode, …) into a control plane for your portfolio of coding-agent projects. Ask in natural language, and the orchestrator routes the request to the right project's agent — non-blocking, with results reported back asynchronously.
 
 ## Why
@@ -158,11 +160,23 @@ Pass `fallback=[]` to explicitly disable the saved chain for a one-shot dispatch
 
 Most coding agents ask "is this OK?" before editing files, running commands, or installing packages. That's fine when a human is sitting at the terminal — but dispatches run in the background with no one watching, so those approval prompts have no one to answer them and the dispatch can **hang forever waiting for a reply that never comes**.
 
-**Bypass mode** tells the agent to auto-approve its own actions and just get the work done. On the first dispatch to a project, central-mcp asks you once:
+**Bypass mode** tells the agent to auto-approve its own actions and just get the work done. central-mcp is an orchestration hub whose job is to keep dispatches moving without stalls, so **bypass is on by default** for both the orchestrator (`central-mcp run` / `central-mcp up`) and first-time dispatches. Pass `--no-bypass` on the CLI, or `bypass=false` to `dispatch()`, whenever you want the agent to surface approval prompts instead of auto-approving.
 
-> *"Run with full permissions (bypass=true) so dispatches can actually do things, or stay restricted (bypass=false)?"*
+On the first dispatch to a project the chosen bypass value is saved to `registry.yaml` and reused for every future dispatch. Flip it anytime by calling `dispatch(..., bypass=true)` or `dispatch(..., bypass=false)` explicitly — the new value overwrites the saved preference.
 
-Your answer is saved to `registry.yaml` and reused for every future dispatch. Change it any time by passing `bypass=true` / `bypass=false` explicitly.
+> ### ⚠️ Bypass is powerful — and at your own risk
+>
+> With bypass on, the agent may edit files, run shell commands, install packages, call network services, and push code **without confirming with you first**. That is what makes non-stop orchestration possible, but it also means a misguided prompt, prompt injection from a malicious source, or an agent hallucination can cause real damage — dropped tables, force-pushed branches, deleted files, leaked credentials, unintended API spend, etc.
+>
+> **Turn bypass off (`--no-bypass`, `bypass=false`) if any of these apply**:
+> - The project holds sensitive code, secrets, or production data you cannot lose.
+> - You are not ready to commit/push safety-net snapshots before dispatching.
+> - You have not read the prompt carefully or are delegating work from untrusted sources.
+> - You want to review every command the agent is about to run.
+>
+> When bypass is off, dispatches may hang at permission prompts (no TTY to answer) — use `central-mcp up --interactive-panes` so you can approve interactively, or restrict dispatches to read-only tasks.
+>
+> **Disclaimer**: central-mcp is a routing layer and does not supervise what the agents do. You are responsible for the scope, targets, and consequences of every dispatch you run in bypass mode. The authors and contributors of central-mcp are not liable for any damage, data loss, security breach, cost, or other harm that results from enabling bypass. Use snapshots (git commits, backups, branch protection), least-privilege credentials, and offline/sandboxed environments where possible.
 
 **What happens without bypass**:
 - Safe tasks (answering questions, reading files, explaining code) → still work fine.
@@ -198,7 +212,7 @@ The sub-agent model is independent — each `dispatch` spawns its own process wi
 
 ```
 central-mcp                        # no-arg → launch orchestrator (same as `run`)
-central-mcp run [--agent X] [--pick] [--bypass]  # launch orchestrator (explicit)
+central-mcp run [--agent X] [--pick] [--no-bypass]  # launch orchestrator (bypass on by default)
 central-mcp serve                  # run MCP server on stdio (used by MCP clients)
 central-mcp install CLIENT         # register with claude | codex | gemini | opencode
 central-mcp alias [NAME]           # short-name symlink (default: cmcp)
@@ -208,7 +222,7 @@ central-mcp add NAME PATH [--agent claude|codex|gemini|droid|opencode]
 central-mcp remove NAME
 central-mcp list                   # one-line registry dump
 central-mcp brief                  # orchestrator-ready markdown snapshot
-central-mcp up [--no-orchestrator] [--bypass] [--interactive-panes] [--panes-per-window N]
+central-mcp up [--no-orchestrator] [--no-bypass] [--interactive-panes] [--panes-per-window N]
                                    # optional tmux observation layer
 central-mcp down                   # kill observation session
 central-mcp watch NAME [--from-start]
@@ -225,10 +239,10 @@ central-mcp watch NAME [--from-start]
 Windows are named `cmcp-<N>` with the first window picking up a `-hub` suffix (`cmcp-1-hub`) when it holds the orchestrator — so you can tell at a glance which window to jump to. Cycle panes with `Ctrl+b n` / `Ctrl+b <digit>`. When the registry has more projects than fit in one window, extra windows (`cmcp-2`, `cmcp-3`, …) are added automatically — each holds up to `--panes-per-window` (default 4).
 
 ```bash
-central-mcp up                     # orchestrator + watch panes (default)
+central-mcp up                     # orchestrator + watch panes (bypass on by default)
+central-mcp up --no-bypass         # launch orchestrator without permission-bypass
 central-mcp up --no-orchestrator   # watch panes only
 central-mcp up --interactive-panes # legacy: run each project's agent CLI interactively
-central-mcp up --bypass            # apply orchestrator's bypass flag
 central-mcp up --panes-per-window 6
 central-mcp down                   # tear the session back down
 ```
