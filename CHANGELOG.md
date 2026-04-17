@@ -3,6 +3,12 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.1.2] — 2026-04-17
+
+### Added
+- `-v` / `--version` flag
+- `central-mcp --bypass` / `--pick` / `--agent` work without typing `run`
+
 ## [0.1.1] — 2026-04-17
 
 ### Added
