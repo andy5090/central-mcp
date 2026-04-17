@@ -119,4 +119,4 @@ Status legend: ✅ done · 🚧 in progress · 📋 planned · 💭 idea
 
 ## Change log pointer
 
-Actual shipped changes live in [CHANGELOG.md](CHANGELOG.md). This roadmap is intent, not history.
+Actual shipped changes live in [../CHANGELOG.md](../CHANGELOG.md). This roadmap is intent, not history.
