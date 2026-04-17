@@ -119,13 +119,13 @@ class TestAgentValidation:
         assert "codex" in r.stderr
         assert "gemini" in r.stderr
 
-    def test_shell_agent_accepted(self, cli_env: dict, tmp_path: Path) -> None:
+    def test_shell_agent_rejected(self, cli_env: dict, tmp_path: Path) -> None:
         _run(["init"], cli_env)
         d = tmp_path / "proj"
         d.mkdir()
         r = _run(["add", "proj", str(d), "--agent", "shell"], cli_env)
-        assert r.returncode == 0
-        assert "added" in r.stdout
+        assert r.returncode != 0
+        assert "shell" in r.stderr
 
 
 class TestBrief:

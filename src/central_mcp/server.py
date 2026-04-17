@@ -279,7 +279,7 @@ def dispatch(
                 "error": (
                     f"adapter {a!r} has no non-interactive exec mode "
                     f"(bypass={bypass}). "
-                    f"Supported agents for dispatch: {', '.join(sorted(VALID_AGENTS - {'shell'}))}."
+                    f"Supported agents for dispatch: {', '.join(sorted(VALID_AGENTS))}."
                 ),
             }
 
@@ -563,24 +563,19 @@ def add_project(
     """
     # Validate agent name at registration time so users don't hit
     # "no exec mode" errors only when they first try to dispatch.
-    from central_mcp.adapters.base import VALID_AGENTS
-    adapter = get_adapter(agent)
     if agent not in VALID_AGENTS:
         return {
             "ok": False,
             "error": (
                 f"unknown agent {agent!r}. "
-                f"Valid agents: {', '.join(sorted(VALID_AGENTS - {'shell'}))}. "
-                "Use 'shell' for registry-only projects (no dispatch)."
+                f"Valid agents: {', '.join(sorted(VALID_AGENTS))}."
             ),
         }
-    if not adapter.has_exec and agent != "shell":
+    adapter = get_adapter(agent)
+    if not adapter.has_exec:
         return {
             "ok": False,
-            "error": (
-                f"agent {agent!r} has no non-interactive dispatch mode. "
-                f"Supported agents for dispatch: {', '.join(sorted(a for a in VALID_AGENTS if get_adapter(a).has_exec))}."
-            ),
+            "error": f"agent {agent!r} has no non-interactive dispatch mode.",
         }
 
     try:
@@ -639,16 +634,7 @@ def update_project(
                 "ok": False,
                 "error": (
                     f"unknown agent {agent!r}. "
-                    f"Valid: {', '.join(sorted(VALID_AGENTS - {'shell'}))}."
-                ),
-            }
-        if agent == "shell":
-            return {
-                "ok": False,
-                "error": (
-                    "agent 'shell' is for registry-only projects and cannot dispatch. "
-                    "If you really want to stop dispatching to this project, "
-                    "remove_project then add_project with agent='shell'."
+                    f"Valid: {', '.join(sorted(VALID_AGENTS))}."
                 ),
             }
         if not get_adapter(agent).has_exec:
@@ -664,7 +650,7 @@ def update_project(
                     "ok": False,
                     "error": (
                         f"unknown agent {a!r} in fallback. "
-                        f"Valid: {', '.join(sorted(VALID_AGENTS - {'shell'}))}."
+                        f"Valid: {', '.join(sorted(VALID_AGENTS))}."
                     ),
                 }
             if not get_adapter(a).has_exec:

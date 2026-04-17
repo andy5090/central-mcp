@@ -30,8 +30,9 @@ class Adapter:
     def launch_command(self) -> str:
         """Shell-joined interactive launch command for tmux panes.
 
-        Empty string means "this adapter has no launch command" — used by
-        the `shell` adapter so the pane just shows a plain shell.
+        Empty string means "this adapter has no launch command" — the
+        fallback adapter uses this so a lookup on an unknown name
+        degrades to a bare pane rather than crashing.
         """
         return " ".join(self.launch)
 
@@ -94,11 +95,15 @@ _ADAPTERS: dict[str, Adapter] = {
     "codex": _Codex("codex", launch=("codex",), has_exec=True),
     "gemini": _Gemini("gemini", launch=("gemini",), has_exec=True),
     "droid": _Droid("droid", launch=("droid",), has_exec=True),
-    "shell": Adapter("shell", launch=(), has_exec=False),
 }
 
-VALID_AGENTS = {"claude", "codex", "gemini", "droid", "shell"}
+# Internal fallback for `get_adapter(unknown)` — no launch, no exec.
+# Not exposed as a valid agent name; it exists only so callers don't
+# have to special-case missing adapters.
+_FALLBACK_ADAPTER = Adapter("(unknown)", launch=(), has_exec=False)
+
+VALID_AGENTS = {"claude", "codex", "gemini", "droid"}
 
 
 def get_adapter(name: str) -> Adapter:
-    return _ADAPTERS.get(name, _ADAPTERS["shell"])
+    return _ADAPTERS.get(name, _FALLBACK_ADAPTER)

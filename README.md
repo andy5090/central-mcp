@@ -177,7 +177,7 @@ central-mcp install CLIENT         # register with claude | codex | gemini
 central-mcp alias [NAME]           # short-name symlink (default: cmcp)
 central-mcp unalias [NAME]
 central-mcp init [PATH]            # scaffold registry.yaml (default: ~/.central-mcp)
-central-mcp add NAME PATH [--agent claude|codex|gemini|droid|shell]
+central-mcp add NAME PATH [--agent claude|codex|gemini|droid]
 central-mcp remove NAME
 central-mcp list                   # one-line registry dump
 central-mcp brief                  # orchestrator-ready markdown snapshot

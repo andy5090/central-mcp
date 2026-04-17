@@ -177,7 +177,7 @@ central-mcp install CLIENT         # claude | codex | gemini에 등록
 central-mcp alias [NAME]           # 짧은 이름 심링크 (기본: cmcp)
 central-mcp unalias [NAME]
 central-mcp init [PATH]            # registry.yaml 스캐폴드 (기본: ~/.central-mcp)
-central-mcp add NAME PATH [--agent claude|codex|gemini|droid|shell]
+central-mcp add NAME PATH [--agent claude|codex|gemini|droid]
 central-mcp remove NAME
 central-mcp list                   # 한 줄씩 레지스트리 출력
 central-mcp brief                  # 오케스트레이터용 마크다운 스냅샷

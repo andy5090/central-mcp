@@ -107,7 +107,7 @@ def cmd_add(args: argparse.Namespace) -> int:
     if args.agent not in VALID_AGENTS:
         print(
             f"error: unknown agent {args.agent!r}. "
-            f"Valid: {', '.join(sorted(VALID_AGENTS - {'shell'}))} (or 'shell' for registry-only).",
+            f"Valid: {', '.join(sorted(VALID_AGENTS))}.",
             file=sys.stderr,
         )
         return 1

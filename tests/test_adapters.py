@@ -16,11 +16,11 @@ class TestAdapterRegistry:
     def test_every_valid_agent_has_an_adapter(self) -> None:
         for name in VALID_AGENTS:
             adapter = get_adapter(name)
-            assert adapter.name == name or name == "shell"
+            assert adapter.name == name
 
-    def test_unknown_agent_falls_back_to_shell(self) -> None:
+    def test_unknown_agent_falls_back_to_fallback_adapter(self) -> None:
         adapter = get_adapter("nonexistent")
-        assert adapter.name == "shell"
+        assert adapter.name == "(unknown)"
         assert adapter.exec_argv("x") is None
 
 
@@ -100,14 +100,14 @@ class TestAmpRemoved:
     def test_amp_not_in_valid_agents(self) -> None:
         assert "amp" not in VALID_AGENTS
 
-    def test_amp_adapter_falls_back_to_shell(self) -> None:
-        # `get_adapter` returns the shell adapter for any unknown name,
+    def test_amp_adapter_falls_back_to_fallback_adapter(self) -> None:
+        # `get_adapter` returns the internal fallback adapter for any unknown name,
         # so looking up `amp` should yield has_exec=False.
         assert get_adapter("amp").has_exec is False
         assert get_adapter("amp").exec_argv("x") is None
 
 
-class TestShell:
+class TestFallbackAdapter:
     def test_no_exec(self) -> None:
         assert get_adapter("shell").exec_argv("anything") is None
 
