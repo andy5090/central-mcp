@@ -3,8 +3,9 @@
 Command implementations live in `central_mcp.cli._commands`; this module
 is deliberately small and contains only argparse plumbing plus the
 `main()` entry point that `python -m central_mcp` and the `central-mcp`
-console script resolve to. Running with no arguments starts the MCP
-server on stdio (what MCP clients invoke).
+console script resolve to. Running with no arguments launches the
+orchestrator (same as `central-mcp run`). Use `central-mcp serve` to
+start the MCP server on stdio explicitly (what MCP clients invoke).
 """
 
 from __future__ import annotations
@@ -142,11 +143,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
-    # No args → run MCP server (this is what MCP clients invoke over stdio).
+    # No args → launch orchestrator (same as `central-mcp run`).
+    # MCP clients use `central-mcp serve` explicitly, so this is safe.
     if len(sys.argv) == 1:
-        from central_mcp.server import main as server_main
-        server_main()
-        return
+        sys.argv.append("run")
 
     parser = build_parser()
     args = parser.parse_args()

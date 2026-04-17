@@ -175,9 +175,9 @@ The sub-agent model is independent — each `dispatch` spawns its own process wi
 ## CLI reference
 
 ```
-central-mcp                        # no-arg → run MCP server on stdio
-central-mcp serve                  # same, explicit
-central-mcp run [--agent X] [--pick] [--bypass]  # launch orchestrator
+central-mcp                        # no-arg → launch orchestrator (same as `run`)
+central-mcp run [--agent X] [--pick] [--bypass]  # launch orchestrator (explicit)
+central-mcp serve                  # run MCP server on stdio (used by MCP clients)
 central-mcp install CLIENT         # register with claude | codex | gemini | opencode
 central-mcp alias [NAME]           # short-name symlink (default: cmcp)
 central-mcp unalias [NAME]

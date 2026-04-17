@@ -171,9 +171,9 @@ dispatch_history(n=50)            # 최근 50개
 ## CLI 레퍼런스
 
 ```
-central-mcp                        # 인자 없음 → stdio에서 MCP 서버 실행
-central-mcp serve                  # 동일, 명시적
-central-mcp run [--agent X] [--pick] [--bypass]  # 오케스트레이터 기동
+central-mcp                        # 인자 없음 → 오케스트레이터 기동 (`run`과 동일)
+central-mcp run [--agent X] [--pick] [--bypass]  # 오케스트레이터 기동 (명시적)
+central-mcp serve                  # stdio에서 MCP 서버 실행 (MCP 클라이언트가 사용)
 central-mcp install CLIENT         # claude | codex | gemini | opencode에 등록
 central-mcp alias [NAME]           # 짧은 이름 심링크 (기본: cmcp)
 central-mcp unalias [NAME]
