@@ -83,7 +83,7 @@ Multiple dispatches run in parallel.
 
 ## MCP tools
 
-`central-mcp` exposes 10 tools under the server name `central`:
+`central-mcp` exposes 11 tools under the server name `central`:
 
 | Tool | Blocking? | Purpose |
 |---|---|---|
@@ -93,7 +93,8 @@ Multiple dispatches run in parallel.
 | `check_dispatch` | sync | Poll a dispatch — `running` / `complete` / `error` with full output. |
 | `list_dispatches` | sync | All active + recently completed dispatches. |
 | `cancel_dispatch` | sync | Abort a running dispatch. |
-| `dispatch_history` | sync | Persistent history of past dispatches (survives restarts). |
+| `dispatch_history` | sync | Last N dispatches for **one project** (reads its jsonl log). |
+| `orchestration_history` | sync | Portfolio-wide snapshot: in-flight + recent cross-project milestones + per-project counts. Call this for "how is everything going?" |
 | `add_project` | sync | Register a new project. Validates agent name. Auto-trusts codex dirs. |
 | `update_project` | sync | Change an existing project's agent, description, tags, bypass, or fallback. |
 | `remove_project` | sync | Unregister a project. |
@@ -185,15 +186,28 @@ On the first dispatch to a project the chosen bypass value is saved to `registry
 
 If a project deals with sensitive code and you're not comfortable granting blanket bypass, keep `bypass=false` and stick to read-only dispatches, or use interactive panes for anything that writes.
 
-### Dispatch history
+### Dispatch history (per project)
 
-Every completed dispatch is logged to `~/.central-mcp/history/<project>.jsonl` — survives server restarts. Query with:
+Every dispatch streams its `start` / `output` / `complete` events into `~/.central-mcp/logs/<project>/dispatch.jsonl` (append-only). `dispatch_history` reads the terminal events back, merged with their matching `start`:
 
 ```
-dispatch_history()                # last 10 across all projects
-dispatch_history(name="my-app")   # last 10 for one project
-dispatch_history(n=50)            # last 50
+dispatch_history(name="my-app")          # last 10 dispatches for my-app
+dispatch_history(name="my-app", n=50)    # last 50
 ```
+
+For a cross-project view, use `orchestration_history` (below).
+
+### Orchestration history (portfolio view)
+
+Asks "how is everything going?" in one shot. Reads the global timeline at `~/.central-mcp/timeline.jsonl` (also append-only) plus the server's in-memory in-flight table:
+
+```
+orchestration_history()                  # in-flight + last 20 milestones across all projects
+orchestration_history(n=100)             # wider slice of history
+orchestration_history(window_minutes=60) # only count activity in the last hour
+```
+
+The response bundles: `in_flight` (running now), `recent` (newest milestones), `per_project` (dispatched/succeeded/failed/cancelled counts, last timestamp), and a registry snapshot. The orchestrator uses this to write a multi-project summary in one pass.
 
 ### Performance tip: use a faster model for the orchestrator
 

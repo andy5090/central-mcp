@@ -38,6 +38,18 @@ def log_path(project: str) -> Path:
     return log_dir(project) / "dispatch.jsonl"
 
 
+def timeline_path() -> Path:
+    """Global cross-project milestone log.
+
+    One line per dispatch lifecycle milestone (dispatched, complete,
+    error, cancelled) for every project, chronologically interleaved.
+    Backs `orchestration_history` and portfolio-level summaries so
+    the orchestrator can answer "how is everything going?" without
+    stitching per-project files together.
+    """
+    return paths.central_mcp_home() / "timeline.jsonl"
+
+
 def log_event(project: str, dispatch_id: str, event: str, **data: Any) -> None:
     """Append one dispatch event to the project's jsonl log.
 
@@ -54,6 +66,29 @@ def log_event(project: str, dispatch_id: str, event: str, **data: Any) -> None:
             **data,
         }
         with (d / "dispatch.jsonl").open("a") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
+def log_timeline(dispatch_id: str, project: str, event: str, **data: Any) -> None:
+    """Append one milestone to the global timeline.
+
+    Compact by design — no output chunks, just the minimum to tell
+    the orchestrator "this dispatch started/finished in project X at
+    time T with result Y". Best-effort, never raises.
+    """
+    try:
+        path = timeline_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        record = {
+            "ts": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
+            "project": project,
+            "id": dispatch_id,
+            "event": event,
+            **data,
+        }
+        with path.open("a") as f:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
     except Exception:
         pass

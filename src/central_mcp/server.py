@@ -49,16 +49,23 @@ When the user asks anything about "my projects", status, or dispatching
 work, call these MCP tools — do not read files or run shell commands
 instead:
 
-  - list_projects    — enumerate the registry
-  - project_status   — registry info for one project
-  - dispatch          — run a one-shot agent in the project's cwd.
-                        NON-BLOCKING: returns a dispatch_id immediately.
-  - check_dispatch    — poll a dispatch (running / complete / error)
-  - list_dispatches   — show all active + recently completed dispatches
-  - cancel_dispatch   — abort a running dispatch
-  - add_project       — register a new project
-  - remove_project    — unregister a project
-  - update_project    — change a project's agent / fallback / bypass / etc.
+  - list_projects          — enumerate the registry
+  - project_status         — registry info for one project
+  - dispatch               — run a one-shot agent in the project's cwd.
+                             NON-BLOCKING: returns a dispatch_id immediately.
+  - check_dispatch         — poll a dispatch (running / complete / error)
+  - list_dispatches        — show all active + recently completed dispatches
+  - cancel_dispatch        — abort a running dispatch
+  - dispatch_history       — last N dispatches for one project
+  - orchestration_history  — portfolio-wide snapshot: in-flight +
+                             recent milestones + per-project stats.
+                             Use this when the user asks "overall status?"
+                             or "how is everything going?" — a single call
+                             gives the orchestrator everything it needs to
+                             write a multi-project summary.
+  - add_project            — register a new project
+  - remove_project         — unregister a project
+  - update_project         — change a project's agent / fallback / bypass / etc.
 
 dispatch is NON-BLOCKING. It spawns the agent as a subprocess and
 returns a dispatch_id instantly (<100ms). To get the result:
@@ -131,39 +138,63 @@ def _with_completed(response: Any) -> Any:
     return response
 
 
-def _history_dir() -> Path:
-    return paths.central_mcp_home() / "history"
-
-
-def _append_history(project: str, record: dict[str, Any]) -> None:
-    """Append a dispatch record to the project's history JSONL file."""
-    hdir = _history_dir()
-    hdir.mkdir(parents=True, exist_ok=True)
-    fpath = hdir / f"{project}.jsonl"
-    with fpath.open("a") as f:
-        f.write(json.dumps(record, ensure_ascii=False) + "\n")
-
-
-def _read_history(project: str | None = None, n: int = 10) -> list[dict[str, Any]]:
-    """Read the last N dispatch records. If project is None, read across all."""
-    hdir = _history_dir()
-    if not hdir.exists():
+def _read_jsonl(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
         return []
-
-    files = [hdir / f"{project}.jsonl"] if project else sorted(hdir.glob("*.jsonl"))
-    records: list[dict[str, Any]] = []
-    for fpath in files:
-        if not fpath.exists():
+    out: list[dict[str, Any]] = []
+    for line in path.read_text(errors="replace").splitlines():
+        line = line.strip()
+        if not line:
             continue
-        for line in fpath.read_text(errors="replace").splitlines():
-            line = line.strip()
-            if line:
-                try:
-                    records.append(json.loads(line))
-                except json.JSONDecodeError:
-                    pass
-    # Sort by timestamp descending, take last N
-    records.sort(key=lambda r: r.get("timestamp", ""), reverse=True)
+        try:
+            out.append(json.loads(line))
+        except json.JSONDecodeError:
+            pass
+    return out
+
+
+def _project_history(project: str, n: int) -> list[dict[str, Any]]:
+    """Last N complete/error/cancelled records from the project's jsonl.
+
+    Reads `~/.central-mcp/logs/<project>/dispatch.jsonl`, filters to
+    terminal events, and joins them with the matching `start` event so
+    the record carries both the prompt and the outcome.
+    """
+    records = _read_jsonl(events.log_path(project))
+    if not records:
+        return []
+    starts_by_id: dict[str, dict[str, Any]] = {}
+    terminals: list[dict[str, Any]] = []
+    for r in records:
+        evt = r.get("event")
+        if evt == "start":
+            starts_by_id[r.get("id", "")] = r
+        elif evt in ("complete", "error", "cancelled"):
+            terminals.append(r)
+    terminals.sort(key=lambda r: r.get("ts", ""), reverse=True)
+    merged: list[dict[str, Any]] = []
+    for t in terminals[:n]:
+        s = starts_by_id.get(t.get("id", ""), {})
+        merged.append({
+            "dispatch_id": t.get("id"),
+            "project": project,
+            "event": t.get("event"),
+            "ts": t.get("ts"),
+            "ok": t.get("ok", False),
+            "exit_code": t.get("exit_code"),
+            "duration_sec": t.get("duration_sec"),
+            "agent": t.get("agent_used") or s.get("agent"),
+            "fallback_used": t.get("fallback_used", False),
+            "error": t.get("error"),
+            "prompt": s.get("prompt", ""),
+        })
+    return merged
+
+
+def _timeline_tail(n: int) -> list[dict[str, Any]]:
+    """Last N milestones from the global timeline, newest-first."""
+    records = _read_jsonl(events.timeline_path())
+    records.sort(key=lambda r: r.get("ts", ""), reverse=True)
     return records[:n]
 
 
@@ -500,23 +531,19 @@ def dispatch(
             error=final_result.get("error") if final_result else None,
         )
 
-        # Write to persistent history (outside lock)
-        try:
-            _append_history(entry["project"], {
-                "dispatch_id": entry["id"],
-                "project": entry["project"],
-                "agent": final_result.get("agent_used", entry["agent"]),
-                "chain": chain,
-                "prompt": entry.get("prompt", ""),
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "ok": final_result.get("ok", False),
-                "exit_code": final_result.get("exit_code"),
-                "duration_sec": final_result.get("duration_sec"),
-                "fallback_used": final_result.get("fallback_used", False),
-                "output_preview": (final_result.get("output") or "")[:500],
-            })
-        except Exception:
-            pass
+        # Append a compact milestone to the global timeline so portfolio-
+        # level summaries (`orchestration_history`) don't have to fan out
+        # across per-project log files.
+        events.log_timeline(
+            dispatch_id, project.name,
+            "error" if final_status == "error" else final_status,
+            agent=(final_result.get("agent_used") if final_result else None) or entry["agent"],
+            ok=bool(final_result and final_result.get("ok")),
+            exit_code=final_result.get("exit_code") if final_result else None,
+            duration_sec=final_result.get("duration_sec") if final_result else None,
+            fallback_used=bool(final_result and final_result.get("fallback_used")),
+            prompt_preview=(entry.get("prompt") or "")[:120],
+        )
 
     with _dispatch_lock:
         _dispatches[dispatch_id] = entry
@@ -525,6 +552,11 @@ def dispatch(
         project.name, dispatch_id, "start",
         agent=primary_agent, chain=chain,
         prompt=prompt, command=" ".join(initial_argv), cwd=str(cwd),
+    )
+    events.log_timeline(
+        dispatch_id, project.name, "dispatched",
+        agent=primary_agent, chain=chain,
+        prompt_preview=prompt[:120],
     )
 
     t = threading.Thread(target=_run_bg, daemon=True, name=f"dispatch-{dispatch_id}")
@@ -752,23 +784,109 @@ def update_project(
 
 @mcp.tool()
 def dispatch_history(
-    name: str | None = None,
+    name: str,
     n: int = 10,
 ) -> dict[str, Any]:
-    """Return the last N dispatch records from persistent history.
+    """Return the last N completed/failed/cancelled dispatches for one project.
 
-    Pass `name` to filter by project; omit for cross-project history.
-    Each record includes: dispatch_id, project, agent, prompt,
-    timestamp, ok, exit_code, duration_sec, output_preview (first 500
-    chars). History survives server restarts — it's stored on disk at
-    ~/.central-mcp/history/<project>.jsonl.
+    Reads `~/.central-mcp/logs/<project>/dispatch.jsonl` and extracts
+    terminal events (merged with their matching `start` so each record
+    carries both the prompt and the outcome). For a cross-project
+    portfolio summary, use `orchestration_history` instead.
     """
-    records = _read_history(project=name, n=n)
+    project, err = _require_project(name)
+    if err:
+        return err
+    records = _project_history(project.name, n)
     return _with_completed({
         "ok": True,
+        "project": project.name,
         "count": len(records),
-        "project_filter": name,
         "records": records,
+    })
+
+
+@mcp.tool()
+def orchestration_history(
+    n: int = 20,
+    window_minutes: int | None = None,
+) -> dict[str, Any]:
+    """Portfolio-wide snapshot: in-flight dispatches + recent milestones + per-project stats.
+
+    Answers "how is everything going?" without per-project polling.
+    Pulls:
+      - `in_flight`: currently running dispatches (from memory)
+      - `recent`: last N timeline milestones (dispatched/complete/
+        error/cancelled) across all projects, newest first
+      - `per_project`: counts of succeeded/failed/in-flight per project
+        within `window_minutes` (or all-time if not given)
+      - `registered_projects`: registry snapshot for context
+    """
+    timeline = _read_jsonl(events.timeline_path())
+    timeline.sort(key=lambda r: r.get("ts", ""), reverse=True)
+
+    if window_minutes is not None:
+        cutoff_dt = datetime.now(timezone.utc).timestamp() - window_minutes * 60
+        def _in_window(r: dict[str, Any]) -> bool:
+            try:
+                ts = datetime.fromisoformat(r.get("ts", "").replace("Z", "+00:00"))
+                return ts.timestamp() >= cutoff_dt
+            except Exception:
+                return True  # don't lose records on bad ts
+        filtered = [r for r in timeline if _in_window(r)]
+    else:
+        filtered = timeline
+
+    recent = filtered[:n]
+
+    # Per-project aggregation (count terminal events by outcome).
+    per_project: dict[str, dict[str, int]] = {}
+    last_ts_by_project: dict[str, str] = {}
+    for r in filtered:
+        proj = r.get("project", "?")
+        stats = per_project.setdefault(proj, {
+            "dispatched": 0, "succeeded": 0, "failed": 0, "cancelled": 0,
+        })
+        evt = r.get("event")
+        if evt == "dispatched":
+            stats["dispatched"] += 1
+        elif evt == "complete":
+            if r.get("ok"):
+                stats["succeeded"] += 1
+            else:
+                stats["failed"] += 1
+        elif evt == "error":
+            stats["failed"] += 1
+        elif evt == "cancelled":
+            stats["cancelled"] += 1
+        ts = r.get("ts", "")
+        if ts > last_ts_by_project.get(proj, ""):
+            last_ts_by_project[proj] = ts
+    for proj, last_ts in last_ts_by_project.items():
+        per_project[proj]["last_ts"] = last_ts  # type: ignore[assignment]
+
+    with _dispatch_lock:
+        in_flight = [
+            {
+                "dispatch_id": e["id"],
+                "project": e["project"],
+                "agent": e["agent"],
+                "elapsed_sec": round(time.time() - e["started"], 1),
+                "prompt_preview": (e.get("prompt") or "")[:120],
+            }
+            for e in _dispatches.values()
+            if e["status"] == "running"
+        ]
+
+    registered = [p.to_dict() for p in load_registry()]
+
+    return _with_completed({
+        "ok": True,
+        "window_minutes": window_minutes,
+        "in_flight": in_flight,
+        "recent": recent,
+        "per_project": per_project,
+        "registered_projects": registered,
     })
 
 

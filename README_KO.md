@@ -79,7 +79,7 @@ central-mcp run
 
 ## MCP 도구
 
-`central-mcp`는 `central` 서버명으로 10개 도구를 노출합니다:
+`central-mcp`는 `central` 서버명으로 11개 도구를 노출합니다:
 
 | 도구 | 블로킹? | 용도 |
 |---|---|---|
@@ -89,7 +89,8 @@ central-mcp run
 | `check_dispatch` | sync | 디스패치 폴링 — `running` / `complete` / `error` + 출력. |
 | `list_dispatches` | sync | 모든 활성 + 최근 완료 디스패치. |
 | `cancel_dispatch` | sync | 실행 중인 디스패치 중단. |
-| `dispatch_history` | sync | 과거 디스패치 이력 조회 (재시작 후에도 유지). |
+| `dispatch_history` | sync | **특정 프로젝트**의 최근 N개 디스패치 이력 (해당 프로젝트 jsonl 로그 기반). |
+| `orchestration_history` | sync | 포트폴리오 전체 스냅샷 — 진행 중인 디스패치 + 프로젝트 간 최근 milestone + 프로젝트별 집계. "전반적으로 어떻게 돌아가?" 한 번에. |
 | `add_project` | sync | 새 프로젝트 등록. 에이전트 이름 검증. Codex 디렉토리 자동 trust. |
 | `update_project` | sync | 기존 프로젝트의 agent / description / tags / bypass / fallback 변경. |
 | `remove_project` | sync | 프로젝트 등록 해제. |
@@ -174,15 +175,28 @@ update_project(name="my-app", fallback=["codex", "gemini"])
 >
 > **면책**: central-mcp는 라우팅 레이어로서 에이전트가 어떤 작업을 수행하는지 감독하지 않습니다. bypass 모드로 실행한 모든 dispatch의 범위·대상·결과에 대한 책임은 사용자 본인에게 있습니다. central-mcp 저자와 기여자는 bypass 사용으로 인한 데이터 손실·보안 침해·비용 발생·기타 피해에 대해 **어떤 책임도 지지 않습니다**. 스냅샷(git 커밋, 백업, 브랜치 보호), 최소 권한 자격증명, 오프라인/샌드박스 환경을 최대한 활용하세요.
 
-### 디스패치 히스토리
+### 디스패치 히스토리 (프로젝트별)
 
-완료된 모든 dispatch는 `~/.central-mcp/history/<project>.jsonl`에 기록됩니다 — 서버 재시작 후에도 유지.
+모든 dispatch는 `~/.central-mcp/logs/<project>/dispatch.jsonl`에 `start` / `output` / `complete` 이벤트를 append로 기록합니다. `dispatch_history`는 terminal 이벤트를 start와 merge해서 반환:
 
 ```
-dispatch_history()                # 전체 프로젝트 최근 10개
-dispatch_history(name="my-app")   # 특정 프로젝트 최근 10개
-dispatch_history(n=50)            # 최근 50개
+dispatch_history(name="my-app")          # my-app 최근 10개
+dispatch_history(name="my-app", n=50)    # 최근 50개
 ```
+
+포트폴리오 차원의 관찰은 `orchestration_history` (아래) 사용.
+
+### 오케스트레이션 히스토리 (포트폴리오 뷰)
+
+"전체적으로 어떻게 돌아가?"를 한 번의 호출로 답합니다. 전역 타임라인 `~/.central-mcp/timeline.jsonl` + 서버 메모리의 in-flight 테이블을 합쳐 반환:
+
+```
+orchestration_history()                  # 진행 중 + 전체 프로젝트 최근 20개 milestone
+orchestration_history(n=100)             # 더 긴 이력
+orchestration_history(window_minutes=60) # 최근 1시간 활동만
+```
+
+응답에는 `in_flight` (현재 실행 중), `recent` (최근 milestone), `per_project` (프로젝트별 dispatched/succeeded/failed/cancelled 카운트 + 최근 ts), 레지스트리 스냅샷이 포함됩니다. 오케스트레이터가 이 한 번의 호출로 복수 프로젝트 현황을 자연어로 요약할 수 있습니다.
 
 ### 성능 팁: 오케스트레이터에 빠른 모델 사용
 
