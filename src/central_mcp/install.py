@@ -33,18 +33,53 @@ def _say(msg: str) -> None:
     print(msg)
 
 
+SUPPORTED_CLIENTS: list[str] = ["claude", "codex", "gemini", "opencode"]
+
+
+def _installer_for(client: str):
+    return {
+        "claude": _install_claude,
+        "codex": _install_codex,
+        "gemini": _install_gemini,
+        "opencode": _install_opencode,
+    }.get(client)
+
+
+def detect_installed_clients() -> list[str]:
+    """Return the subset of supported clients whose binary is on PATH."""
+    return [c for c in SUPPORTED_CLIENTS if shutil.which(c)]
+
+
+def install_all(*, dry_run: bool = False) -> int:
+    """Detect installed MCP clients and register central-mcp with each.
+
+    Skips clients whose binary isn't on PATH. Exit code is 0 if every
+    detected client registered cleanly; non-zero if any failed.
+    """
+    detected = detect_installed_clients()
+    if not detected:
+        _say("no supported MCP client detected on PATH")
+        _say(f"supported: {', '.join(SUPPORTED_CLIENTS)}")
+        return 0
+    _say(f"detected MCP clients: {', '.join(detected)}")
+    failures = 0
+    for client in detected:
+        _say(f"\n── registering central-mcp with {client} ──")
+        rc = install(client, dry_run=dry_run)
+        if rc != 0:
+            failures += 1
+    return 1 if failures else 0
+
+
 def install(client: str, *, dry_run: bool = False) -> int:
-    if client == "claude":
-        return _install_claude(dry_run=dry_run)
-    if client == "codex":
-        return _install_codex(dry_run=dry_run)
-    if client == "gemini":
-        return _install_gemini(dry_run=dry_run)
-    if client == "opencode":
-        return _install_opencode(dry_run=dry_run)
+    if client == "all":
+        return install_all(dry_run=dry_run)
+    fn = _installer_for(client)
+    if fn is not None:
+        return fn(dry_run=dry_run)
     print(
         f"error: unknown client {client!r}. "
-        "Supported: claude, codex, gemini, opencode.",
+        f"Supported: {', '.join(SUPPORTED_CLIENTS)}, all.",
         file=sys.stderr,
     )
     return 1
