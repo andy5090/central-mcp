@@ -136,6 +136,31 @@ Status legend: ✅ done · 🚧 in progress · 📋 planned · 💭 idea
 
 ---
 
+## Phase 7 — Agent harness (smart routing)
+
+**Goal**: act as a higher-level agent harness — given a user request, automatically pick the best coding agent and model tier for the job, then dispatch accordingly. The orchestrator stops making routing decisions itself; it just passes the task to central-mcp and trusts the harness to choose.
+
+📋 **Task classifier**
+- New MCP tool `suggest_dispatch(project, prompt)` — returns `{agent, model, reasoning, fallback}` without dispatching. The orchestrator can show the suggestion, call `dispatch` with it, or override.
+- Optional `auto_dispatch(project, prompt)` — classify + dispatch in one shot.
+- Heuristics at first (prompt length, keywords: "refactor", "research", "summarize", "shell command", "review", etc.), with an optional LLM-assisted classifier as a follow-up.
+
+📋 **Agent capability registry**
+- Structured metadata per agent: strengths (reasoning depth, tool use, speed), known weaknesses, cost tier, model tiers available.
+- Seeded with defaults for claude / codex / gemini / droid / opencode; user can override in `config.toml` under `[agents.<name>]`.
+- Model tier selection: each agent exposes low / medium / high variants, and the harness picks based on task complexity heuristics.
+
+📋 **Routing config**
+- `config.toml` under `[routing]` for preferences: favored agent for code-heavy tasks, fallback chains, cost caps.
+- Per-workspace routing overrides (ties into Phase 6).
+
+💭 **Open questions**
+- How much of this belongs in central-mcp vs. a purpose-built classifier sidecar?
+- Do we expose the classifier's reasoning in MCP responses for auditability?
+- Should `auto_dispatch` be opt-in only, or become the default once good enough?
+
+---
+
 ## Non-goals / explicit decisions
 
 - **`central-mcp install <client>` stdio setup stays the default.** Even after daemon mode lands, orchestrators continue using stdio transport for simplicity; daemon is transparent behind it.
