@@ -131,6 +131,20 @@ def _install_claude(*, dry_run: bool) -> int:
     _say("Would run: " + " ".join(cmd) if dry_run else "Running: " + " ".join(cmd))
     if dry_run:
         return 0
+    # Idempotency: `claude mcp add` errors out if the name already exists.
+    # Probe with `claude mcp get` first so reruns are a no-op instead of
+    # surfacing the scary stderr to the user.
+    try:
+        probe = subprocess.run(
+            ["claude", "mcp", "get", SERVER_NAME],
+            capture_output=True, text=True, check=False,
+        )
+    except FileNotFoundError:
+        print("error: `claude` CLI not found in PATH", file=sys.stderr)
+        return 1
+    if probe.returncode == 0:
+        _say(f"claude: {SERVER_NAME!r} already registered — no change")
+        return 0
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, check=False)
     except FileNotFoundError:
