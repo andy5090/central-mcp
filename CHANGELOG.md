@@ -3,6 +3,13 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.1.1] — 2026-04-17
+
+### Added
+- `opencode` orchestrator support: `central-mcp install opencode` patches `~/.config/opencode/opencode.json`
+- `central-mcp` / `cmcp` with no arguments now launches the orchestrator (was: MCP stdio server)
+- Open-source scaffolding: CHANGELOG, CONTRIBUTING, GitHub issue templates, PyPI badges
+
 ## [0.1.0] — 2026-04-17
 
 First public release on PyPI.
