@@ -85,8 +85,9 @@ class TestPaneDetails:
             registry.add_project(f"proj-{i}", str(d), agent="shell")
 
         layout.ensure_session()
+        first = layout.window_name(0)
         r = tmux._run([
-            "list-panes", "-t", f"{layout.SESSION}:{layout.WINDOW}",
+            "list-panes", "-t", f"{layout.SESSION}:{first}",
             "-F", "#{pane_index}",
         ])
         assert r.ok
@@ -99,8 +100,9 @@ class TestPaneDetails:
         registry.add_project("my-proj", str(d), agent="shell")
 
         layout.ensure_session()
+        first = layout.window_name(0)
         r = tmux._run([
-            "list-panes", "-t", f"{layout.SESSION}:{layout.WINDOW}",
+            "list-panes", "-t", f"{layout.SESSION}:{first}",
             "-F", "#{pane_current_path}",
         ])
         assert r.ok
@@ -119,8 +121,9 @@ class TestPaneDetails:
         import time
         time.sleep(0.3)  # let shell prompt render
 
+        first = layout.window_name(0)
         r = tmux._run([
-            "capture-pane", "-p", "-t", f"{layout.SESSION}:{layout.WINDOW}.0",
+            "capture-pane", "-p", "-t", f"{layout.SESSION}:{first}.0",
         ])
         assert r.ok
         text = r.stdout
@@ -177,11 +180,13 @@ class TestOrchestratorPane:
         created, messages = layout.ensure_session(orchestrator=orch)
         assert created
         # Pane 0 should be orchestrator, pane 1 project.
-        assert any("pane 0 -> orchestrator" in m and layout.WINDOW in m for m in messages)
+        first = layout.window_name(0, has_orchestrator=True)
+        assert first.endswith(layout.HUB_SUFFIX)
+        assert any("pane 0 -> orchestrator" in m and first in m for m in messages)
         assert any("pane 1 -> proj" in m for m in messages)
 
         r = tmux._run([
-            "list-panes", "-t", f"{layout.SESSION}:{layout.WINDOW}",
+            "list-panes", "-t", f"{layout.SESSION}:{first}",
             "-F", "#{pane_index}:#{pane_current_path}",
         ])
         assert r.ok
@@ -237,8 +242,9 @@ class TestWindowChunking:
         created, messages = layout.ensure_session()
         assert created
         assert not any("failed" in m for m in messages), messages
-        assert _window_names(layout.SESSION) == [layout.WINDOW]
-        assert _pane_count(layout.SESSION, layout.WINDOW) == 4
+        w1 = layout.window_name(0)
+        assert _window_names(layout.SESSION) == [w1]
+        assert _pane_count(layout.SESSION, w1) == 4
 
     def test_five_items_overflow_to_second_window(
         self, fake_home: Path, tmp_path: Path
@@ -251,9 +257,10 @@ class TestWindowChunking:
         created, messages = layout.ensure_session()
         assert created
         assert not any("failed" in m for m in messages), messages
-        assert _window_names(layout.SESSION) == [layout.WINDOW, f"{layout.WINDOW}-2"]
-        assert _pane_count(layout.SESSION, layout.WINDOW) == 4
-        assert _pane_count(layout.SESSION, f"{layout.WINDOW}-2") == 1
+        w1, w2 = layout.window_name(0), layout.window_name(1)
+        assert _window_names(layout.SESSION) == [w1, w2]
+        assert _pane_count(layout.SESSION, w1) == 4
+        assert _pane_count(layout.SESSION, w2) == 1
 
     def test_orchestrator_counts_toward_window_capacity(
         self, fake_home: Path, tmp_path: Path
@@ -270,8 +277,10 @@ class TestWindowChunking:
 
         created, messages = layout.ensure_session(orchestrator=orch)
         assert created
-        assert _window_names(layout.SESSION) == [layout.WINDOW]
-        assert _pane_count(layout.SESSION, layout.WINDOW) == 4
+        hub = layout.window_name(0, has_orchestrator=True)
+        assert hub.endswith(layout.HUB_SUFFIX)
+        assert _window_names(layout.SESSION) == [hub]
+        assert _pane_count(layout.SESSION, hub) == 4
 
     def test_orchestrator_plus_four_projects_overflows(
         self, fake_home: Path, tmp_path: Path
@@ -289,9 +298,11 @@ class TestWindowChunking:
         created, messages = layout.ensure_session(orchestrator=orch)
         assert created
         assert not any("failed" in m for m in messages), messages
-        assert _window_names(layout.SESSION) == [layout.WINDOW, f"{layout.WINDOW}-2"]
-        assert _pane_count(layout.SESSION, layout.WINDOW) == 4
-        assert _pane_count(layout.SESSION, f"{layout.WINDOW}-2") == 1
+        hub = layout.window_name(0, has_orchestrator=True)
+        overflow = layout.window_name(1, has_orchestrator=True)
+        assert _window_names(layout.SESSION) == [hub, overflow]
+        assert _pane_count(layout.SESSION, hub) == 4
+        assert _pane_count(layout.SESSION, overflow) == 1
 
     def test_twenty_projects_span_multiple_windows(
         self, fake_home: Path, tmp_path: Path
@@ -307,13 +318,7 @@ class TestWindowChunking:
         assert not any("failed" in m for m in messages), messages
 
         names = _window_names(layout.SESSION)
-        assert names == [
-            layout.WINDOW,
-            f"{layout.WINDOW}-2",
-            f"{layout.WINDOW}-3",
-            f"{layout.WINDOW}-4",
-            f"{layout.WINDOW}-5",
-        ]
+        assert names == [layout.window_name(i) for i in range(5)]
         for name in names:
             assert _pane_count(layout.SESSION, name) == 4
 
@@ -368,7 +373,7 @@ class TestActivePane:
 
         layout.ensure_session(orchestrator=orch)
         window, pane = self._active(layout.SESSION)
-        assert window == layout.WINDOW
+        assert window == layout.window_name(0, has_orchestrator=True)
         assert pane == 0
 
     def test_first_window_is_active_with_overflow(
@@ -382,5 +387,5 @@ class TestActivePane:
 
         layout.ensure_session()
         window, pane = self._active(layout.SESSION)
-        assert window == layout.WINDOW
+        assert window == layout.window_name(0)
         assert pane == 0
