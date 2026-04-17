@@ -108,6 +108,34 @@ Status legend: ✅ done · 🚧 in progress · 📋 planned · 💭 idea
 
 ---
 
+## Phase 6 — Workspaces (planned)
+
+**Goal**: let users group projects into workspaces so orchestrators can address a group with one dispatch, and let a single install swap between different project sets (work / personal / client-X) without editing `registry.yaml`.
+
+📋 **Project grouping inside a registry**
+- New optional `workspace` field per project (or a top-level `workspaces: {name: [project, …]}` map).
+- `dispatch("frontend", prompt)` when `frontend` is a workspace name → fan out to every project in that workspace; results aggregated or streamed per project.
+- `list_projects --workspace frontend` / `orchestration_history --workspace frontend` for filtered views.
+- `central-mcp up` / `cmcp zellij` can take `--workspace frontend` to bring up only that group's panes.
+
+📋 **Registry profiles (switchable workspaces)**
+- Multiple `registry.yaml` files side-by-side (e.g. `~/.central-mcp/workspaces/<name>/registry.yaml`).
+- `central-mcp --workspace client-x` selects which registry + config + logs directory tree is active for the whole invocation.
+- Saved default in `config.toml` under `[workspace] default = "..."`.
+- Env var override: `CENTRAL_MCP_WORKSPACE=<name>`.
+
+💭 **Shared context** (later, maybe)
+- Prompts/system-instructions applied to every dispatch inside a workspace (e.g. "all these are TypeScript projects with shared style rules").
+- Per-workspace `CLAUDE.md` / `AGENTS.md` templates auto-applied when launching the orchestrator for that workspace.
+- Defer until 1 + 2 land and the shape of shared-state needs is clearer from real use.
+
+💭 **Open questions**
+- Resolution order when a name is both a project and a workspace — prefix rule (`@frontend` for workspace) or type disambiguation?
+- Concurrent dispatch limits when fan-out grows large.
+- How does orchestration_history present fan-out runs — one parent + N children, or flat list with a shared group_id?
+
+---
+
 ## Non-goals / explicit decisions
 
 - **`central-mcp install <client>` stdio setup stays the default.** Even after daemon mode lands, orchestrators continue using stdio transport for simplicity; daemon is transparent behind it.
