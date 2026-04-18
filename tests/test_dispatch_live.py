@@ -66,7 +66,7 @@ def test_orchestration_history_picks_up_live_dispatch(
     r = server.dispatch(
         "orch-live",
         "Reply with exactly: LIVE_OK",
-        bypass=False,
+        permission_mode="restricted",
         resume=False,
     )
     assert r["ok"] is True
@@ -113,7 +113,7 @@ def test_dispatch_roundtrip(
     r = server.dispatch(
         "live-proj",
         "Reply with exactly the text: DISPATCH_OK — nothing else.",
-        bypass=False,
+        permission_mode="restricted",
         resume=False,
     )
     assert r["ok"] is True, f"dispatch rejected: {r.get('error')}"

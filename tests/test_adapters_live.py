@@ -108,7 +108,7 @@ def test_help_contains_our_flags(agent: str) -> None:
     (a historical bug: the amp adapter shipped with `--no-confirm`,
     which never existed — the correct flag was `--dangerously-allow-all`)."""
     _skip_if_missing(agent)
-    argv = get_adapter(agent).exec_argv("probe", resume=True, bypass=True)
+    argv = get_adapter(agent).exec_argv("probe", resume=True, permission_mode="bypass")
     assert argv is not None
     help_text = _help_text_for_argv(agent, argv)
     missing = []
@@ -130,7 +130,7 @@ def test_no_boolean_flag_is_actually_value_taking(agent: str) -> None:
     `droid exec`'s help shows `-r, --reasoning-effort <level>` — so
     droid silently ate the next flag as `-r`'s argument and errored."""
     _skip_if_missing(agent)
-    argv = get_adapter(agent).exec_argv("probe", resume=True, bypass=True)
+    argv = get_adapter(agent).exec_argv("probe", resume=True, permission_mode="bypass")
     assert argv is not None
     help_text = _help_text_for_argv(agent, argv)
 

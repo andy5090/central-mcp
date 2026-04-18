@@ -3,6 +3,27 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.5.0] — 2026-04-19
+
+### Added
+- **`permission_mode` field on every project** (`"bypass"` | `"auto"` | `"restricted"`). Replaces the previous boolean `bypass` field. `"auto"` is claude-only — emits `--enable-auto-mode --permission-mode auto` and uses the classifier-reviewed flow (requires Team/Enterprise/API plan + Sonnet 4.6 or Opus 4.6). Other agents map `"auto"` to no permission flags; dispatch refuses chains that mix `"auto"` with non-claude agents so intent isn't silently downgraded.
+- **`--permission-mode {bypass,auto,restricted}`** on every orchestrator subcommand (`run`, `up`, `tmux`, `zellij`). Default is `bypass` to preserve 0.4.x launch behavior.
+
+### Changed
+- **BREAKING** — `dispatch(bypass=...)` → `dispatch(permission_mode=...)` MCP tool parameter.
+- **BREAKING** — `update_project(bypass=...)` → `update_project(permission_mode=...)` MCP tool parameter.
+- **BREAKING** — `Adapter.exec_argv(..., bypass=bool)` → `exec_argv(..., permission_mode=str)`. External adapter implementations must update their signatures.
+- **BREAKING** — registry YAML: `bypass: bool | None` field replaced by `permission_mode: str | None`. Old registries keep their project entries but lose their saved permission preference on first write (default re-applied is `"bypass"`).
+- New projects no longer trigger the `needs_bypass_decision` prompt on first dispatch — they default to `permission_mode="bypass"` and save it to the registry immediately.
+
+### Removed
+- **BREAKING** — `--bypass` / `--no-bypass` CLI flags across `run`, `up`, `tmux`, `zellij`. Use `--permission-mode` instead.
+- **BREAKING** — `needs_bypass_decision` MCP response key. Dispatch no longer requires an explicit decision before the first call.
+- `BYPASS_FLAGS` constant and `update_project_bypass` helper — internal API callers should use `PERMISSION_MODE_FLAGS` and `update_project(permission_mode=…)`.
+
+### Rationale
+Auto mode (introduced in Claude Code's recent releases) runs a background classifier over every action instead of a blanket permission-skip. It blocks risky categories by default (force-push, prod deploys, `curl | bash`) while letting routine cwd-local work through without prompts. Central-mcp's dispatch path still defaults to `bypass` because auto requires Sonnet/Opus 4.6 and Team/Enterprise/API plans — but projects that meet those requirements can now opt in per-project via `update_project(name, permission_mode="auto")` or per-dispatch via `dispatch(name, prompt, permission_mode="auto")`.
+
 ## [0.4.2] — 2026-04-19
 
 ### Fixed

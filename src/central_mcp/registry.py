@@ -7,6 +7,7 @@ from typing import Any
 from ruamel.yaml import YAML
 
 from central_mcp import paths
+from central_mcp.adapters.base import VALID_PERMISSION_MODES
 
 
 def _default_path() -> Path:
@@ -27,7 +28,7 @@ class Project:
     agent: str = "claude"
     description: str = ""
     tags: list[str] | None = None
-    bypass: bool | None = None  # None = not yet decided
+    permission_mode: str | None = None  # None = not yet decided; defaults to "bypass" at dispatch time
     fallback: list[str] | None = None  # agents to try if primary fails
 
     def to_dict(self) -> dict[str, Any]:
@@ -37,7 +38,7 @@ class Project:
             "agent": self.agent,
             "description": self.description,
             "tags": self.tags or [],
-            "bypass": self.bypass,
+            "permission_mode": self.permission_mode,
             "fallback": self.fallback or [],
         }
 
@@ -60,7 +61,9 @@ def _write_raw(data: dict[str, Any], path: Path | None = None) -> None:
 
 
 def _project_from_raw(p: dict[str, Any]) -> Project:
-    raw_bypass = p.get("bypass")
+    raw_mode = p.get("permission_mode")
+    if raw_mode is not None and raw_mode not in VALID_PERMISSION_MODES:
+        raw_mode = None
     raw_fallback = p.get("fallback")
     return Project(
         name=p["name"],
@@ -68,7 +71,7 @@ def _project_from_raw(p: dict[str, Any]) -> Project:
         agent=p.get("agent", "claude"),
         description=p.get("description", ""),
         tags=list(p.get("tags") or []),
-        bypass=bool(raw_bypass) if raw_bypass is not None else None,
+        permission_mode=raw_mode,
         fallback=list(raw_fallback) if raw_fallback else None,
     )
 
@@ -113,29 +116,13 @@ def add_project(
     return _project_from_raw(entry)
 
 
-def update_project_bypass(
-    name: str,
-    bypass: bool,
-    registry_path: Path | None = None,
-) -> bool:
-    """Set the bypass preference for an existing project. Returns True if found."""
-    data = _read_raw(registry_path)
-    projects = data.get("projects") or []
-    for p in projects:
-        if p.get("name") == name:
-            p["bypass"] = bypass
-            _write_raw(data, registry_path)
-            return True
-    return False
-
-
 def update_project(
     name: str,
     *,
     agent: str | None = None,
     description: str | None = None,
     tags: list[str] | None = None,
-    bypass: bool | None = None,
+    permission_mode: str | None = None,
     fallback: list[str] | None = None,
     registry_path: Path | None = None,
 ) -> Project | None:
@@ -153,8 +140,15 @@ def update_project(
                 p["description"] = description
             if tags is not None:
                 p["tags"] = list(tags)
-            if bypass is not None:
-                p["bypass"] = bypass
+            if permission_mode is not None:
+                if permission_mode not in VALID_PERMISSION_MODES:
+                    raise ValueError(
+                        f"invalid permission_mode {permission_mode!r}; "
+                        f"valid: {sorted(VALID_PERMISSION_MODES)}"
+                    )
+                p["permission_mode"] = permission_mode
+                # Drop any legacy field so YAML has exactly one source of truth.
+                p.pop("bypass", None)
             if fallback is not None:
                 p["fallback"] = list(fallback)
             _write_raw(data, registry_path)

@@ -88,13 +88,26 @@ def test_update_project_partial_preserves_other_fields(fake_home: Path) -> None:
     registry.add_project(
         "p", "/p", agent="claude", description="original", tags=["a"]
     )
-    registry.update_project("p", bypass=True)
+    registry.update_project("p", permission_mode="bypass")
     loaded = registry.find_project("p")
     assert loaded is not None
     assert loaded.agent == "claude"
     assert loaded.description == "original"
     assert loaded.tags == ["a"]
-    assert loaded.bypass is True
+    assert loaded.permission_mode == "bypass"
+
+
+def test_update_project_rejects_invalid_permission_mode(fake_home: Path) -> None:
+    registry.add_project("p", "/p")
+    with pytest.raises(ValueError, match="invalid permission_mode"):
+        registry.update_project("p", permission_mode="yolo")
+
+
+def test_permission_mode_roundtrip(fake_home: Path) -> None:
+    registry.add_project("p", "/p")
+    registry.update_project("p", permission_mode="auto")
+    reloaded = registry.load_registry()
+    assert reloaded[0].permission_mode == "auto"
 
 
 def test_update_project_fallback(fake_home: Path) -> None:

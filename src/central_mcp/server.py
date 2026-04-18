@@ -28,7 +28,7 @@ from fastmcp import FastMCP
 
 from central_mcp import events, paths
 from central_mcp.adapters import get_adapter
-from central_mcp.adapters.base import VALID_AGENTS
+from central_mcp.adapters.base import VALID_AGENTS, VALID_PERMISSION_MODES
 from central_mcp.registry import (
     Project,
     add_project as _registry_add,
@@ -38,6 +38,8 @@ from central_mcp.registry import (
     update_project as _registry_update,
 )
 from central_mcp.scrub import scrub
+
+DEFAULT_PERMISSION_MODE = "bypass"
 
 
 _MCP_INSTRUCTIONS = """\
@@ -65,7 +67,7 @@ instead:
                              write a multi-project summary.
   - add_project            — register a new project
   - remove_project         — unregister a project
-  - update_project         — change a project's agent / fallback / bypass / etc.
+  - update_project         — change a project's agent / fallback / permission_mode / etc.
 
 dispatch is NON-BLOCKING. It spawns the agent as a subprocess and
 returns a dispatch_id instantly (<100ms). To get the result:
@@ -83,10 +85,24 @@ since your last call. When you see this field, REPORT those results to
 the user immediately — do not ignore them. This is how completions are
 delivered even when background polling agents fail to fire.
 
+Each project has a `permission_mode` controlling how the dispatched
+agent handles permission prompts. Valid values:
+  - "bypass"     — skip all permission prompts (default for new projects).
+                    claude: --dangerously-skip-permissions,
+                    codex: --dangerously-bypass-approvals-and-sandbox,
+                    gemini: --yolo, droid: --skip-permissions-unsafe,
+                    opencode: --dangerously-skip-permissions.
+  - "auto"       — claude-only; classifier-reviewed actions
+                    (--enable-auto-mode --permission-mode auto).
+                    Requires Team/Enterprise/API plan + Sonnet 4.6 or
+                    Opus 4.6. Other agents do not support this.
+  - "restricted" — no permission-skip flag; agent may fail on operations
+                    that would prompt in `-p` mode.
+
 If a dispatch result contains permission-related errors (e.g. "needs
 approval", "permission denied", "not allowed"), tell the user and offer
 two options:
-  1. Re-dispatch with bypass=true (updates saved preference permanently)
+  1. Re-dispatch with permission_mode="bypass" (updates saved preference)
   2. Use `central-mcp up` to open a tmux observation session where
      the agent runs interactively and the user can approve manually
 
@@ -229,7 +245,7 @@ def dispatch(
     name: str,
     prompt: str,
     resume: bool = True,
-    bypass: bool | None = None,
+    permission_mode: str | None = None,
     timeout: float = 600.0,
     agent: str | None = None,
     fallback: list[str] | None = None,
@@ -248,14 +264,12 @@ def dispatch(
     the project's saved `fallback` from the registry is used. Pass an empty
     list `[]` to explicitly disable fallback for this dispatch.
 
-    **bypass** controls whether the agent runs with permission-skip flags:
-      - `true`: skip all permission prompts (--dangerously-skip-permissions etc.)
-      - `false`: run without bypass (agent may fail if it needs approvals)
-      - `null` (default): use the project's saved bypass preference from the
-        registry. If no preference is saved yet (first dispatch), the server
-        returns a `needs_bypass_decision` response instead of dispatching —
-        the orchestrator should ask the user and re-call with an explicit value.
-        The choice is then saved to the registry for future dispatches.
+    **permission_mode** controls how the agent handles permission prompts:
+      - "bypass"     — skip all prompts (default for new projects)
+      - "auto"       — claude-only; classifier-reviewed actions (Sonnet/Opus 4.6 only)
+      - "restricted" — no skip flag; agent may fail on operations needing approval
+      - None (default): use the project's saved mode, or "bypass" for new projects.
+        The resolved value is saved to the registry for future dispatches.
     """
     project, err = _require_project(name)
     if err:
@@ -269,47 +283,56 @@ def dispatch(
         fallback_chain = list(fallback)
     chain = [primary_agent] + fallback_chain
 
-    # Resolve bypass BEFORE probing — adapters may return different argv
-    # for bypass=True vs False, so we must probe with the real value.
-    if bypass is None:
-        bypass = project.bypass
-    if bypass is None:
+    # Resolve permission_mode BEFORE probing — adapters may return
+    # different argv per mode, so we must probe with the real value.
+    if permission_mode is None:
+        permission_mode = project.permission_mode
+    if permission_mode is None:
+        permission_mode = DEFAULT_PERMISSION_MODE
+    if permission_mode not in VALID_PERMISSION_MODES:
         return {
             "ok": False,
-            "needs_bypass_decision": True,
-            "project": project.name,
-            "agent": primary_agent,
             "error": (
-                f"First dispatch to '{project.name}' — bypass mode not yet decided. "
-                "Ask the user: should this agent run with full permissions "
-                "(bypass=true, skips all approval prompts) or restricted "
-                "(bypass=false, may fail on operations needing approval)? "
-                "Then call dispatch again with bypass=true or bypass=false. "
-                "Note: if bypass=false and the agent needs approvals, the user "
-                "can run `central-mcp up` and interact with the agent directly "
-                "in a tmux pane where manual approval is possible."
+                f"invalid permission_mode {permission_mode!r}; "
+                f"valid: {sorted(VALID_PERMISSION_MODES)}"
             ),
         }
+    # `auto` is claude-only — refuse chains that include a non-claude
+    # agent rather than silently downgrading to bypass on fallback.
+    if permission_mode == "auto":
+        non_claude = [a for a in chain if a != "claude"]
+        if non_claude:
+            return {
+                "ok": False,
+                "error": (
+                    f"permission_mode='auto' is claude-only; "
+                    f"chain contains non-claude agents: {non_claude}. "
+                    "Either switch those agents to claude or use "
+                    "permission_mode='bypass'/'restricted'."
+                ),
+            }
 
-    # Save bypass preference to registry — always when explicitly passed,
-    # so the user can flip from false→true (or vice versa) mid-session
-    # by calling dispatch with an explicit bypass value.
-    if project.bypass != bypass:
-        _registry_update(project.name, bypass=bypass)
+    # Save permission_mode to registry whenever it differs from stored
+    # value, so the user can flip modes mid-session by passing an
+    # explicit value. New projects also get their default persisted here.
+    if project.permission_mode != permission_mode:
+        _registry_update(project.name, permission_mode=permission_mode)
 
     # Validate every agent in the chain produces valid argv with the
-    # real prompt + resolved bypass, so adapters that conditionally
+    # real prompt + resolved mode, so adapters that conditionally
     # return None based on those inputs fail synchronously rather than
     # inside the background thread.
     for a in chain:
         probe_adapter = get_adapter(a)
-        probe_argv = probe_adapter.exec_argv(prompt, resume=resume, bypass=bypass)
+        probe_argv = probe_adapter.exec_argv(
+            prompt, resume=resume, permission_mode=permission_mode,
+        )
         if probe_argv is None:
             return {
                 "ok": False,
                 "error": (
                     f"adapter {a!r} has no non-interactive exec mode "
-                    f"(bypass={bypass}). "
+                    f"(permission_mode={permission_mode!r}). "
                     f"Supported agents for dispatch: {', '.join(sorted(VALID_AGENTS))}."
                 ),
             }
@@ -325,7 +348,9 @@ def dispatch(
     # command string in the return value. Fallback attempts re-build argv
     # in the background thread.
     primary_adapter = get_adapter(primary_agent)
-    initial_argv = primary_adapter.exec_argv(prompt, resume=resume, bypass=bypass)
+    initial_argv = primary_adapter.exec_argv(
+        prompt, resume=resume, permission_mode=permission_mode,
+    )
 
     dispatch_id = uuid.uuid4().hex[:8]
     entry: dict[str, Any] = {
@@ -349,7 +374,9 @@ def dispatch(
         ok, exit_code, output, stderr, error (optional), timeout (optional).
         """
         adapter = get_adapter(agent_name)
-        argv = adapter.exec_argv(prompt, resume=resume, bypass=bypass)
+        argv = adapter.exec_argv(
+            prompt, resume=resume, permission_mode=permission_mode,
+        )
         import os as _os
         env = _os.environ.copy()
         if hasattr(adapter, "exec_env") and adapter.exec_env:
@@ -716,17 +743,19 @@ def update_project(
     agent: str | None = None,
     description: str | None = None,
     tags: list[str] | None = None,
-    bypass: bool | None = None,
+    permission_mode: str | None = None,
     fallback: list[str] | None = None,
 ) -> dict[str, Any]:
     """Update an existing project's fields. Omitted args stay unchanged.
 
     Use this to permanently change a project's primary agent, edit its
-    description/tags, flip its bypass preference, or set a fallback chain
-    of agents to try when the primary fails (e.g. token limits hit).
+    description/tags, flip its permission_mode preference, or set a
+    fallback chain of agents to try when the primary fails (e.g. token
+    limits hit).
 
-    Agent names in `agent` and `fallback` are validated. If any is invalid
-    the registry is not touched.
+    Agent names in `agent` and `fallback` are validated. `permission_mode`
+    must be one of "bypass", "auto", "restricted". If any value is
+    invalid the registry is not touched.
     """
     if agent is not None:
         if agent not in VALID_AGENTS:
@@ -759,12 +788,21 @@ def update_project(
                     "error": f"agent {a!r} in fallback has no non-interactive exec mode.",
                 }
 
+    if permission_mode is not None and permission_mode not in VALID_PERMISSION_MODES:
+        return {
+            "ok": False,
+            "error": (
+                f"invalid permission_mode {permission_mode!r}; "
+                f"valid: {sorted(VALID_PERMISSION_MODES)}"
+            ),
+        }
+
     updated = _registry_update(
         name,
         agent=agent,
         description=description,
         tags=tags,
-        bypass=bypass,
+        permission_mode=permission_mode,
         fallback=fallback,
     )
     if updated is None:

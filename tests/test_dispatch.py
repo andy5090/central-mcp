@@ -17,7 +17,7 @@ class _StubAdapter(Adapter):
         super().__init__(name=name, launch=())
         self._argv_fn = argv_fn
 
-    def exec_argv(self, prompt, *, resume=True, bypass=False):
+    def exec_argv(self, prompt, *, resume=True, permission_mode="restricted"):
         return self._argv_fn(prompt)
 
 
@@ -49,7 +49,7 @@ def test_dispatch_returns_id_immediately(
     stub_project: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _install_stub(monkeypatch, lambda p: [sys.executable, "-c", "import time; time.sleep(1)"])
-    r = server.dispatch(stub_project, "x", bypass=True)
+    r = server.dispatch(stub_project, "x", permission_mode="bypass")
     assert r["ok"] is True
     assert "dispatch_id" in r
     assert r["project"] == stub_project
@@ -61,7 +61,7 @@ def test_dispatch_check_complete(
     stub_project: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _install_stub(monkeypatch, lambda p: [sys.executable, "-c", f"print({p!r})"])
-    r = server.dispatch(stub_project, "hello world", bypass=True)
+    r = server.dispatch(stub_project, "hello world", permission_mode="bypass")
     result = _wait_for_complete(r["dispatch_id"])
     assert result["status"] == "complete"
     assert result["ok"] is True
@@ -75,7 +75,7 @@ def test_dispatch_runs_in_project_cwd(
         monkeypatch,
         lambda p: [sys.executable, "-c", "import os; print(os.getcwd())"],
     )
-    r = server.dispatch(stub_project, "ignored", bypass=True)
+    r = server.dispatch(stub_project, "ignored", permission_mode="bypass")
     result = _wait_for_complete(r["dispatch_id"])
     assert "stub-cwd" in result.get("output", "")
 
@@ -87,7 +87,7 @@ def test_dispatch_nonzero_exit(
         monkeypatch,
         lambda p: [sys.executable, "-c", "import sys; sys.stderr.write('boom'); sys.exit(7)"],
     )
-    r = server.dispatch(stub_project, "x", bypass=True)
+    r = server.dispatch(stub_project, "x", permission_mode="bypass")
     result = _wait_for_complete(r["dispatch_id"])
     assert result["ok"] is False
     assert result["exit_code"] == 7
@@ -95,7 +95,7 @@ def test_dispatch_nonzero_exit(
 
 
 def test_dispatch_missing_project(fake_home: Path) -> None:
-    r = server.dispatch("no-such-project", "x", bypass=True)
+    r = server.dispatch("no-such-project", "x", permission_mode="bypass")
     assert r["ok"] is False
     assert "unknown project" in r["error"]
 
@@ -106,7 +106,7 @@ def test_dispatch_adapter_without_exec(
     cwd = tmp_path / "cwd"
     cwd.mkdir()
     registry.add_project(name="shellproj", path_=str(cwd), agent="shell")
-    r = server.dispatch("shellproj", "x", bypass=True)
+    r = server.dispatch("shellproj", "x", permission_mode="bypass")
     assert r["ok"] is False
     assert "exec mode" in r["error"]
 
@@ -114,7 +114,7 @@ def test_dispatch_adapter_without_exec(
 def test_dispatch_missing_cwd(fake_home: Path, tmp_path: Path) -> None:
     missing = tmp_path / "does-not-exist"
     registry.add_project(name="ghost", path_=str(missing), agent="claude")
-    r = server.dispatch("ghost", "x", bypass=True)
+    r = server.dispatch("ghost", "x", permission_mode="bypass")
     assert r["ok"] is False
     assert "does not exist" in r["error"]
 
@@ -126,7 +126,7 @@ def test_cancel_dispatch(
         monkeypatch,
         lambda p: [sys.executable, "-c", "import time; time.sleep(30)"],
     )
-    r = server.dispatch(stub_project, "x", bypass=True)
+    r = server.dispatch(stub_project, "x", permission_mode="bypass")
     time.sleep(0.2)
     rc = server.cancel_dispatch(r["dispatch_id"])
     assert rc["ok"] is True
@@ -139,7 +139,7 @@ def test_list_dispatches(
     stub_project: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _install_stub(monkeypatch, lambda p: [sys.executable, "-c", f"print({p!r})"])
-    r = server.dispatch(stub_project, "test-list", bypass=True)
+    r = server.dispatch(stub_project, "test-list", permission_mode="bypass")
     _wait_for_complete(r["dispatch_id"])
     listing = server.list_dispatches()
     ids = [d["dispatch_id"] for d in listing]
@@ -156,7 +156,7 @@ class _TaggedStub(Adapter):
         super().__init__(name=name, launch=())
         self._exit_code = exit_code
 
-    def exec_argv(self, prompt, *, resume=True, bypass=False):
+    def exec_argv(self, prompt, *, resume=True, permission_mode="restricted"):
         return [
             sys.executable,
             "-c",
@@ -178,7 +178,7 @@ def test_dispatch_agent_override(
     _install_adapter(monkeypatch, _TaggedStub("primary"))
     _install_adapter(monkeypatch, _TaggedStub("override"))
     registry.add_project("p", str(cwd), agent="primary")
-    r = server.dispatch("p", "hello", bypass=True, agent="override")
+    r = server.dispatch("p", "hello", permission_mode="bypass", agent="override")
     assert r["ok"] is True
     assert r["agent"] == "override"
     assert r["chain"] == ["override"]
@@ -198,7 +198,7 @@ def test_dispatch_fallback_used_when_primary_fails(
     _install_adapter(monkeypatch, _TaggedStub("broken", exit_code=42))
     _install_adapter(monkeypatch, _TaggedStub("backup", exit_code=0))
     registry.add_project("p", str(cwd), agent="broken")
-    r = server.dispatch("p", "retry-me", bypass=True, fallback=["backup"])
+    r = server.dispatch("p", "retry-me", permission_mode="bypass", fallback=["backup"])
     assert r["chain"] == ["broken", "backup"]
     result = _wait_for_complete(r["dispatch_id"])
     assert result["ok"] is True
@@ -219,7 +219,7 @@ def test_dispatch_fallback_skipped_when_primary_succeeds(
     _install_adapter(monkeypatch, _TaggedStub("primary", exit_code=0))
     _install_adapter(monkeypatch, _TaggedStub("never", exit_code=0))
     registry.add_project("p", str(cwd), agent="primary")
-    r = server.dispatch("p", "ok", bypass=True, fallback=["never"])
+    r = server.dispatch("p", "ok", permission_mode="bypass", fallback=["never"])
     result = _wait_for_complete(r["dispatch_id"])
     assert result["ok"] is True
     assert result["agent_used"] == "primary"
@@ -236,7 +236,7 @@ def test_dispatch_uses_registry_fallback_when_none_passed(
     _install_adapter(monkeypatch, _TaggedStub("backup", exit_code=0))
     registry.add_project("p", str(cwd), agent="broken")
     registry.update_project("p", fallback=["backup"])
-    r = server.dispatch("p", "hi", bypass=True)
+    r = server.dispatch("p", "hi", permission_mode="bypass")
     assert r["chain"] == ["broken", "backup"]
     result = _wait_for_complete(r["dispatch_id"])
     assert result["ok"] is True
@@ -253,7 +253,7 @@ def test_dispatch_empty_fallback_overrides_registry(
     _install_adapter(monkeypatch, _TaggedStub("backup", exit_code=0))
     registry.add_project("p", str(cwd), agent="broken")
     registry.update_project("p", fallback=["backup"])
-    r = server.dispatch("p", "hi", bypass=True, fallback=[])
+    r = server.dispatch("p", "hi", permission_mode="bypass", fallback=[])
     assert r["chain"] == ["broken"]
     result = _wait_for_complete(r["dispatch_id"])
     assert result["ok"] is False
@@ -268,7 +268,7 @@ def test_dispatch_all_agents_fail_reports_last(
     _install_adapter(monkeypatch, _TaggedStub("a", exit_code=1))
     _install_adapter(monkeypatch, _TaggedStub("b", exit_code=2))
     registry.add_project("p", str(cwd), agent="a")
-    r = server.dispatch("p", "x", bypass=True, fallback=["b"])
+    r = server.dispatch("p", "x", permission_mode="bypass", fallback=["b"])
     result = _wait_for_complete(r["dispatch_id"])
     assert result["ok"] is False
     assert result["agent_used"] == "b"
@@ -350,13 +350,13 @@ def test_dispatch_timeout_does_not_trigger_fallback(
     cwd.mkdir()
 
     class _Sleeper(Adapter):
-        def exec_argv(self, prompt, *, resume=True, bypass=False):
+        def exec_argv(self, prompt, *, resume=True, permission_mode="restricted"):
             return [sys.executable, "-c", "import time; time.sleep(30)"]
 
     _install_adapter(monkeypatch, _Sleeper(name="sleeper", launch=()))
     _install_adapter(monkeypatch, _TaggedStub("backup", exit_code=0))
     registry.add_project("p", str(cwd), agent="sleeper")
-    r = server.dispatch("p", "x", bypass=True, fallback=["backup"], timeout=0.3)
+    r = server.dispatch("p", "x", permission_mode="bypass", fallback=["backup"], timeout=0.3)
     result = _wait_for_complete(r["dispatch_id"], timeout=5.0)
     assert result["status"] == "timeout"
     assert len(result["attempts"]) == 1, "fallback should NOT run on timeout"
@@ -372,13 +372,13 @@ def test_cancel_stops_fallback_chain(
     cwd.mkdir()
 
     class _Sleeper(Adapter):
-        def exec_argv(self, prompt, *, resume=True, bypass=False):
+        def exec_argv(self, prompt, *, resume=True, permission_mode="restricted"):
             return [sys.executable, "-c", "import time; time.sleep(30)"]
 
     _install_adapter(monkeypatch, _Sleeper(name="sleeper", launch=()))
     _install_adapter(monkeypatch, _TaggedStub("backup", exit_code=0))
     registry.add_project("p", str(cwd), agent="sleeper")
-    r = server.dispatch("p", "x", bypass=True, fallback=["backup"])
+    r = server.dispatch("p", "x", permission_mode="bypass", fallback=["backup"])
     time.sleep(0.2)
     rc = server.cancel_dispatch(r["dispatch_id"])
     assert rc["ok"] is True
@@ -406,7 +406,7 @@ def test_dispatch_writes_start_and_complete_events(
 ) -> None:
     """A successful dispatch should log start + output + complete events."""
     _install_stub(monkeypatch, lambda p: [sys.executable, "-c", "print('hello')"])
-    r = server.dispatch(stub_project, "say hi", bypass=True)
+    r = server.dispatch(stub_project, "say hi", permission_mode="bypass")
     _wait_for_complete(r["dispatch_id"])
 
     records = _read_events(stub_project)
@@ -426,7 +426,7 @@ def test_dispatch_event_log_records_error_on_failure(
 ) -> None:
     """Non-zero exit should end with a complete event where ok=False."""
     _install_stub(monkeypatch, lambda p: [sys.executable, "-c", "import sys; sys.exit(2)"])
-    r = server.dispatch(stub_project, "fail plz", bypass=True)
+    r = server.dispatch(stub_project, "fail plz", permission_mode="bypass")
     _wait_for_complete(r["dispatch_id"])
 
     records = _read_events(stub_project)

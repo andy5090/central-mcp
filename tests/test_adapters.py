@@ -35,13 +35,28 @@ class TestClaude:
         assert "--continue" not in argv
 
     def test_bypass(self) -> None:
-        argv = get_adapter("claude").exec_argv("do stuff", bypass=True)
+        argv = get_adapter("claude").exec_argv("do stuff", permission_mode="bypass")
         assert "--dangerously-skip-permissions" in argv
 
     def test_bypass_and_resume(self) -> None:
-        argv = get_adapter("claude").exec_argv("x", resume=True, bypass=True)
+        argv = get_adapter("claude").exec_argv("x", resume=True, permission_mode="bypass")
         assert "--continue" in argv
         assert "--dangerously-skip-permissions" in argv
+
+    def test_auto_mode(self) -> None:
+        argv = get_adapter("claude").exec_argv("x", permission_mode="auto")
+        assert "--enable-auto-mode" in argv
+        assert "--permission-mode" in argv
+        # --permission-mode auto (takes a value) — these two tokens must be adjacent
+        i = argv.index("--permission-mode")
+        assert argv[i + 1] == "auto"
+        # Must NOT emit the bypass flag when in auto mode.
+        assert "--dangerously-skip-permissions" not in argv
+
+    def test_restricted_emits_no_permission_flag(self) -> None:
+        argv = get_adapter("claude").exec_argv("x", permission_mode="restricted")
+        assert "--dangerously-skip-permissions" not in argv
+        assert "--enable-auto-mode" not in argv
 
 
 class TestCodex:
@@ -57,11 +72,11 @@ class TestCodex:
         assert "--last" not in argv
 
     def test_bypass(self) -> None:
-        argv = get_adapter("codex").exec_argv("fix bug", bypass=True)
+        argv = get_adapter("codex").exec_argv("fix bug", permission_mode="bypass")
         assert "--dangerously-bypass-approvals-and-sandbox" in argv
 
     def test_bypass_and_resume(self) -> None:
-        argv = get_adapter("codex").exec_argv("fix bug", resume=True, bypass=True)
+        argv = get_adapter("codex").exec_argv("fix bug", resume=True, permission_mode="bypass")
         assert argv[:4] == ["codex", "exec", "resume", "--last"]
         assert "--dangerously-bypass-approvals-and-sandbox" in argv
 
@@ -78,11 +93,11 @@ class TestGemini:
         assert "--resume" not in argv
 
     def test_bypass(self) -> None:
-        argv = get_adapter("gemini").exec_argv("analyze code", bypass=True)
+        argv = get_adapter("gemini").exec_argv("analyze code", permission_mode="bypass")
         assert "--yolo" in argv
 
     def test_bypass_and_resume(self) -> None:
-        argv = get_adapter("gemini").exec_argv("analyze code", resume=True, bypass=True)
+        argv = get_adapter("gemini").exec_argv("analyze code", resume=True, permission_mode="bypass")
         assert "--resume" in argv
         assert "latest" in argv
         assert "--yolo" in argv
@@ -102,7 +117,7 @@ class TestDroid:
         assert "-r" not in argv
 
     def test_bypass(self) -> None:
-        argv = get_adapter("droid").exec_argv("refactor", bypass=True)
+        argv = get_adapter("droid").exec_argv("refactor", permission_mode="bypass")
         assert "--skip-permissions-unsafe" in argv
         # Regression: `--skip-permissions-unsafe` must not follow a
         # value-taking flag like `-r`, or droid eats it as the value.
@@ -121,11 +136,11 @@ class TestOpenCode:
         assert "--continue" not in argv
 
     def test_bypass(self) -> None:
-        argv = get_adapter("opencode").exec_argv("fix tests", bypass=True)
+        argv = get_adapter("opencode").exec_argv("fix tests", permission_mode="bypass")
         assert "--dangerously-skip-permissions" in argv
 
     def test_bypass_and_resume(self) -> None:
-        argv = get_adapter("opencode").exec_argv("x", resume=True, bypass=True)
+        argv = get_adapter("opencode").exec_argv("x", resume=True, permission_mode="bypass")
         assert "--continue" in argv
         assert "--dangerously-skip-permissions" in argv
 

@@ -202,7 +202,7 @@ class TestHelp:
         # `central-mcp --help` routes to `central-mcp run --help`
         r = _run(["--help"], cli_env)
         assert r.returncode == 0
-        assert "--bypass" in r.stdout
+        assert "--permission-mode" in r.stdout
         assert "--pick" in r.stdout
 
     def test_serve_help_shows_all_subcommands(self, cli_env: dict) -> None:

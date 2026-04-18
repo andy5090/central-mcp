@@ -53,12 +53,38 @@ ORCHESTRATORS: list[tuple[str, str, str]] = [
     ("gemini", "gemini", "Gemini CLI"),
 ]
 
-# Known permission-bypass flags for `central-mcp run --bypass`.
-BYPASS_FLAGS: dict[str, list[str]] = {
-    "claude": ["--dangerously-skip-permissions"],
-    "codex": ["--dangerously-bypass-approvals-and-sandbox"],
-    "gemini": ["--yolo"],
+# Per-(agent, mode) argv suffix for the orchestrator launcher.
+# `auto` is claude-only (Team/Enterprise/API + Sonnet/Opus 4.6). Agents
+# without an entry for a given mode fall back to no flags (= restricted).
+PERMISSION_MODE_FLAGS: dict[str, dict[str, list[str]]] = {
+    "claude": {
+        "bypass":     ["--dangerously-skip-permissions"],
+        "auto":       ["--enable-auto-mode", "--permission-mode", "auto"],
+        "restricted": [],
+    },
+    "codex": {
+        "bypass":     ["--dangerously-bypass-approvals-and-sandbox"],
+        "restricted": [],
+    },
+    "gemini": {
+        "bypass":     ["--yolo"],
+        "restricted": [],
+    },
 }
+
+DEFAULT_PERMISSION_MODE = "bypass"
+
+
+def _flags_for(agent: str, mode: str) -> list[str] | None:
+    """Return the flag list for (agent, mode) or None if unsupported.
+
+    None means "this agent does not implement this mode at all" (e.g.
+    codex has no `auto`). The caller decides whether to error or skip.
+    """
+    modes = PERMISSION_MODE_FLAGS.get(agent)
+    if modes is None:
+        return None
+    return modes.get(mode)
 
 
 # ---------- server / listing ----------
@@ -117,11 +143,16 @@ def _orchestrator_pane_for_up(args: argparse.Namespace) -> layout.OrchestratorPa
     launch_dir = paths.central_mcp_home()
     _ensure_launch_dir(launch_dir)
 
-    command = binary
-    if args.bypass:
-        flags = BYPASS_FLAGS.get(key)
-        if flags:
-            command = " ".join([binary, *flags])
+    mode = args.permission_mode
+    flags = _flags_for(key, mode)
+    if flags is None:
+        print(
+            f"warning: --permission-mode {mode!r}: {key!r} has no flags defined; "
+            "launching without permission flags.",
+            file=sys.stderr,
+        )
+        flags = []
+    command = " ".join([binary, *flags]) if flags else binary
 
     return layout.OrchestratorPane(command=command, cwd=str(launch_dir), label=label)
 
@@ -721,16 +752,16 @@ def cmd_run(args: argparse.Namespace) -> int:
     _ensure_launch_dir(launch_dir)
 
     argv: list[str] = [binary]
-    if args.bypass:
-        bypass = BYPASS_FLAGS.get(key)
-        if bypass:
-            argv.extend(bypass)
-        else:
-            print(
-                f"warning: --bypass: {key!r} has no known permission-bypass flag; "
-                "launching without it.",
-                file=sys.stderr,
-            )
+    mode = args.permission_mode
+    flags = _flags_for(key, mode)
+    if flags is None:
+        print(
+            f"warning: --permission-mode {mode!r}: {key!r} has no flags "
+            "defined; launching without permission flags.",
+            file=sys.stderr,
+        )
+    elif flags:
+        argv.extend(flags)
 
     source_suffix = f"  [{source}]" if source else ""
     print(f"orchestrator : {label} ({binary}){source_suffix}")

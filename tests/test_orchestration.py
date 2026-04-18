@@ -17,7 +17,7 @@ class _StubAdapter(Adapter):
         super().__init__(name=name, launch=())
         self._argv_fn = argv_fn
 
-    def exec_argv(self, prompt, *, resume=True, bypass=False):
+    def exec_argv(self, prompt, *, resume=True, permission_mode="restricted"):
         return self._argv_fn(prompt)
 
 
@@ -48,7 +48,7 @@ class TestDispatchHistory:
         cwd.mkdir()
         registry.add_project(name="alpha", path_=str(cwd), agent="stub")
 
-        r = server.dispatch("alpha", "hello", bypass=True)
+        r = server.dispatch("alpha", "hello", permission_mode="bypass")
         _wait(r["dispatch_id"])
 
         hist = server.dispatch_history("alpha")
@@ -80,8 +80,8 @@ class TestOrchestrationHistory:
         registry.add_project(name="alpha", path_=str(a), agent="stub")
         registry.add_project(name="beta", path_=str(b), agent="stub")
 
-        r1 = server.dispatch("alpha", "task1", bypass=True)
-        r2 = server.dispatch("beta", "task2", bypass=True)
+        r1 = server.dispatch("alpha", "task1", permission_mode="bypass")
+        r2 = server.dispatch("beta", "task2", permission_mode="bypass")
         _wait(r1["dispatch_id"])
         _wait(r2["dispatch_id"])
 
@@ -110,7 +110,7 @@ class TestOrchestrationHistory:
         cwd.mkdir()
         registry.add_project(name="slow", path_=str(cwd), agent="stub")
 
-        r = server.dispatch("slow", "long task", bypass=True)
+        r = server.dispatch("slow", "long task", permission_mode="bypass")
         # Don't wait — it should appear in in_flight right now.
         snap = server.orchestration_history()
         in_flight_ids = {e["dispatch_id"] for e in snap["in_flight"]}
@@ -131,7 +131,7 @@ class TestOrchestrationHistory:
         cwd.mkdir()
         registry.add_project(name="alpha", path_=str(cwd), agent="stub")
 
-        r = server.dispatch("alpha", "x", bypass=True)
+        r = server.dispatch("alpha", "x", permission_mode="bypass")
         _wait(r["dispatch_id"])
 
         snap = server.orchestration_history(window_minutes=0)

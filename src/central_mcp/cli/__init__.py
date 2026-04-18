@@ -55,17 +55,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="skip the orchestrator pane at index 0 (project panes only)",
     )
     p_up.add_argument(
-        "--bypass",
-        dest="bypass",
-        action="store_true",
-        default=True,
-        help="launch the orchestrator pane with its permission-bypass flag (default: on)",
-    )
-    p_up.add_argument(
-        "--no-bypass",
-        dest="bypass",
-        action="store_false",
-        help="launch the orchestrator pane without the permission-bypass flag",
+        "--permission-mode",
+        dest="permission_mode",
+        choices=["bypass", "auto", "restricted"],
+        default="bypass",
+        help=(
+            "orchestrator pane's permission mode (default: bypass). "
+            "auto is claude-only (Team/Enterprise/API + Sonnet/Opus 4.6). "
+            "restricted emits no permission flags."
+        ),
     )
     p_up.add_argument(
         "--panes-per-window",
@@ -110,12 +108,14 @@ def build_parser() -> argparse.ArgumentParser:
     # configurable in one shot.
     p_tmux.add_argument("--no-orchestrator", action="store_true")
     p_tmux.add_argument(
-        "--bypass", dest="bypass", action="store_true", default=True,
-        help="launch the orchestrator pane with its permission-bypass flag (default: on)",
-    )
-    p_tmux.add_argument(
-        "--no-bypass", dest="bypass", action="store_false",
-        help="launch the orchestrator pane without the permission-bypass flag",
+        "--permission-mode",
+        dest="permission_mode",
+        choices=["bypass", "auto", "restricted"],
+        default="bypass",
+        help=(
+            "orchestrator pane's permission mode (default: bypass). "
+            "auto is claude-only (Team/Enterprise/API + Sonnet/Opus 4.6)."
+        ),
     )
     p_tmux.add_argument(
         "--panes-per-window", type=int, default=None, metavar="N",
@@ -129,12 +129,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_zellij.add_argument("--no-orchestrator", action="store_true")
     p_zellij.add_argument(
-        "--bypass", dest="bypass", action="store_true", default=True,
-        help="launch the orchestrator pane with its permission-bypass flag (default: on)",
-    )
-    p_zellij.add_argument(
-        "--no-bypass", dest="bypass", action="store_false",
-        help="launch the orchestrator pane without the permission-bypass flag",
+        "--permission-mode",
+        dest="permission_mode",
+        choices=["bypass", "auto", "restricted"],
+        default="bypass",
+        help=(
+            "orchestrator pane's permission mode (default: bypass). "
+            "auto is claude-only (Team/Enterprise/API + Sonnet/Opus 4.6)."
+        ),
     )
     p_zellij.add_argument(
         "--panes-per-window", type=int, default=None, metavar="N",
@@ -227,24 +229,21 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"launch directory (default: {paths.central_mcp_home()})",
     )
     p_run.add_argument(
-        "--bypass",
-        dest="bypass",
-        action="store_true",
-        default=True,
+        "--permission-mode",
+        dest="permission_mode",
+        choices=["bypass", "auto", "restricted"],
+        default="bypass",
         help=(
-            "launch the agent in its permission-bypass / yolo mode when supported "
-            "(claude: --dangerously-skip-permissions, codex: "
+            "orchestrator permission mode (default: bypass). "
+            "bypass = permission-skip/yolo flags (claude: "
+            "--dangerously-skip-permissions, codex: "
             "--dangerously-bypass-approvals-and-sandbox, gemini: --yolo). "
-            "Default: on — central-mcp is a non-stop orchestration hub; "
-            "permission prompts stall dispatches since there's no one to answer them. "
-            "Pass --no-bypass to opt out."
+            "auto = claude-only classifier-reviewed mode "
+            "(--enable-auto-mode --permission-mode auto), requires "
+            "Team/Enterprise/API plan + Sonnet/Opus 4.6. "
+            "restricted = no permission flags; the agent may halt on "
+            "operations that would normally prompt."
         ),
-    )
-    p_run.add_argument(
-        "--no-bypass",
-        dest="bypass",
-        action="store_false",
-        help="launch the agent without the permission-bypass flag",
     )
     p_run.add_argument("--dry-run", action="store_true", help="print the plan without executing")
     p_run.set_defaults(func=cmd_run)
@@ -260,7 +259,7 @@ def main() -> None:
         return
 
     # No args, or first arg is a flag (not a subcommand) → inject "run".
-    # Handles: `central-mcp`, `central-mcp --bypass`, `central-mcp --agent X`.
+    # Handles: `central-mcp`, `central-mcp --permission-mode X`, `central-mcp --agent X`.
     # MCP clients use `central-mcp serve` explicitly, so this is safe.
     if len(sys.argv) == 1 or sys.argv[1].startswith("-"):
         sys.argv.insert(1, "run")
