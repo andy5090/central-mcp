@@ -3,6 +3,11 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.4.2] — 2026-04-19
+
+### Fixed
+- Zellij overflow tabs now actually tile project panes in a 2×2 grid. 0.4.1's changelog declared this behavior, but the implementation (`_tile_panes` + `_indent` helpers wired into `_project_tab_kdl`) was missing from the release commit. 0.4.2 backfills the code so it matches what 0.4.1 promised.
+
 ## [0.4.1] — 2026-04-18
 
 ### Fixed
