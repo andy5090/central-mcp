@@ -3,6 +3,11 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.5.1] — 2026-04-19
+
+### Changed
+- Zellij layouts now pin the `tab-bar` plugin to the **bottom** of every tab instead of the top. Keeps the first visible line of each pane (command banner, prompt) at the terminal's top edge where the eye lands first, and matches the convention most tmux/zellij users already have for status rows.
+
 ## [0.5.0] — 2026-04-19
 
 ### Added

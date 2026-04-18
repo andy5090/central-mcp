@@ -257,19 +257,17 @@ def build_layout(
     # handled it; otherwise fall through.
 
     body = "\n".join(tabs) if tabs else 'tab name="cmcp-1" {\n    pane\n}'
-    # `default_tab_template` ensures every tab has zellij's standard
-    # tab-bar + status-bar plugins so shortcut hints show up at top
-    # and bottom, same as the layout zellij boots with by default.
-    # `compact-bar` is the slim status plugin — it shows zellij's
-    # shortcut hints at the bottom without the extra "ENTER to rerun /
-    # ESC to drop to shell" controls that `status-bar` adds on top of
-    # `command=` panes.
+    # `default_tab_template` pins the tab-bar plugin to the bottom of
+    # every tab. Bottom placement keeps the first row of every pane
+    # (command banner, prompt) at the actual top of the terminal where
+    # the eye lands first; tab labels live on the edge the mouse and
+    # status-bar conventions already put there.
     template = (
         'default_tab_template {\n'
+        '    children\n'
         '    pane size=1 borderless=true {\n'
         '        plugin location="tab-bar"\n'
         '    }\n'
-        '    children\n'
         '}'
     )
     return "layout {\n" + template + "\n" + body + "\n}\n"
