@@ -144,18 +144,52 @@ def _hub_tab_kdl(tab_name: str, orch_pane: str, project_panes: list[str]) -> str
     )
 
 
-def _project_tab_kdl(tab_name: str, project_panes: list[str]) -> str:
-    """Overflow tab: project panes stacked horizontally (vertical stack)."""
-    indent = "    "
-    children = "\n".join(
-        "\n".join(indent + ln for ln in p.splitlines()) for p in project_panes
+def _indent(s: str, prefix: str) -> str:
+    return "\n".join(prefix + ln for ln in s.splitlines())
+
+
+def _tile_panes(panes: list[str], cols: int = 2) -> str:
+    """Arrange project panes into a 2-column grid.
+
+    Zellij doesn't have a `tiled` layout primitive, so we build the
+    grid explicitly: an outer horizontal split (rows stacked top-to-
+    bottom), each row being a vertical split (panes side-by-side).
+    Single-pane and single-row cases degrade cleanly.
+    """
+    if not panes:
+        return ""
+    if len(panes) == 1:
+        return panes[0]
+
+    rows = [panes[i:i + cols] for i in range(0, len(panes), cols)]
+
+    if len(rows) == 1:
+        inner = "\n".join(_indent(p, "    ") for p in rows[0])
+        return f'pane split_direction="vertical" {{\n{inner}\n}}'
+
+    row_blocks: list[str] = []
+    for row in rows:
+        if len(row) == 1:
+            row_blocks.append(_indent(row[0], "    "))
+        else:
+            inner = "\n".join(_indent(p, "        ") for p in row)
+            row_blocks.append(
+                f'    pane split_direction="vertical" {{\n{inner}\n    }}'
+            )
+    return (
+        'pane split_direction="horizontal" {\n'
+        + "\n".join(row_blocks)
+        + '\n}'
     )
+
+
+def _project_tab_kdl(tab_name: str, project_panes: list[str]) -> str:
+    """Overflow tab: project panes tiled in a 2-column grid."""
+    grid = _tile_panes(project_panes, cols=2)
     return (
         f'tab name={_kdl_escape(tab_name)} {{\n'
-        '    pane split_direction="horizontal" {\n'
-        f'{children}\n'
-        '    }\n'
-        '}'
+        + _indent(grid, "    ")
+        + '\n}'
     )
 
 
