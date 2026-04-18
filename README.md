@@ -94,7 +94,7 @@ Multiple dispatches run in parallel.
 | `dispatch_history` | sync | Last N dispatches for **one project** (reads its jsonl log). |
 | `orchestration_history` | sync | Portfolio-wide snapshot: in-flight + recent cross-project milestones + per-project counts. Call this for "how is everything going?" |
 | `add_project` | sync | Register a new project. Validates agent name. Auto-trusts codex dirs. |
-| `update_project` | sync | Change an existing project's agent, description, tags, bypass, or fallback. |
+| `update_project` | sync | Change an existing project's agent, description, tags, permission_mode, or fallback. |
 | `remove_project` | sync | Unregister a project. |
 
 ### How dispatch works
@@ -109,13 +109,13 @@ dispatch("my-app", "add error handling to auth")
 
 ### Supported agents
 
-| Agent | Non-interactive invocation | Bypass flag |
-|---|---|---|
-| `claude` | `claude -p "<prompt>" --continue` | `--dangerously-skip-permissions` |
-| `codex` | `codex exec "<prompt>"` | `--dangerously-bypass-approvals-and-sandbox` |
-| `gemini` | `gemini -p "<prompt>"` | `--yolo` |
-| `droid` | `droid exec "<prompt>"` | `--skip-permissions-unsafe` |
-| `opencode` | `opencode run "<prompt>" --continue` | `--dangerously-skip-permissions` |
+| Agent | Non-interactive invocation | `bypass` mode flag | `auto` mode flag |
+|---|---|---|---|
+| `claude` | `claude -p "<prompt>" --continue` | `--dangerously-skip-permissions` | `--enable-auto-mode --permission-mode auto` |
+| `codex` | `codex exec "<prompt>"` | `--dangerously-bypass-approvals-and-sandbox` | — |
+| `gemini` | `gemini -p "<prompt>"` | `--yolo` | — |
+| `droid` | `droid exec "<prompt>"` | `--skip-permissions-unsafe` | — |
+| `opencode` | `opencode run "<prompt>" --continue` | `--dangerously-skip-permissions` | — |
 
 Agent names are validated at registration time — typos like `cursor-agent` are caught immediately, not at dispatch time.
 
@@ -127,7 +127,7 @@ You can change a project's registered agent any time — useful when a given cod
 update_project(name="my-app", agent="codex")
 ```
 
-`update_project` also accepts `description`, `tags`, `bypass`, and `fallback` — omitted fields stay untouched. Switching to `codex` auto-adds the project dir to `~/.codex/config.toml` trust list.
+`update_project` also accepts `description`, `tags`, `permission_mode`, and `fallback` — omitted fields stay untouched. Switching to `codex` auto-adds the project dir to `~/.codex/config.toml` trust list.
 
 ### One-shot agent override
 
@@ -155,52 +155,72 @@ The result reports which agent actually produced output (`agent_used`), whether 
 
 Pass `fallback=[]` to explicitly disable the saved chain for a one-shot dispatch.
 
-### Bypass mode
+### Permission modes
 
-Most coding agents ask "is this OK?" before editing files, running commands, or installing packages. That's fine when a human is at the terminal — but anywhere central-mcp runs, there's no TTY to answer approval prompts, so the work can **hang forever waiting for a reply that never comes**. **Bypass mode** tells the agent to auto-approve its own actions and keep moving.
+Most coding agents ask "is this OK?" before editing files, running commands, or installing packages. That's fine when a human is at the terminal — but anywhere central-mcp runs, there's no TTY to answer approval prompts, so the work can **hang forever waiting for a reply that never comes**. Every agent instance central-mcp spawns (orchestrator pane or project-level dispatch) runs in one of three **permission modes**:
 
-There are two separate bypass layers, and they apply to two separate layers of the stack:
+| Mode | What auto-approves | When to use |
+|---|---|---|
+| `bypass` | Everything. central-mcp emits each agent's own permission-skip flag (see mapping below). | Default. Fastest. No prompt-injection defense. Available on every supported agent. |
+| `auto` | Cwd-local file work, declared deps, read-only HTTP, pushes to branches Claude created. Everything else goes through a background **classifier** that blocks `curl \| bash`, prod deploys, force-push, cloud bulk deletes, etc. | Sensitive repos where prompt-injection resistance matters. **Only supported by `claude`** today (and only with Team/Enterprise/API plan + **Sonnet 4.6 or Opus 4.6** — no Haiku, no 4.7, no third-party providers). central-mcp refuses `auto` for any non-claude agent or fallback chain. |
+| `restricted` | Nothing. Any tool call that would normally prompt a human refuses and the agent surfaces the error. | Hardening for read-only tasks — Q&A, explain-code, reporting. Writes/builds/shell will fail. Available on every agent. |
 
-#### 1. Orchestrator bypass — `central-mcp run` / `central-mcp tmux` / `central-mcp up`
+Each vendor brands their permission-skip differently — central-mcp's `bypass`/`auto` are unified names that map to the right vendor flag per agent:
 
-This is the agent *you* talk to — the orchestrator pane that calls MCP tools. Launched with its own permission-bypass flag (`claude --dangerously-skip-permissions`, `codex --dangerously-bypass-approvals-and-sandbox`, etc). **Default: on**. Opt out with `--no-bypass`:
+| central-mcp mode | claude | codex | gemini | droid | opencode |
+|---|---|---|---|---|---|
+| `bypass` | Skip permissions<br>`--dangerously-skip-permissions` | Bypass approvals + sandbox<br>`--dangerously-bypass-approvals-and-sandbox` | YOLO<br>`--yolo` | Skip permissions (unsafe)<br>`--skip-permissions-unsafe` | Skip permissions<br>`--dangerously-skip-permissions` |
+| `auto` | Auto mode<br>`--enable-auto-mode --permission-mode auto` | — | — | — | — |
+| `restricted` | *(no flag)* | *(no flag)* | *(no flag)* | *(no flag)* | *(no flag)* |
+
+If a vendor adds an equivalent to claude's `auto` mode later (codex sandbox-warn, gemini review-mode, etc), central-mcp will wire it into this same `auto` alias — existing config keeps working.
+
+Modes apply at two separate layers:
+
+#### 1. Orchestrator layer — `central-mcp run` / `central-mcp tmux` / `central-mcp up` / `central-mcp zellij`
+
+This is the agent *you* talk to — the orchestrator pane that calls MCP tools. **Default: `bypass`.** Change it with `--permission-mode`:
 
 ```bash
-central-mcp tmux --no-bypass     # orchestrator surfaces approval prompts
-central-mcp run --no-bypass
+central-mcp tmux   --permission-mode auto        # claude-only, classifier-reviewed
+central-mcp run    --permission-mode restricted  # no auto-approval, prompts will halt
+central-mcp zellij --permission-mode bypass      # explicit default
 ```
 
-With orchestrator bypass **on**, the orchestrator can freely read/write files inside its launch directory (`~/.central-mcp`) without asking — so `CLAUDE.md`, scratch notes, and hub-level edits happen without friction. It does *not* automatically propagate to the projects it dispatches to; those are controlled separately (below).
+With orchestrator `bypass`, the orchestrator can freely read/write files inside `~/.central-mcp` without asking — so `CLAUDE.md`, scratch notes, and hub-level edits happen without friction. With `auto` (claude + Sonnet/Opus 4.6 only), a background classifier vets each action instead of a blanket skip. `auto` is ignored (no flags emitted) for non-claude orchestrators. The orchestrator mode does **not** propagate to dispatched project agents; those carry their own per-project value.
 
-#### 2. Per-project dispatch bypass — `dispatch(..., bypass=...)` / `registry.yaml`
+#### 2. Per-project dispatch layer — `dispatch(..., permission_mode=...)` / `registry.yaml`
 
-This controls the agent spawned inside a specific project's cwd for one dispatch. The value is saved to `registry.yaml` on first dispatch and reused for every subsequent dispatch to that project. **Default for a brand-new project: `null` (ask once)** — on the very first dispatch, central-mcp asks the orchestrator to decide `bypass=true` or `bypass=false` for that project. Flip it anytime:
+This controls the agent spawned inside a specific project's cwd for one dispatch. The value is saved to `registry.yaml` on first dispatch (default: `"bypass"`) and reused for every subsequent dispatch to that project. Flip it anytime:
 
 ```
-dispatch(name="my-app", prompt="…", bypass=true)   # auto-approve, save preference
-dispatch(name="my-app", prompt="…", bypass=false)  # surface prompts, save preference
-update_project(name="my-app", bypass=true)         # flip without dispatching
+dispatch(name="my-app", prompt="…", permission_mode="bypass")      # auto-approve, save
+dispatch(name="my-app", prompt="…", permission_mode="auto")        # claude-only, classifier
+dispatch(name="my-app", prompt="…", permission_mode="restricted")  # no skip, no classifier
+update_project(name="my-app", permission_mode="auto")              # flip without dispatching
 ```
 
-With per-project bypass **off**, safe read-only dispatches still work (answering questions, reading files, explaining code). Anything that triggers a permission prompt (editing files, shell commands, installing deps) hangs until the timeout — the orchestrator will suggest re-dispatching with `bypass=true`, or you can open a regular terminal in the project's cwd and run the agent interactively there.
+`"auto"` is rejected with an explicit error if the project's agent chain includes anything other than `claude` — central-mcp never silently downgrades auto to bypass for a fallback. With `"restricted"`, read-only dispatches still work (answering questions, reading files, explaining code); anything that would prompt (editing, shell, deps) times out — retry with `bypass`/`auto`, or open a regular terminal in the project's cwd for interactive approval.
 
-> ### ⚠️ Bypass is powerful — and at your own risk
+> ### ⚠️ `bypass` is powerful — and at your own risk
 >
-> With bypass on at either layer, the corresponding agent may edit files, run shell commands, install packages, call network services, and push code **without confirming with you first**. That is what makes non-stop orchestration possible, but it also means a misguided prompt, prompt injection from a malicious source, or an agent hallucination can cause real damage — dropped tables, force-pushed branches, deleted files, leaked credentials, unintended API spend, etc.
+> In `bypass` mode (at either layer), the agent may edit files, run shell commands, install packages, call network services, and push code **without confirming with you first**. That is what makes non-stop orchestration possible, but it also means a misguided prompt, prompt injection from a malicious source, or an agent hallucination can cause real damage — dropped tables, force-pushed branches, deleted files, leaked credentials, unintended API spend, etc.
+>
+> `auto` mode is a middle ground — still headless, but a classifier blocks a standard set of destructive patterns (see the [Claude Code permission-modes docs](https://code.claude.com/docs/permission-modes) for the default policy). It reduces prompt-injection risk but does not eliminate it. `restricted` is safest but only useful for agents that don't need to write.
 >
 > Typical reasoning:
-> - **Orchestrator bypass** controls what the *hub-level* agent can do in `~/.central-mcp` and when calling MCP tools. Lower risk in practice because the hub dir has no production code, but still read/write.
-> - **Per-project bypass** controls what each *project-level* agent can do inside that project's cwd. This is the higher-risk layer — it can rewrite your source, run your build, push branches.
+> - **Orchestrator mode** controls what the *hub-level* agent can do in `~/.central-mcp` and when calling MCP tools. Lower risk in practice because the hub dir has no production code, but still read/write.
+> - **Per-project mode** controls what each *project-level* agent can do inside that project's cwd. This is the higher-risk layer — it can rewrite your source, run your build, push branches.
 >
-> **Turn the matching bypass off if any of these apply**:
+> **Switch away from `bypass` (to `auto` for claude, or `restricted`) if any of these apply**:
 > - The project (or `~/.central-mcp`) holds sensitive code, secrets, or production data you can't lose.
 > - No safety-net commit/push is in place.
 > - You didn't read the prompt carefully or you're delegating work from untrusted sources.
 > - You want to review every command the agent is about to run.
 >
-> **Disclaimer**: central-mcp is a routing layer and does not supervise what the agents do. You are responsible for the scope, targets, and consequences of every dispatch you run in bypass mode at either layer. The authors and contributors of central-mcp are not liable for any damage, data loss, security breach, cost, or other harm that results from enabling bypass. Use snapshots (git commits, backups, branch protection), least-privilege credentials, and offline/sandboxed environments where possible.
+> **Disclaimer**: central-mcp is a routing layer and does not supervise what the agents do. You are responsible for the scope, targets, and consequences of every dispatch you run in `bypass` (or `auto`) mode at either layer. The authors and contributors of central-mcp are not liable for any damage, data loss, security breach, cost, or other harm that results from the selected mode. Use snapshots (git commits, backups, branch protection), least-privilege credentials, and offline/sandboxed environments where possible.
 
-If a project deals with sensitive code and you're not comfortable granting blanket bypass, keep `bypass=false` and stick to read-only dispatches, or use interactive panes for anything that writes.
+If a project deals with sensitive code and you're not comfortable granting blanket `bypass`, switch to `auto` (claude + Sonnet/Opus 4.6) or keep `restricted` and stick to read-only dispatches.
 
 ### Dispatch history (per project)
 
@@ -242,7 +262,8 @@ The sub-agent model is independent — each `dispatch` spawns its own process wi
 
 ```
 central-mcp                        # no-arg → launch orchestrator (same as `run`)
-central-mcp run [--agent X] [--pick] [--no-bypass]  # launch orchestrator (bypass on by default)
+central-mcp run [--agent X] [--pick] [--permission-mode {bypass,auto,restricted}]
+                                   # launch orchestrator (default: bypass; auto is claude-only)
 central-mcp serve                  # run MCP server on stdio (used by MCP clients)
 central-mcp install CLIENT         # register with claude | codex | gemini | opencode
 central-mcp alias [NAME]           # short-name symlink (default: cmcp)
@@ -252,7 +273,7 @@ central-mcp add NAME PATH [--agent claude|codex|gemini|droid|opencode]
 central-mcp remove NAME
 central-mcp list                   # one-line registry dump
 central-mcp brief                  # orchestrator-ready markdown snapshot
-central-mcp up [--no-orchestrator] [--no-bypass] [--panes-per-window N]
+central-mcp up [--no-orchestrator] [--permission-mode {bypass,auto,restricted}] [--panes-per-window N]
                                    # optional tmux observation layer
 central-mcp tmux [same flags as up]
                                    # create session if missing, then attach via tmux
@@ -282,7 +303,8 @@ Windows are named `cmcp-<N>` with the first window picking up a `-hub` suffix (`
 
 ```bash
 central-mcp tmux                   # one-shot: create the session if missing, then attach
-central-mcp tmux --no-bypass       # same, but launch orchestrator without permission-bypass
+central-mcp tmux --permission-mode auto        # claude-only; classifier-reviewed orchestrator
+central-mcp tmux --permission-mode restricted  # orchestrator surfaces approval prompts
 central-mcp tmux --no-orchestrator # watch panes only (no orchestrator)
 central-mcp tmux --panes-per-window 6
 central-mcp up                     # create the session but don't attach (scripted flows)

@@ -90,7 +90,7 @@ central-mcp
 | `dispatch_history` | sync | **특정 프로젝트**의 최근 N개 디스패치 이력 (해당 프로젝트 jsonl 로그 기반). |
 | `orchestration_history` | sync | 포트폴리오 전체 스냅샷 — 진행 중인 디스패치 + 프로젝트 간 최근 milestone + 프로젝트별 집계. "전반적으로 어떻게 돌아가?" 한 번에. |
 | `add_project` | sync | 새 프로젝트 등록. 에이전트 이름 검증. Codex 디렉토리 자동 trust. |
-| `update_project` | sync | 기존 프로젝트의 agent / description / tags / bypass / fallback 변경. |
+| `update_project` | sync | 기존 프로젝트의 agent / description / tags / permission_mode / fallback 변경. |
 | `remove_project` | sync | 프로젝트 등록 해제. |
 
 ### 디스패치 동작 방식
@@ -105,13 +105,13 @@ dispatch("my-app", "auth에 에러 핸들링 추가")
 
 ### 지원 에이전트
 
-| 에이전트 | 비인터랙티브 호출 | bypass 플래그 |
-|---|---|---|
-| `claude` | `claude -p "<프롬프트>" --continue` | `--dangerously-skip-permissions` |
-| `codex` | `codex exec "<프롬프트>"` | `--dangerously-bypass-approvals-and-sandbox` |
-| `gemini` | `gemini -p "<프롬프트>"` | `--yolo` |
-| `droid` | `droid exec "<프롬프트>"` | `--skip-permissions-unsafe` |
-| `opencode` | `opencode run "<프롬프트>" --continue` | `--dangerously-skip-permissions` |
+| 에이전트 | 비인터랙티브 호출 | `bypass` 모드 플래그 | `auto` 모드 플래그 |
+|---|---|---|---|
+| `claude` | `claude -p "<프롬프트>" --continue` | `--dangerously-skip-permissions` | `--enable-auto-mode --permission-mode auto` |
+| `codex` | `codex exec "<프롬프트>"` | `--dangerously-bypass-approvals-and-sandbox` | — |
+| `gemini` | `gemini -p "<프롬프트>"` | `--yolo` | — |
+| `droid` | `droid exec "<프롬프트>"` | `--skip-permissions-unsafe` | — |
+| `opencode` | `opencode run "<프롬프트>" --continue` | `--dangerously-skip-permissions` | — |
 
 에이전트 이름은 등록 시점에 검증됩니다 — `cursor-agent` 같은 오타는 dispatch 시점이 아니라 즉시 잡힙니다.
 
@@ -123,7 +123,7 @@ dispatch("my-app", "auth에 에러 핸들링 추가")
 update_project(name="my-app", agent="codex")
 ```
 
-`update_project`는 `description`, `tags`, `bypass`, `fallback` 도 받습니다 — 생략된 필드는 그대로 유지. `codex`로 전환하면 프로젝트 디렉토리가 `~/.codex/config.toml` trust 리스트에 자동 등록됩니다.
+`update_project`는 `description`, `tags`, `permission_mode`, `fallback` 도 받습니다 — 생략된 필드는 그대로 유지. `codex`로 전환하면 프로젝트 디렉토리가 `~/.codex/config.toml` trust 리스트에 자동 등록됩니다.
 
 ### 일회성 에이전트 오버라이드
 
@@ -151,50 +151,70 @@ update_project(name="my-app", fallback=["codex", "gemini"])
 
 저장된 fallback 체인을 일회성으로 비활성화하려면 `fallback=[]` 전달.
 
-### Bypass 모드
+### Permission 모드
 
-대부분의 코딩 에이전트는 파일 수정·명령어 실행·패키지 설치 전에 "이거 해도 돼?"를 물어봅니다. 사람이 터미널 앞에 있으면 괜찮지만, central-mcp가 돌아가는 어느 경로에도 응답할 TTY가 없어서 **승인을 기다리며 영원히 멈출 수 있습니다**. **Bypass 모드**는 에이전트에게 스스로의 동작을 자동 승인하도록 지시해 작업을 멈추지 않고 진행시킵니다.
+대부분의 코딩 에이전트는 파일 수정·명령어 실행·패키지 설치 전에 "이거 해도 돼?"를 물어봅니다. 사람이 터미널 앞에 있으면 괜찮지만, central-mcp가 돌아가는 어느 경로에도 응답할 TTY가 없어서 **승인을 기다리며 영원히 멈출 수 있습니다**. central-mcp가 띄우는 모든 에이전트 인스턴스(오케스트레이터 pane이든, dispatch로 spawn되는 프로젝트 에이전트든)는 아래 세 가지 **permission 모드** 중 하나로 실행됩니다:
 
-Bypass는 서로 다른 두 레이어가 있고, 각각 스택의 다른 층에 적용됩니다:
+| 모드 | 자동 승인 범위 | 사용 시점 |
+|---|---|---|
+| `bypass` | 전부. 각 에이전트의 permission-skip 플래그를 부착합니다 (아래 매핑 표 참고). | 기본값. 가장 빠름. 프롬프트 인젝션 방어 없음. 모든 에이전트 지원. |
+| `auto` | cwd 내 로컬 파일 작업, 이미 선언된 의존성 설치, read-only HTTP, Claude가 만든 브랜치 푸시. 그 외엔 백그라운드 **분류기**가 검토 — `curl \| bash`, 프로덕션 배포, force-push, 클라우드 벌크 삭제 등은 차단. | 프롬프트 인젝션에 대한 방어가 중요한 민감 레포. **`claude`만 지원** (Team/Enterprise/API 플랜 + **Sonnet 4.6 또는 Opus 4.6** 필요 — Haiku, 4.7, 타사 제공자 불가). `auto`를 non-claude 에이전트·폴백 체인에 지정하면 central-mcp가 명시적으로 거절. |
+| `restricted` | 없음. 원래라면 승인을 요구할 도구 호출은 그대로 실패. | 읽기 전용 작업 강화 — Q&A, 코드 설명, 리포트. 쓰기/빌드/쉘은 모두 hang/실패. 모든 에이전트 지원. |
 
-#### 1. 오케스트레이터 bypass — `central-mcp run` / `central-mcp tmux` / `central-mcp up`
+각 벤더가 permission-skip을 부르는 이름이 다르므로, central-mcp의 `bypass`/`auto`는 아래 매핑을 통해 각 에이전트의 해당 플래그로 번역됩니다:
 
-**사용자가 직접 대화하는** 오케스트레이터 pane(Claude Code, Codex 등) 자체에 에이전트의 permission-bypass 플래그(`claude --dangerously-skip-permissions`, `codex --dangerously-bypass-approvals-and-sandbox` 등)를 적용합니다. **기본값: 켜짐**. 끄려면 `--no-bypass`:
+| central-mcp 모드 | claude | codex | gemini | droid | opencode |
+|---|---|---|---|---|---|
+| `bypass` | Skip permissions<br>`--dangerously-skip-permissions` | Bypass approvals + sandbox<br>`--dangerously-bypass-approvals-and-sandbox` | YOLO<br>`--yolo` | Skip permissions (unsafe)<br>`--skip-permissions-unsafe` | Skip permissions<br>`--dangerously-skip-permissions` |
+| `auto` | Auto mode<br>`--enable-auto-mode --permission-mode auto` | — | — | — | — |
+| `restricted` | *(플래그 없음)* | *(플래그 없음)* | *(플래그 없음)* | *(플래그 없음)* | *(플래그 없음)* |
+
+다른 벤더가 나중에 claude의 `auto`에 해당하는 모드를 추가하면 (codex sandbox-warn, gemini review-mode 등) central-mcp가 동일한 `auto` alias에 연결 — 기존 설정은 그대로 유지됩니다.
+
+모드는 서로 다른 두 레이어에 적용됩니다:
+
+#### 1. 오케스트레이터 레이어 — `central-mcp run` / `central-mcp tmux` / `central-mcp up` / `central-mcp zellij`
+
+**사용자가 직접 대화하는** 오케스트레이터 pane(MCP 도구를 호출하는 에이전트)에 적용됩니다. **기본값: `bypass`.** `--permission-mode`로 변경:
 
 ```bash
-central-mcp tmux --no-bypass     # 오케스트레이터가 승인 프롬프트를 띄움
-central-mcp run --no-bypass
+central-mcp tmux   --permission-mode auto        # claude 전용, 분류기 검토
+central-mcp run    --permission-mode restricted  # 자동 승인 없음 — 프롬프트는 멈춤
+central-mcp zellij --permission-mode bypass      # 기본값 명시
 ```
 
-오케스트레이터 bypass가 **켜지면** 오케스트레이터가 기동 디렉토리(`~/.central-mcp`)에서 물어보지 않고 파일을 읽고 씁니다 — `CLAUDE.md`, scratch note, 허브 편집이 마찰 없이 진행됩니다. 이 설정은 dispatch로 보내는 프로젝트 에이전트에는 **영향을 주지 않습니다** (아래 별도 레이어).
+오케스트레이터 `bypass`로 기동하면 오케스트레이터가 `~/.central-mcp` 내부에서 물어보지 않고 파일을 읽고 씁니다 — `CLAUDE.md`, scratch note, 허브 편집이 마찰 없이 진행됩니다. `auto`(claude + Sonnet/Opus 4.6 전용)는 분류기가 개별 action을 검토합니다. non-claude 오케스트레이터에서 `auto`를 지정하면 플래그 없이 기동(경고 출력). 이 레이어의 모드는 dispatch로 spawn되는 프로젝트 에이전트에는 **영향을 주지 않습니다** — 각 프로젝트는 자체 값을 별도로 들고 있습니다.
 
-#### 2. 프로젝트별 dispatch bypass — `dispatch(..., bypass=...)` / `registry.yaml`
+#### 2. 프로젝트 dispatch 레이어 — `dispatch(..., permission_mode=...)` / `registry.yaml`
 
-특정 프로젝트의 cwd에서 한 번 spawn되는 에이전트에 적용되는 값입니다. 프로젝트 첫 dispatch에서 선택된 값이 `registry.yaml`에 저장되어 이후 재사용됩니다. **신규 프로젝트 기본값: `null` (한 번 물어봄)** — 첫 dispatch 시 central-mcp가 오케스트레이터에게 `bypass=true/false` 결정을 요청합니다. 언제든 덮어씌울 수 있음:
+프로젝트 cwd에서 한 번 spawn되는 에이전트에 적용됩니다. 값은 첫 dispatch에서 `registry.yaml`에 저장되고(기본 `"bypass"`) 이후 재사용됩니다. 언제든 덮어쓸 수 있음:
 
 ```
-dispatch(name="my-app", prompt="…", bypass=true)   # 자동 승인, 설정 저장
-dispatch(name="my-app", prompt="…", bypass=false)  # 프롬프트 노출, 설정 저장
-update_project(name="my-app", bypass=true)         # dispatch 없이 값만 변경
+dispatch(name="my-app", prompt="…", permission_mode="bypass")      # 자동 승인, 설정 저장
+dispatch(name="my-app", prompt="…", permission_mode="auto")        # claude 전용, 분류기 검토
+dispatch(name="my-app", prompt="…", permission_mode="restricted")  # skip 없음
+update_project(name="my-app", permission_mode="auto")              # dispatch 없이 값만 변경
 ```
 
-프로젝트 bypass가 **꺼져 있으면** 안전한 읽기 전용 dispatch(질문 답변, 파일 읽기, 코드 설명)는 정상 동작. 권한 프롬프트가 뜨는 작업(파일 편집, 쉘 명령, 의존성 설치)은 타임아웃까지 hang — 오케스트레이터가 `bypass=true`로 재시도하거나, 별도 터미널에서 프로젝트 cwd에 들어가 에이전트를 인터랙티브로 띄워 직접 승인하도록 제안합니다.
+`"auto"`를 지정했는데 프로젝트의 에이전트 체인이 `claude` 이외를 포함하면 central-mcp가 명시적으로 거절 — fallback에서 `auto`가 `bypass`로 **암묵적 다운그레이드되지 않습니다**. `"restricted"`면 읽기 전용 dispatch(질문 답변, 파일 읽기, 코드 설명)는 정상 동작하지만 승인이 필요한 작업(편집, 쉘, 의존성 설치)은 타임아웃까지 hang — `bypass`/`auto`로 재시도하거나, 해당 프로젝트 cwd에서 에이전트를 인터랙티브로 직접 띄워 수동 승인하세요.
 
-> ### ⚠️ bypass는 강력합니다 — 본인 책임
+> ### ⚠️ `bypass`는 강력합니다 — 본인 책임
 >
-> 어느 쪽 레이어든 bypass가 켜져 있으면 해당 에이전트는 **사용자 확인 없이** 파일 수정, 쉘 명령 실행, 패키지 설치, 네트워크 서비스 호출, 코드 push를 수행할 수 있습니다. 이게 멈춤 없는 오케스트레이션을 가능케 하지만, 잘못된 프롬프트·외부 프롬프트 인젝션·에이전트 hallucination이 실제 피해(테이블 drop, 강제 푸시, 파일 삭제, 자격증명 유출, 의도하지 않은 API 비용 등)로 이어질 수 있습니다.
+> `bypass` 모드(어느 쪽 레이어든)에서는 에이전트가 **사용자 확인 없이** 파일 수정·쉘 명령 실행·패키지 설치·네트워크 서비스 호출·코드 push를 수행할 수 있습니다. 이게 멈춤 없는 오케스트레이션을 가능케 하지만, 잘못된 프롬프트·외부 프롬프트 인젝션·에이전트 hallucination이 실제 피해(테이블 drop, 강제 푸시, 파일 삭제, 자격증명 유출, 의도하지 않은 API 비용 등)로 이어질 수 있습니다.
+>
+> `auto` 모드는 중간 지대입니다 — 여전히 headless로 동작하지만 분류기가 표준 파괴적 패턴 집합을 차단합니다 (기본 정책은 [Claude Code permission-modes 문서](https://code.claude.com/docs/permission-modes) 참고). 프롬프트 인젝션 리스크를 낮추지만 제거하지는 않습니다. `restricted`가 가장 안전하지만 쓰기가 필요 없는 에이전트에만 유효.
 >
 > 차이점 정리:
-> - **오케스트레이터 bypass**는 *허브 레벨* 에이전트가 `~/.central-mcp` 및 MCP 도구 호출 과정에서 할 수 있는 일을 제어합니다. 허브 디렉토리에 프로덕션 코드가 없으므로 실제 리스크는 상대적으로 낮지만, 그래도 읽기/쓰기는 자동.
-> - **프로젝트 bypass**는 각 *프로젝트 레벨* 에이전트가 해당 프로젝트 cwd 안에서 할 수 있는 일을 제어합니다. 소스 코드 재작성, 빌드 실행, 브랜치 푸시가 일어나는 **고위험** 레이어.
+> - **오케스트레이터 모드**는 *허브 레벨* 에이전트가 `~/.central-mcp` 및 MCP 도구 호출 과정에서 할 수 있는 일을 제어. 허브 디렉토리에 프로덕션 코드가 없으므로 리스크는 상대적으로 낮지만 읽기/쓰기는 자동.
+> - **프로젝트 모드**는 각 *프로젝트 레벨* 에이전트가 해당 프로젝트 cwd 안에서 할 수 있는 일을 제어. 소스 재작성, 빌드 실행, 브랜치 푸시가 일어나는 **고위험** 레이어.
 >
-> **다음에 해당하면 해당 레이어의 bypass를 꺼 주세요**:
+> **다음에 해당하면 `bypass` 대신 `auto`(claude) 또는 `restricted`로 전환하세요**:
 > - 프로젝트(또는 `~/.central-mcp`)에 민감한 코드/비밀번호/프로덕션 데이터가 있음
 > - 안전망이 될 커밋/푸시가 아직 준비되지 않음
 > - 프롬프트를 꼼꼼히 확인하지 않았거나, 신뢰할 수 없는 소스의 작업을 위임
 > - 에이전트가 실행할 명령을 매번 리뷰하고 싶음
 >
-> **면책**: central-mcp는 라우팅 레이어로서 에이전트가 어떤 작업을 수행하는지 감독하지 않습니다. 어느 레이어의 bypass든 그로 인해 발생한 dispatch의 범위·대상·결과에 대한 책임은 사용자 본인에게 있습니다. central-mcp 저자와 기여자는 bypass 사용으로 인한 데이터 손실·보안 침해·비용 발생·기타 피해에 대해 **어떤 책임도 지지 않습니다**. 스냅샷(git 커밋, 백업, 브랜치 보호), 최소 권한 자격증명, 오프라인/샌드박스 환경을 최대한 활용하세요.
+> **면책**: central-mcp는 라우팅 레이어로서 에이전트가 어떤 작업을 수행하는지 감독하지 않습니다. 선택한 모드로 인해 발생한 dispatch의 범위·대상·결과에 대한 책임은 사용자 본인에게 있습니다. central-mcp 저자와 기여자는 `bypass`(또는 `auto`) 사용으로 인한 데이터 손실·보안 침해·비용 발생·기타 피해에 대해 **어떤 책임도 지지 않습니다**. 스냅샷(git 커밋, 백업, 브랜치 보호), 최소 권한 자격증명, 오프라인/샌드박스 환경을 최대한 활용하세요.
 
 ### 디스패치 히스토리 (프로젝트별)
 
@@ -236,7 +256,8 @@ orchestration_history(window_minutes=60) # 최근 1시간 활동만
 
 ```
 central-mcp                        # 인자 없음 → 오케스트레이터 기동 (`run`과 동일)
-central-mcp run [--agent X] [--pick] [--bypass]  # 오케스트레이터 기동 (명시적)
+central-mcp run [--agent X] [--pick] [--permission-mode {bypass,auto,restricted}]
+                                   # 오케스트레이터 기동 (기본: bypass; auto는 claude 전용)
 central-mcp serve                  # stdio에서 MCP 서버 실행 (MCP 클라이언트가 사용)
 central-mcp install CLIENT         # claude | codex | gemini | opencode에 등록
 central-mcp alias [NAME]           # 짧은 이름 심링크 (기본: cmcp)
@@ -246,7 +267,7 @@ central-mcp add NAME PATH [--agent claude|codex|gemini|droid|opencode]
 central-mcp remove NAME
 central-mcp list                   # 한 줄씩 레지스트리 출력
 central-mcp brief                  # 오케스트레이터용 마크다운 스냅샷
-central-mcp up [--no-orchestrator] [--no-bypass] [--panes-per-window N]
+central-mcp up [--no-orchestrator] [--permission-mode {bypass,auto,restricted}] [--panes-per-window N]
                                    # 선택적 tmux 관찰 레이어 생성
 central-mcp tmux [up과 동일 플래그]   # 세션이 없으면 생성 후 tmux로 attach
 central-mcp zellij [up과 동일 플래그] # 동일, 단 zellij로 (KDL 레이아웃 생성)
@@ -274,7 +295,8 @@ central-mcp upgrade [--check]      # PyPI에서 최신 버전 확인 후 자동 
 
 ```bash
 central-mcp tmux                   # 원샷: 세션 없으면 생성, 바로 attach
-central-mcp tmux --no-bypass       # bypass 끄고 오케스트레이터 기동
+central-mcp tmux --permission-mode auto        # claude 전용, 분류기 검토 오케스트레이터
+central-mcp tmux --permission-mode restricted  # 자동 승인 없이 기동 (프롬프트는 멈춤)
 central-mcp tmux --no-orchestrator # watch pane만
 central-mcp tmux --panes-per-window 6
 central-mcp up                     # attach 없이 세션만 생성 (스크립트용)
