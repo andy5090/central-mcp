@@ -38,6 +38,14 @@ Every dispatch is a fresh subprocess in the project's cwd (e.g. `claude -p "..."
 
 Available on [PyPI](https://pypi.org/project/central-mcp/).
 
+## Supported platforms
+
+Run central-mcp on the platform it's been exercised on, and expect a bit of roughness elsewhere:
+
+- **macOS** — primary development and test target.
+- **Linux** — expected to work (pure Python, tmux/zellij are cross-platform), but not regularly tested; please file issues if you hit edges.
+- **Windows** — not supported.
+
 ## Quickstart
 
 ```bash
