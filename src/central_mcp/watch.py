@@ -57,7 +57,11 @@ def _render(record: dict[str, Any], out: TextIO) -> None:
         header = BOLD(CYAN(f"── {ts} [{did}] start ──"))
         out.write(f"\n{header}\n")
         if agent:
-            out.write(DIM(f"agent: {agent}\n"))
+            # Bold (not dim) so the actual agent running this dispatch
+            # is obvious at a glance — per-dispatch overrides and
+            # fallback chains mean it can differ from the project's
+            # registry default.
+            out.write(BOLD(f"agent: {agent}") + "\n")
         chain = record.get("chain") or []
         if len(chain) > 1:
             out.write(DIM(f"chain: {' → '.join(chain)}\n"))
