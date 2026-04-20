@@ -364,9 +364,9 @@ The hub window (`cmcp-1-hub`) uses tmux's `main-vertical` layout: the orchestrat
 
 Kill with `central-mcp down` — the MCP dispatch path never depends on this layer, so tearing it down doesn't affect in-flight dispatches. The `watch` command is a read-only tail of `~/.central-mcp/logs/<project>/dispatch.jsonl`; you can also run it standalone in any terminal.
 
-#### "Press ENTER to re-run" in a watch pane
+#### "<ENTER> to run, <Ctrl-c> to exit" in a watch pane
 
-If a zellij watch pane shows `EXITED — Press ENTER to re-run, <Ctrl-c> to exit` instead of streaming dispatch events, the underlying `central-mcp watch <project>` child died. This is zellij's built-in safety net — it holds the dead pane open so you don't lose scrollback. The fix is always the same: rebuild the session. Run `cmcp zellij` again (0.6.8+ automatically tears down and rebuilds, so this is a single command) and every pane respawns with a fresh watch child.
+If a zellij watch pane shows `<ENTER> to run, <Ctrl-c> to exit` instead of streaming dispatch events, the underlying `central-mcp watch <project>` child has died or never started. This is zellij's built-in safety net — it holds the pane open (preserving scrollback) and waits for explicit user action instead of respawning or dropping to a shell. Don't press ENTER: the pane is disconnected from its original command at this point, so a manual re-run here won't pipe back into central-mcp. Instead, rebuild the session: `cmcp zellij` (0.6.8+ automatically tears down and rebuilds, so this is a single command). Every pane respawns with a fresh watch child.
 
 #### Upgrading while an observation session is attached
 

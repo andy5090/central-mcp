@@ -356,9 +356,9 @@ Hub 윈도우(`cmcp-1-hub`)는 tmux의 `main-vertical` 레이아웃을 사용합
 
 `central-mcp down`으로 종료해도 MCP 디스패치 경로는 이 레이어에 의존하지 않으므로 진행 중인 dispatch에 영향 없습니다. `watch`는 `~/.central-mcp/logs/<project>/dispatch.jsonl`을 읽기 전용으로 tail하는 구조라 어떤 터미널에서도 독립 실행 가능합니다.
 
-#### zellij watch pane에 "Press ENTER to re-run" 이 뜰 때
+#### zellij watch pane에 "<ENTER> to run, <Ctrl-c> to exit" 이 뜰 때
 
-zellij watch pane이 dispatch 이벤트를 스트리밍하지 않고 `EXITED — Press ENTER to re-run, <Ctrl-c> to exit` 메시지를 보여주고 있으면, 내부 `central-mcp watch <project>` 자식 프로세스가 죽은 상태입니다. zellij의 기본 안전장치 — 죽은 pane을 scroll back을 잃지 않도록 계속 열어둡니다. 해결은 항상 동일: 세션 재빌드. `cmcp zellij` 를 다시 실행하면 (0.6.8+ 부터 자동 teardown + rebuild) 한 번에 모든 pane이 새 watch 자식을 가진 채 respawn됩니다.
+zellij watch pane이 dispatch 이벤트를 스트리밍하지 않고 `<ENTER> to run, <Ctrl-c> to exit` 메시지를 보여주면, 내부 `central-mcp watch <project>` 자식 프로세스가 죽었거나 시작하지 못한 상태입니다. zellij의 기본 안전장치 — pane을 계속 열어 scroll back을 보존하고, 자동 재실행이나 쉘로 떨어지지 않고 사용자의 명시적 행동을 기다립니다. **ENTER를 누르지 마세요**: 그 시점의 pane은 이미 central-mcp 파이프라인과 분리된 상태라, 여기서 수동으로 재실행해도 central-mcp 로 흘러들어오지 않습니다. 해결은 세션 재빌드: `cmcp zellij` (0.6.8+ 부터 자동 teardown + rebuild) 한 번 실행하면 모든 pane이 새 watch 자식을 가진 채 respawn됩니다.
 
 #### 관찰 세션이 attach된 상태에서 central-mcp 업그레이드했다면
 
