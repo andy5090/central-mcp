@@ -55,6 +55,12 @@ Signals + appropriate moves:
 - **"back to default / latest" / pin 해제** → `update_project(name, session_id="")` (empty string clears the pin).
 - **droid pinning** → For droid projects, because there's no headless resume-latest, the orchestrator should suggest pinning a `session_id` after the first dispatch if the user expects continuity across dispatches. Otherwise each droid dispatch is a new thread (which is sometimes exactly what the user wants, so don't force it).
 
+## Reordering projects
+
+When the user asks to reorder projects (put one at the front, group related ones, etc), call `reorder_projects(order=[...])`. Lenient by default — only the names you pass have to move; anything unmentioned keeps its relative order. The update persists to `registry.yaml` immediately.
+
+After calling, mention that the **observation layer** (tmux/zellij panes) picks up the new order on the next `cmcp tmux` / `cmcp zellij` invocation. Panes don't live-swap inside a running session.
+
 ## Adding projects
 
 If the user mentions a path not in the registry ("add ~/Projects/foo"), call `add_project` directly. Default agent to `claude`.

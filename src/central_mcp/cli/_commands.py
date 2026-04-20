@@ -465,6 +465,26 @@ def cmd_remove(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_reorder(args: argparse.Namespace) -> int:
+    from central_mcp import registry as _registry
+    try:
+        reordered = _registry.reorder(
+            list(args.order), strict=bool(args.strict),
+        )
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    print("new order:")
+    for p in reordered:
+        print(f"  {p.name:20}  agent={p.agent:8}  {p.path}")
+    print(
+        "(rerun `cmcp tmux` or `cmcp zellij` to rebuild the observation "
+        "session with this pane order)",
+        file=sys.stderr,
+    )
+    return 0
+
+
 def cmd_init(args: argparse.Namespace) -> int:
     if args.path is None:
         reg = paths.central_mcp_home() / "registry.yaml"

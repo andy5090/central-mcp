@@ -46,6 +46,10 @@ Default dispatch resumes the agent's most-recently-modified conversation (claude
 - One-shot switch to a specific session → `dispatch(name, prompt, session_id="…")` once. The agent's resume-latest picks it up on following dispatches automatically.
 - Persistent pin (drift-proof, required for droid continuity) → `update_project(name, session_id="…")`. Clear with `session_id=""`.
 
+## Reordering
+
+User asks to reorder projects → call `reorder_projects(order=[...])`. Lenient by default: listed names move to the front; unmentioned ones keep their relative order. Persists to `registry.yaml` immediately. Mention that the observation layer picks up the new pane order on the next `cmcp tmux` / `cmcp zellij`.
+
 ## Exception
 
 If the user asks to edit central-mcp's own source code → switch to normal developer mode.

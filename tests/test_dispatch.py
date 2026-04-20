@@ -325,6 +325,43 @@ def test_update_project_tool_rejects_invalid_fallback(
     assert registry.find_project("p").fallback is None
 
 
+def test_reorder_projects_tool_lenient_move_to_front(
+    fake_home: Path, tmp_path: Path,
+) -> None:
+    for n in ("a", "b", "c"):
+        d = tmp_path / n
+        d.mkdir()
+        registry.add_project(n, str(d), agent="claude")
+    r = server.reorder_projects(["c"])
+    assert r["ok"] is True
+    assert r["order"] == ["c", "a", "b"]
+    assert "rebuild" in r["note"].lower()
+    assert [p.name for p in registry.load_registry()] == ["c", "a", "b"]
+
+
+def test_reorder_projects_tool_rejects_unknown(
+    fake_home: Path, tmp_path: Path,
+) -> None:
+    d = tmp_path / "a"
+    d.mkdir()
+    registry.add_project("a", str(d))
+    r = server.reorder_projects(["ghost"])
+    assert r["ok"] is False
+    assert "ghost" in r["error"]
+
+
+def test_reorder_projects_tool_strict_enforces_full_list(
+    fake_home: Path, tmp_path: Path,
+) -> None:
+    for n in ("a", "b"):
+        d = tmp_path / n
+        d.mkdir()
+        registry.add_project(n, str(d))
+    r = server.reorder_projects(["a"], strict=True)
+    assert r["ok"] is False
+    assert "strict" in r["error"].lower()
+
+
 def test_update_project_tool_missing(fake_home: Path) -> None:
     r = server.update_project("ghost", agent="codex")
     assert r["ok"] is False

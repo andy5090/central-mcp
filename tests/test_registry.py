@@ -105,6 +105,45 @@ def test_session_id_roundtrip(fake_home: Path) -> None:
     assert reloaded.session_id == "a1b2c3d4"
 
 
+def test_reorder_full_order(fake_home: Path) -> None:
+    registry.add_project("a", "/a")
+    registry.add_project("b", "/b")
+    registry.add_project("c", "/c")
+    reordered = registry.reorder(["c", "a", "b"])
+    assert [p.name for p in reordered] == ["c", "a", "b"]
+    loaded = registry.load_registry()
+    assert [p.name for p in loaded] == ["c", "a", "b"]
+
+
+def test_reorder_partial_moves_named_to_front(fake_home: Path) -> None:
+    """Lenient mode: names in `order` move to the front; the rest
+    keep their original relative order as a tail."""
+    for n in ("a", "b", "c", "d"):
+        registry.add_project(n, f"/{n}")
+    reordered = registry.reorder(["d", "a"])
+    assert [p.name for p in reordered] == ["d", "a", "b", "c"]
+
+
+def test_reorder_strict_requires_full_coverage(fake_home: Path) -> None:
+    for n in ("a", "b", "c"):
+        registry.add_project(n, f"/{n}")
+    with pytest.raises(ValueError, match="strict"):
+        registry.reorder(["a", "b"], strict=True)
+
+
+def test_reorder_rejects_unknown_name(fake_home: Path) -> None:
+    registry.add_project("a", "/a")
+    with pytest.raises(ValueError, match="unknown"):
+        registry.reorder(["nobody"])
+
+
+def test_reorder_rejects_duplicate(fake_home: Path) -> None:
+    for n in ("a", "b"):
+        registry.add_project(n, f"/{n}")
+    with pytest.raises(ValueError, match="duplicate"):
+        registry.reorder(["a", "a"])
+
+
 def test_session_id_empty_string_clears_pin(fake_home: Path) -> None:
     registry.add_project("p", "/p")
     registry.update_project("p", session_id="a1b2c3d4")

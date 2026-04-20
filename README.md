@@ -96,6 +96,7 @@ Multiple dispatches run in parallel.
 | `list_project_sessions` | sync | Enumerate the agent's resumable conversation sessions for one project. Use the returned `id` with `dispatch(session_id=...)` to switch threads. |
 | `add_project` | sync | Register a new project. Validates agent name. Auto-trusts codex dirs. |
 | `update_project` | sync | Change an existing project's agent, description, tags, permission_mode, fallback, or `session_id` pin. |
+| `reorder_projects` | sync | Reorder the registry. Lenient: names listed move to the front, others keep their relative order. Strict mode requires listing every project. |
 | `remove_project` | sync | Unregister a project. |
 
 ### How dispatch works
@@ -308,6 +309,7 @@ central-mcp unalias [NAME]
 central-mcp init [PATH]            # scaffold registry.yaml (default: ~/.central-mcp)
 central-mcp add NAME PATH [--agent claude|codex|gemini|droid|opencode]
 central-mcp remove NAME
+central-mcp reorder NAME [NAME ...]  # reorder projects — unlisted ones keep relative order
 central-mcp list                   # one-line registry dump
 central-mcp brief                  # orchestrator-ready markdown snapshot
 central-mcp up [--no-orchestrator] [--permission-mode {bypass,auto,restricted}] [--max-panes N]
@@ -361,6 +363,10 @@ central-mcp down                   # tear the session back down
 The hub window (`cmcp-1-hub`) uses tmux's `main-vertical` layout: the orchestrator pane sits on the left taking two cells' worth of space, and project panes stack on the right. So the hub holds `panes_per_window − 1` panes (default 3 — orchestrator + 2 projects), and overflow windows get the full `panes_per_window` projects each. Every pane carries its role name on its top border, and the orchestrator border is highlighted in bold yellow so you can spot it at a glance.
 
 Kill with `central-mcp down` — the MCP dispatch path never depends on this layer, so tearing it down doesn't affect in-flight dispatches. The `watch` command is a read-only tail of `~/.central-mcp/logs/<project>/dispatch.jsonl`; you can also run it standalone in any terminal.
+
+#### "Press ENTER to re-run" in a watch pane
+
+If a zellij watch pane shows `EXITED — Press ENTER to re-run, <Ctrl-c> to exit` instead of streaming dispatch events, the underlying `central-mcp watch <project>` child died. This is zellij's built-in safety net — it holds the dead pane open so you don't lose scrollback. The fix is always the same: rebuild the session. Run `cmcp zellij` again (0.6.8+ automatically tears down and rebuilds, so this is a single command) and every pane respawns with a fresh watch child.
 
 #### Upgrading while an observation session is attached
 

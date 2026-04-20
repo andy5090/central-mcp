@@ -3,10 +3,19 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.6.9] — 2026-04-21
+## [0.7.0] — 2026-04-21
 
-### Changed
-- **Zellij layout now ships both the tab-bar (top) and the status-bar (bottom)** — matching zellij's stock UX. Earlier releases stripped the status bar while moving the tab bar to the bottom; the cleaner look cost new users discoverability of zellij's built-in keybindings (Ctrl-p pane mode, Ctrl-t tab mode, etc). 0.6.6+ users can now see the mode indicator + keybinding preset hints right where zellij-native sessions put them.
+### Added
+- **`reorder_projects` MCP tool** — rewrite the registry's `projects[]` order without editing YAML. Lenient by default: names in the `order` list move to the front of the registry in the given sequence; any project not mentioned keeps its original relative position after the reordered prefix, so a partial reorder never requires enumerating every project. `strict=True` enforces a full re-listing. Validates unknown names, duplicates, and in strict mode any missing names; on error the registry is untouched.
+- **`central-mcp reorder NAME [NAME ...]` CLI command** — shell-side equivalent of the MCP tool, with `--strict` for the exact-list flavor. After reordering, prints the new registry layout to stdout and a `(rerun cmcp tmux/zellij to rebuild the observation session)` hint to stderr.
+- **Orchestrator guideline** in `data/CLAUDE.md` / `data/AGENTS.md` pointing users at `reorder_projects` when the user asks to rearrange the fleet, plus an explicit note that panes in an already-running observation session don't live-swap — the next `cmcp tmux` / `cmcp zellij` picks up the new order (auto-teardown since 0.6.8 makes this a single command).
+
+### Internal
+- `central_mcp.registry.reorder(order, *, strict=False)` — the shared primitive. Returns the reordered `Project` list; raises `ValueError` for unknown names / duplicates / (in strict mode) missing names.
+- 5 new registry tests (full order, lenient partial, strict coverage error, unknown-name error, duplicate-name error) + 3 MCP-tool tests.
+
+### Notes
+- Live pane swap inside a running tmux/zellij session isn't attempted — tmux's `swap-pane` would work for some cases but fighting hub/overflow chunking makes it fragile, and zellij's KDL is static so its running layout can't be reshuffled at all. The 0.6.8 auto-teardown makes "rerun the multiplexer command" a one-step flow, which was judged a better tradeoff than a fragile partial live swap.
 
 ## [0.6.9] — 2026-04-21
 

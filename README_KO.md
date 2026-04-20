@@ -92,6 +92,7 @@ central-mcp
 | `add_project` | sync | 새 프로젝트 등록. 에이전트 이름 검증. Codex 디렉토리 자동 trust. |
 | `list_project_sessions` | sync | 프로젝트의 에이전트가 가진 resumable 세션 목록. 반환된 `id`를 `dispatch(session_id=...)`에 넘겨 thread 전환. |
 | `update_project` | sync | 기존 프로젝트의 agent / description / tags / permission_mode / fallback / session_id 변경. |
+| `reorder_projects` | sync | 레지스트리 순서 재정렬. 관대 모드 (listed 이름만 앞으로 이동, 나머지는 원래 순서 유지). strict 모드는 전체 이름 명시 필요. |
 | `remove_project` | sync | 프로젝트 등록 해제. |
 
 ### 디스패치 동작 방식
@@ -302,6 +303,7 @@ central-mcp unalias [NAME]
 central-mcp init [PATH]            # registry.yaml 스캐폴드 (기본: ~/.central-mcp)
 central-mcp add NAME PATH [--agent claude|codex|gemini|droid|opencode]
 central-mcp remove NAME
+central-mcp reorder NAME [NAME ...]  # 레지스트리 재정렬 — 명시 안 한 것은 원래 순서 유지
 central-mcp list                   # 한 줄씩 레지스트리 출력
 central-mcp brief                  # 오케스트레이터용 마크다운 스냅샷
 central-mcp up [--no-orchestrator] [--permission-mode {bypass,auto,restricted}] [--max-panes N]
@@ -353,6 +355,10 @@ central-mcp down                   # 세션 종료
 Hub 윈도우(`cmcp-1-hub`)는 tmux의 `main-vertical` 레이아웃을 사용합니다 — 오케스트레이터 pane이 왼쪽에 두 칸 크기를 차지하고, 프로젝트 pane들이 오른쪽에 세로로 쌓입니다. 그래서 hub는 `panes_per_window − 1`개 pane(기본 3 — 오케스트레이터 + 프로젝트 2개)을 담고, 오버플로우 윈도우는 `panes_per_window`개 프로젝트를 그대로 담습니다. 모든 pane은 상단 border에 역할 이름이 표시되고, 오케스트레이터 border는 굵은 노란색으로 강조됩니다.
 
 `central-mcp down`으로 종료해도 MCP 디스패치 경로는 이 레이어에 의존하지 않으므로 진행 중인 dispatch에 영향 없습니다. `watch`는 `~/.central-mcp/logs/<project>/dispatch.jsonl`을 읽기 전용으로 tail하는 구조라 어떤 터미널에서도 독립 실행 가능합니다.
+
+#### zellij watch pane에 "Press ENTER to re-run" 이 뜰 때
+
+zellij watch pane이 dispatch 이벤트를 스트리밍하지 않고 `EXITED — Press ENTER to re-run, <Ctrl-c> to exit` 메시지를 보여주고 있으면, 내부 `central-mcp watch <project>` 자식 프로세스가 죽은 상태입니다. zellij의 기본 안전장치 — 죽은 pane을 scroll back을 잃지 않도록 계속 열어둡니다. 해결은 항상 동일: 세션 재빌드. `cmcp zellij` 를 다시 실행하면 (0.6.8+ 부터 자동 teardown + rebuild) 한 번에 모든 pane이 새 watch 자식을 가진 채 respawn됩니다.
 
 #### 관찰 세션이 attach된 상태에서 central-mcp 업그레이드했다면
 

@@ -171,6 +171,65 @@ def update_project(
     return None
 
 
+def reorder(
+    order: list[str],
+    *,
+    strict: bool = False,
+    registry_path: Path | None = None,
+) -> list[Project]:
+    """Rewrite the registry with `order` applied to the `projects` list.
+
+    `strict=False` (default, lenient): names in `order` move to the
+    front in the given sequence; any project not mentioned stays in
+    its original position relative to other unmentioned projects, just
+    pushed after the explicitly-ordered prefix. Supports partial moves
+    without having to spell out every registered project.
+
+    `strict=True`: `order` must exactly match the set of registered
+    project names (same length, same members). Raises ValueError if
+    missing or extra names are present.
+
+    Raises ValueError for unknown names or duplicates in `order`.
+    Returns the projects in their new order.
+    """
+    data = _read_raw(registry_path)
+    projects = data.get("projects") or []
+
+    existing = {p["name"]: p for p in projects if p.get("name")}
+    if len(existing) != len(projects):
+        # Duplicate names in registry — caller can't cleanly reorder
+        # something that isn't uniquely identified.
+        raise ValueError("registry contains duplicate project names")
+
+    seen: set[str] = set()
+    for name in order:
+        if name not in existing:
+            raise ValueError(
+                f"unknown project {name!r} in reorder list; "
+                f"known: {sorted(existing)}"
+            )
+        if name in seen:
+            raise ValueError(f"duplicate project {name!r} in reorder list")
+        seen.add(name)
+
+    if strict and seen != set(existing):
+        missing = sorted(set(existing) - seen)
+        raise ValueError(
+            f"strict reorder requires every registered project; "
+            f"missing: {missing}"
+        )
+
+    reordered = [existing[name] for name in order]
+    # Tail: unmentioned projects in their original relative order.
+    for p in projects:
+        if p.get("name") not in seen:
+            reordered.append(p)
+
+    data["projects"] = reordered
+    _write_raw(data, registry_path)
+    return [_project_from_raw(p) for p in reordered]
+
+
 def remove_project(
     name: str,
     registry_path: Path | None = None,

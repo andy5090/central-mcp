@@ -35,6 +35,7 @@ from central_mcp.registry import (
     find_project,
     load_registry,
     remove_project as _registry_remove,
+    reorder as _registry_reorder,
     update_project as _registry_update,
 )
 from central_mcp.scrub import scrub
@@ -98,6 +99,15 @@ instead:
   - remove_project         — unregister a project
   - update_project         — change a project's agent / fallback /
                              permission_mode / session_id / etc.
+  - reorder_projects       — rewrite the `projects[]` order in the
+                             registry. Lenient by default: only the
+                             names you list need to move; unmentioned
+                             projects keep their relative order after
+                             the reordered prefix. Pane order in the
+                             tmux/zellij observation layer picks up
+                             the change on the next `cmcp tmux` /
+                             `cmcp zellij` invocation (auto-teardown
+                             since 0.6.8 makes this a one-step flow).
   - list_project_sessions  — list the agent's resumable conversation
                              sessions for one project. Each result
                              carries an `id` the orchestrator can pass
@@ -800,6 +810,40 @@ def add_project(
             result["codex_trust"] = trust_msg
 
     return _with_completed(result)
+
+
+@mcp.tool()
+def reorder_projects(
+    order: list[str],
+    strict: bool = False,
+) -> dict[str, Any]:
+    """Reorder the registry's `projects` list.
+
+    `order` is a sequence of project names; those names move to the
+    front of the registry in the given order. By default any project
+    not named in `order` keeps its original relative position after
+    the reordered prefix, so a partial reorder is always safe (no need
+    to enumerate every project). Pass `strict=True` to require
+    `order` to list every registered project exactly once.
+
+    Raises an error for unknown names, duplicates, or (in strict mode)
+    missing ones. The reorder persists to `registry.yaml` immediately,
+    but panes in an already-running `cmcp tmux` / `cmcp zellij` session
+    don't rearrange live — rerun the multiplexer command to see the
+    new layout (auto-teardown since 0.6.8 makes this a one-step flow).
+    """
+    try:
+        reordered = _registry_reorder(order, strict=strict)
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+    return _with_completed({
+        "ok": True,
+        "order": [p.name for p in reordered],
+        "note": (
+            "Registry reordered. Run `cmcp tmux` or `cmcp zellij` to "
+            "rebuild the observation session with the new pane order."
+        ),
+    })
 
 
 @mcp.tool()

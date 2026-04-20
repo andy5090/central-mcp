@@ -24,6 +24,7 @@ from central_mcp.cli._commands import (
     cmd_install,
     cmd_list,
     cmd_remove,
+    cmd_reorder,
     cmd_run,
     cmd_serve,
     cmd_tmux,
@@ -169,6 +170,30 @@ def build_parser() -> argparse.ArgumentParser:
     p_remove = sub.add_parser("remove", help="unregister a project")
     p_remove.add_argument("name")
     p_remove.set_defaults(func=cmd_remove)
+
+    p_reorder = sub.add_parser(
+        "reorder",
+        help=(
+            "reorder the registry's projects — names move to the front "
+            "in the given order; unmentioned projects keep their "
+            "relative order after the reordered prefix."
+        ),
+    )
+    p_reorder.add_argument(
+        "order",
+        nargs="+",
+        metavar="NAME",
+        help="project names in the desired order (at least one)",
+    )
+    p_reorder.add_argument(
+        "--strict",
+        action="store_true",
+        help=(
+            "require the `order` list to name every registered project "
+            "(errors if any is missing or extra)"
+        ),
+    )
+    p_reorder.set_defaults(func=cmd_reorder)
 
     p_init = sub.add_parser(
         "init",
