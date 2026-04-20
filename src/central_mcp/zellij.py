@@ -317,16 +317,20 @@ def build_layout(
             ))
 
     body = "\n".join(tabs)
-    # `default_tab_template` pins the tab-bar plugin to the bottom of
-    # every tab. Bottom placement keeps the first row of every pane
-    # (command banner, prompt) at the actual top of the terminal where
-    # the eye lands first; tab labels live on the edge the mouse and
-    # status-bar conventions already put there.
+    # Match zellij's stock UX: `tab-bar` at the top (labels + active-
+    # tab indicator) and `status-bar` at the bottom (mode indicator +
+    # keybinding preset hints). Earlier releases stripped the status
+    # bar entirely while moving the tab bar to the bottom, which
+    # looked cleaner at a glance but cost new users the discoverability
+    # of zellij's keybindings.
     template = (
         'default_tab_template {\n'
-        '    children\n'
         '    pane size=1 borderless=true {\n'
         '        plugin location="tab-bar"\n'
+        '    }\n'
+        '    children\n'
+        '    pane size=2 borderless=true {\n'
+        '        plugin location="status-bar"\n'
         '    }\n'
         '}'
     )

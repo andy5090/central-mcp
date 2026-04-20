@@ -3,6 +3,16 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.6.9] — 2026-04-21
+
+### Changed
+- **Zellij layout now ships both the tab-bar (top) and the status-bar (bottom)** — matching zellij's stock UX. Earlier releases stripped the status bar while moving the tab bar to the bottom; the cleaner look cost new users discoverability of zellij's built-in keybindings (Ctrl-p pane mode, Ctrl-t tab mode, etc). 0.6.6+ users can now see the mode indicator + keybinding preset hints right where zellij-native sessions put them.
+
+## [0.6.9] — 2026-04-21
+
+### Changed
+- **Zellij layout restores the stock top-tab / bottom-status chrome.** Earlier releases stripped the `status-bar` plugin entirely while moving `tab-bar` to the bottom; the minimalist look cost new users discoverability of zellij's built-in keybindings (Ctrl-p pane mode, Ctrl-t tab mode, etc). 0.6.9 emits the zellij-native `default_tab_template` — `tab-bar` on row 0, `status-bar` spanning the bottom two rows — so sessions created via `cmcp zellij` now look and feel like a zellij session a user would start on their own.
+
 ## [0.6.8] — 2026-04-21
 
 ### Changed
