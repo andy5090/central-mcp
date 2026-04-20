@@ -3,6 +3,25 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.6.6] — 2026-04-21
+
+### Fixed
+- **`pick_panes_per_window` greedy-break missed legitimate candidates.** The scan used to stop at the first `n` whose grid failed the readability floor, even though a larger `n` could pass — `pick_rows` flips from 1→2 rows mid-scan, widening per-pane columns. On a 200×50 terminal that meant auto returned 3 when 5 was the right answer. Scan now walks the full candidate range and returns the highest-n that clears the floor.
+- **Stale help text.** `--panes-per-window` help still said "default: 4" on `up` / `tmux` / `zellij` — but since 0.6.4 the default has been `auto`. Updated to say "auto — terminal-size derived" across the three subcommands so users stop chasing a flag they've already got.
+
+### Changed
+- **Readability floor bumped to 60 cols × 15 rows** (was 40×10). The previous floor was tuned for raw `central-mcp watch` event lines (timestamps + ids, ~30-40 chars) but ignored the actual coding-agent content the pane renders underneath — file paths, command invocations, stack traces routinely push 50-80 cols. 60×15 keeps one dispatch worth of start+content+done visible without scrolling or hard-wrap.
+- **Orch-aware column model** in `pick_panes_per_window`: the hub tab reserves one column for orchestrator, so pane width is `cols / (project_top_cols + 1)` rather than `cols / (n_top + 1)`. Slight refinement; typically produces the same n, occasionally permits one more pane on wide terminals.
+
+### Results on common terminals
+| Terminal | 0.6.5 (40×10 + greedy) | 0.6.6 (60×15 + full scan) |
+|---|---|---|
+| 80×24  | 2 | 1 |
+| 120×40 | 6 | 2 |
+| 200×50 | 8 | 5 |
+| 250×60 | 12 | 7 |
+| 300×80 | 12 | 13 |
+
 ## [0.6.5] — 2026-04-21
 
 ### Fixed

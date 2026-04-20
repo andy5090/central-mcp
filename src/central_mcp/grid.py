@@ -58,13 +58,17 @@ def pick_rows(
     return max(1, min(n_panes, round(r_est)))
 
 
-# Minimum char dimensions below which a pane is effectively unreadable.
-# Tuned against typical `central-mcp watch` output (project name header,
-# one-line dispatch events, short error excerpts); anything narrower
-# than ~40 cols word-wraps every other line, and anything shorter than
-# ~10 rows shows barely a couple of events before scrolling off.
-_MIN_PANE_COLS = 40
-_MIN_PANE_ROWS = 10
+# Minimum char dimensions below which a pane is no longer useful
+# for watching a coding agent at work. Tuned for `central-mcp watch`
+# output — dispatch start/end banners, agent line, prompt preview,
+# stdout tail — plus the kind of single-line content coding agents
+# routinely emit: absolute file paths (~60 chars), diff hunks, stack
+# traces, command invocations. Under 60 cols those lines hard-wrap
+# every other row and the pane becomes a scrolling blur; under 15
+# rows you can see barely one dispatch at a time before it scrolls
+# off the top.
+_MIN_PANE_COLS = 60
+_MIN_PANE_ROWS = 15
 
 
 def pick_panes_per_window(
@@ -90,18 +94,25 @@ def pick_panes_per_window(
     if cols < min_pane_cols or rows < min_pane_rows:
         return 1
 
-    # Brute-force: ascend through candidate pane counts; stop when a
-    # grid no longer keeps each pane above the readability floor.
+    # Scan the full candidate range and take the highest n whose grid
+    # still clears the readability floor. We can't break on the first
+    # failure because pick_rows flips from 1→2 rows somewhere mid-
+    # scan, which can widen per-pane cols and let a larger n succeed
+    # where a smaller n (in a taller single row) failed.
+    #
+    # Model: the first tab carries the orchestrator as a full-height
+    # left column, so project panes split the remaining width into
+    # `top_cols + 1` slots (one of which is orch). Overflow tabs have
+    # no orch so they're even roomier — the hub bound keeps both safe.
     best = 1
-    for n in range(2, 33):  # hard cap at 32 panes/tab, plenty for orchestration
+    for n in range(2, 33):  # hard cap at 32 panes/tab
         r = pick_rows(n, term_size=(cols, rows))
-        cols_per_row = (n + r - 1) // r
-        pane_w = cols // max(cols_per_row + 1, 1)   # +1 covers the orch column
+        projects = max(n - 1, 1)
+        top_cols = (projects + r - 1) // r
+        pane_w = cols // max(top_cols + 1, 1)
         pane_h = rows // max(r, 1)
         if pane_w >= min_pane_cols and pane_h >= min_pane_rows:
             best = n
-        else:
-            break
     return best
 
 

@@ -70,7 +70,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
         metavar="N",
-        help="max panes per tmux window (default: 4); overflow spills to cmcp-2, cmcp-3, …",
+        help=(
+            "max panes per window (default: auto — derived from the "
+            "current terminal size to keep each pane above a coding-"
+            "agent-readable floor). Overflow spills to cmcp-2, cmcp-3, …"
+        ),
     )
     p_up.add_argument(
         "--force-recreate",
@@ -129,7 +133,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_tmux.add_argument(
         "--panes-per-window", type=int, default=None, metavar="N",
-        help="max panes per tmux window (default: 4)",
+        help="max panes per tmux window (default: auto — terminal-size derived)",
     )
     p_tmux.add_argument(
         "--force-recreate",
@@ -160,7 +164,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_zellij.add_argument(
         "--panes-per-window", type=int, default=None, metavar="N",
-        help="max panes per tab (default: 4)",
+        help="max panes per zellij tab (default: auto — terminal-size derived)",
     )
     p_zellij.add_argument(
         "--force-recreate",
