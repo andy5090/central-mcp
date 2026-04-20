@@ -41,6 +41,29 @@ from central_mcp.scrub import scrub
 
 DEFAULT_PERMISSION_MODE = "bypass"
 
+# How many chars of dispatch stdout to keep on each terminal event so
+# orchestration_history / dispatch_history can surface "what came out"
+# without re-reading the raw `output` events. We keep the TAIL, not the
+# head, because code agents typically deliver their conclusion at the
+# end of their response.
+_OUTPUT_PREVIEW_LIMIT = 300
+
+
+def _output_preview(output: str, limit: int = _OUTPUT_PREVIEW_LIMIT) -> str:
+    """Compress a dispatch's final stdout into a short tail preview.
+
+    Returns "" for empty / missing output, the full value for short
+    outputs, or an ellipsis-prefixed tail for long ones. The caller's
+    stdout is already run through `scrub()` so the preview inherits the
+    same secret-redaction guarantees.
+    """
+    if not output:
+        return ""
+    stripped = output.rstrip()
+    if len(stripped) <= limit:
+        return stripped
+    return "…" + stripped[-limit:]
+
 
 _MCP_INSTRUCTIONS = """\
 You are connected to central-mcp, a multi-project orchestration hub for
@@ -64,7 +87,13 @@ instead:
                              Use this when the user asks "overall status?"
                              or "how is everything going?" — a single call
                              gives the orchestrator everything it needs to
-                             write a multi-project summary.
+                             write a multi-project summary. Each recent
+                             milestone carries `prompt_preview` (first
+                             120 chars of the prompt) and `output_preview`
+                             (tail 300 chars of the agent's stdout) so the
+                             orchestrator can group by project and show
+                             *what was done + what came out of it* without
+                             opening per-project logs.
   - add_project            — register a new project
   - remove_project         — unregister a project
   - update_project         — change a project's agent / fallback / permission_mode / etc.
@@ -203,6 +232,7 @@ def _project_history(project: str, n: int) -> list[dict[str, Any]]:
             "fallback_used": t.get("fallback_used", False),
             "error": t.get("error"),
             "prompt": s.get("prompt", ""),
+            "output_preview": t.get("output_preview", ""),
         })
     return merged
 
@@ -545,6 +575,13 @@ def dispatch(
             entry["status"] = final_status
             entry["result"] = final_result
 
+        # Condense the final stdout into a tail preview that rides on
+        # both the terminal event and the timeline milestone. This is
+        # what dispatch_history / orchestration_history later surface
+        # as "what came out of this dispatch" — without forcing the
+        # orchestrator to re-read every `output` event from the jsonl.
+        output_preview = _output_preview((final_result or {}).get("output", ""))
+
         # Emit terminal event for the watch log.
         events.log_event(
             project.name, dispatch_id,
@@ -556,6 +593,7 @@ def dispatch(
             duration_sec=final_result.get("duration_sec") if final_result else None,
             fallback_used=bool(final_result and final_result.get("fallback_used")),
             error=final_result.get("error") if final_result else None,
+            output_preview=output_preview,
         )
 
         # Append a compact milestone to the global timeline so portfolio-
@@ -570,6 +608,7 @@ def dispatch(
             duration_sec=final_result.get("duration_sec") if final_result else None,
             fallback_used=bool(final_result and final_result.get("fallback_used")),
             prompt_preview=(entry.get("prompt") or "")[:120],
+            output_preview=output_preview,
         )
 
     with _dispatch_lock:

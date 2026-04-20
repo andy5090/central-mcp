@@ -3,6 +3,23 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.5.2] — 2026-04-19
+
+### Added
+- **`output_preview` on every dispatch history record.** Each terminal event and timeline milestone now carries a 300-char tail of the agent's final stdout, so `dispatch_history` and `orchestration_history` can power per-project "what was done + what came out" summaries without fanning out to the raw jsonl logs. Preview is ellipsis-prefixed when truncated; short outputs pass through verbatim. Inherits the existing `scrub()` secret-redaction pipeline.
+- **Soft guidelines in orchestrator instructions (`data/CLAUDE.md` / `data/AGENTS.md`)** for multi-project sessions: infer the working project from conversation flow, recap the *arriving* project's recent history on context switch via `dispatch_history(B, n=3)`, and brief the portfolio (group `recent[]` by project, include `output_preview`) both on explicit asks and unprompted when churn is high. Explicitly framed as taste/sense, not hard rules.
+
+### Changed
+- **Watch output — agent line now bold.** The `agent: …` line in each dispatch `start` event in `central-mcp watch <project>` is bold instead of dim, making it obvious at a glance that per-dispatch overrides and fallback chains can pick a different agent than the project's registry default.
+- **Instruction files switched to English only.** Dropped the remaining Korean phrasing (`결과는?` / `결과?` recall cues and the conversational examples) from `data/CLAUDE.md` / `data/AGENTS.md`; these files are consumed by every orchestrator regardless of user locale. `README_KO.md` remains as the translated documentation surface.
+
+### Documentation
+- README / README_KO: rewrote "Permission modes" to explain `bypass` / `auto` / `restricted` with a vendor-naming map (claude `--dangerously-skip-permissions`, codex `--dangerously-bypass-approvals-and-sandbox`, gemini `--yolo`, droid `--skip-permissions-unsafe`, opencode `--dangerously-skip-permissions`) and the claude-only constraint on `auto` (Team/Enterprise/API + Sonnet/Opus 4.6).
+- README / README_KO: added a tight "Why the observation layer is *optional*" block — orchestrator is the primary surface, work should be possible from anywhere (including mobile/remote-access), observation helps only for live monitoring.
+
+### Note for upgrading users
+- `data/CLAUDE.md` / `data/AGENTS.md` are copied into `~/.central-mcp/` on first launch only (copy-on-miss). Existing users will not see the new multi-project guidelines until they delete or overwrite their local copies and relaunch.
+
 ## [0.5.1] — 2026-04-19
 
 ### Changed

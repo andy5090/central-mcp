@@ -421,6 +421,78 @@ def test_dispatch_writes_start_and_complete_events(
     assert r["dispatch_id"] in ids
 
 
+def test_dispatch_history_exposes_output_preview(
+    stub_project: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each terminal history record should carry an output_preview so
+    the orchestrator can summarise "what came out" without opening the
+    raw jsonl. Short outputs pass through verbatim."""
+    _install_stub(
+        monkeypatch,
+        lambda p: [sys.executable, "-c", "print('PROJECT_DONE_MARKER')"],
+    )
+    r = server.dispatch(stub_project, "do the thing", permission_mode="bypass")
+    _wait_for_complete(r["dispatch_id"])
+
+    hist = server.dispatch_history(stub_project)
+    assert hist["ok"] is True
+    assert hist["records"], "history should contain the completed dispatch"
+    rec = hist["records"][0]
+    assert "PROJECT_DONE_MARKER" in rec.get("output_preview", ""), (
+        f"output_preview missing or empty: {rec!r}"
+    )
+
+
+def test_orchestration_history_recent_includes_output_preview(
+    fake_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The timeline milestones that orchestration_history returns must
+    also carry output_preview so portfolio briefings can show per-
+    project stdout tails in a single call."""
+    _install_stub(
+        monkeypatch,
+        lambda p: [sys.executable, "-c", "print('ORCHESTRATION_MARKER')"],
+    )
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    registry.add_project(name="preview-proj", path_=str(cwd), agent="stub")
+
+    r = server.dispatch("preview-proj", "x", permission_mode="bypass")
+    _wait_for_complete(r["dispatch_id"])
+
+    snap = server.orchestration_history()
+    terminals = [
+        rec for rec in snap["recent"]
+        if rec.get("project") == "preview-proj" and rec.get("event") in ("complete", "error")
+    ]
+    assert terminals, "orchestration timeline missing the just-completed dispatch"
+    assert any(
+        "ORCHESTRATION_MARKER" in rec.get("output_preview", "")
+        for rec in terminals
+    ), f"no terminal milestone carries the expected output_preview: {terminals!r}"
+
+
+def test_output_preview_truncates_long_stdout(
+    stub_project: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Long stdout (>300 chars) must be compressed to an ellipsis-
+    prefixed tail so history records stay bounded."""
+    long_line = "X" * 500 + "_TAIL_MARKER"
+    _install_stub(
+        monkeypatch,
+        lambda p: [sys.executable, "-c", f"print({long_line!r})"],
+    )
+    r = server.dispatch(stub_project, "long output", permission_mode="bypass")
+    _wait_for_complete(r["dispatch_id"])
+
+    hist = server.dispatch_history(stub_project)
+    preview = hist["records"][0].get("output_preview", "")
+    assert preview.startswith("…"), f"long output should be tail-truncated, got {preview!r}"
+    assert "_TAIL_MARKER" in preview, "tail marker must survive the truncation"
+    # Ellipsis char plus 300-char tail == 301 chars max.
+    assert len(preview) <= 301, f"preview too long: len={len(preview)}"
+
+
 def test_dispatch_event_log_records_error_on_failure(
     stub_project: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:

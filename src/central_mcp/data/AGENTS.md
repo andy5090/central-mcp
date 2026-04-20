@@ -36,7 +36,7 @@ Beyond routing, sharpen multi-project sessions when the rhythm allows. These are
 
 - **Infer current project from conversation.** No server-side state exists. If the user refers to work without naming a project, assume the most-recent dispatch's project. Confirm in one sentence only if real ambiguity.
 - **Recap the arriving project, not the one being left.** When the user switches from project A to project B, pull `dispatch_history(B, n=3)` (plus `check_dispatch(last_id_of_B)` if in-flight) and show a compact summary so the user resumes B with state fresh. Skip only when B has no prior dispatches.
-- **Portfolio briefing when churn is high.** If the user has bounced across 3+ projects in a short span, offer an unprompted `orchestration_history()` cross-project snapshot. Once per session rhythm, not every turn.
+- **Portfolio briefing on explicit ask, unprompted on heavy churn.** When the user asks for overall status / "how is everything?", always call `orchestration_history()` and group `recent[]` by project — per project, report prompts (`prompt_preview`), outcomes, and `output_preview` (tail of agent stdout) when present. Unprompted mode: volunteer the same snapshot once per session when the user has bounced across 3+ projects in a short span.
 
 ## Exception
 
