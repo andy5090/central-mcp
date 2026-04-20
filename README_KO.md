@@ -304,7 +304,7 @@ central-mcp add NAME PATH [--agent claude|codex|gemini|droid|opencode]
 central-mcp remove NAME
 central-mcp list                   # 한 줄씩 레지스트리 출력
 central-mcp brief                  # 오케스트레이터용 마크다운 스냅샷
-central-mcp up [--no-orchestrator] [--permission-mode {bypass,auto,restricted}] [--panes-per-window N]
+central-mcp up [--no-orchestrator] [--permission-mode {bypass,auto,restricted}] [--max-panes N]
                                    # 선택적 tmux 관찰 레이어 생성
 central-mcp tmux [up과 동일 플래그]   # 세션이 없으면 생성 후 tmux로 attach
 central-mcp zellij [up과 동일 플래그] # 동일, 단 zellij로 (KDL 레이아웃 생성)
@@ -336,7 +336,7 @@ central-mcp upgrade [--check]      # PyPI에서 최신 버전 확인 후 자동 
 - **Pane 0 — 오케스트레이터** (Claude Code / Codex / Gemini / opencode). `~/.central-mcp`에서 기동되어 허브의 `CLAUDE.md` / `AGENTS.md`를 읽음.
 - **Pane 1…N — 프로젝트당 하나**. 각 pane은 `central-mcp watch <project>`를 실행해 해당 프로젝트의 dispatch 활동(프롬프트, 출력, exit code, duration)을 실시간 스트리밍.
 
-윈도우 이름은 `cmcp-<N>` 형식. 오케스트레이터가 포함된 첫 윈도우는 `-hub` 접미사(`cmcp-1-hub`)가 붙어 한눈에 구분됩니다. `Ctrl+b n` / `Ctrl+b <숫자>`로 pane 전환. 레지스트리가 한 윈도우에 담기 어려운 규모면 `cmcp-2`, `cmcp-3`, … 윈도우가 자동 생성됩니다. `--panes-per-window` 는 0.6.4+ 부터 **auto** 가 기본값 — 현재 터미널 크기를 읽어 readability floor (~40 cols × 10 rows per pane) 위에서 몇 개까지 담을지 자동 계산. 정수를 직접 넘기면 override.
+윈도우 이름은 `cmcp-<N>` 형식. 오케스트레이터가 포함된 첫 윈도우는 `-hub` 접미사(`cmcp-1-hub`)가 붙어 한눈에 구분됩니다. `Ctrl+b n` / `Ctrl+b <숫자>`로 pane 전환. 레지스트리가 한 윈도우에 담기 어려운 규모면 `cmcp-2`, `cmcp-3`, … 윈도우가 자동 생성됩니다. `--max-panes N` 은 윈도우당 pane 개수 상한 — 생략하면 현재 터미널 크기를 읽어 readability floor (~70 cols × 15 rows per pane, 13-15" 노트북 전체화면이 2 column slice로 떨어지도록 튜닝) 위에서 몇 개까지 담을지 자동 계산.
 
 **오케스트레이터 배치**: 첫 윈도우는 오케스트레이터 pane을 **전체 세로 높이를 차지하는 좌측 열**로 배치하고, 열 너비는 프로젝트 열 하나와 동일하게 맞춥니다. `orch + 1 project` → 50/50, `orch + 3 projects` → 4열 동등 (한 row), `orch + 9 projects` → orch가 1/6 너비 + 우측 2×5 프로젝트 격자.
 
@@ -345,7 +345,7 @@ central-mcp tmux                   # 원샷: 세션 없으면 생성, 바로 att
 central-mcp tmux --permission-mode auto        # claude 전용, 분류기 검토 오케스트레이터
 central-mcp tmux --permission-mode restricted  # 자동 승인 없이 기동 (프롬프트는 멈춤)
 central-mcp tmux --no-orchestrator # watch pane만
-central-mcp tmux --panes-per-window 6
+central-mcp tmux --max-panes 6
 central-mcp up                     # attach 없이 세션만 생성 (스크립트용)
 central-mcp down                   # 세션 종료
 ```

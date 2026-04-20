@@ -59,15 +59,13 @@ def pick_rows(
 
 
 # Minimum char dimensions below which a pane is no longer useful
-# for watching a coding agent at work. Tuned for `central-mcp watch`
-# output — dispatch start/end banners, agent line, prompt preview,
-# stdout tail — plus the kind of single-line content coding agents
-# routinely emit: absolute file paths (~60 chars), diff hunks, stack
-# traces, command invocations. Under 60 cols those lines hard-wrap
-# every other row and the pane becomes a scrolling blur; under 15
-# rows you can see barely one dispatch at a time before it scrolls
-# off the top.
-_MIN_PANE_COLS = 60
+# for watching a coding agent at work. Tuned so a 13–15" laptop at
+# its native full-screen terminal (≈160–200 cols) lands on exactly
+# two column slices — orchestrator on the left, project panes
+# vertically stacked on the right. Dropping below 70 cols forces
+# file paths, commands and stack traces to hard-wrap; dropping below
+# 15 rows shows barely one dispatch before it scrolls off.
+_MIN_PANE_COLS = 70
 _MIN_PANE_ROWS = 15
 
 

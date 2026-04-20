@@ -3,6 +3,24 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.6.7] — 2026-04-21
+
+### Changed
+- **BREAKING** — CLI flag renamed from `--panes-per-window` to `--max-panes`. The flag has always behaved as a cap (layouts never pad to a fixed count, and an explicit int just upper-bounds the auto selection); the old name only described one use-case. No deprecated alias — scripts passing `--panes-per-window` need a one-line update.
+- **Readability floor raised to 70 × 15 cells** (was 60 × 15). Tuned so a 13–15" laptop full-screen terminal (160–200 cols) lands on exactly two total column slices — orchestrator on the left, project panes vertically stacked on the right, each at its widest possible width. Wider terminals (250×60 and above) still expand to multi-column project grids.
+
+### Results on common terminals (n panes / window)
+| Terminal            | 0.6.6 (60×15) | 0.6.7 (70×15) |
+|---------------------|---------------|---------------|
+| 80×24               | 1             | 1             |
+| 120×40 (half-split) | 2             | 1             |
+| 160×50 (13″)        | 2             | 2             |
+| 200×50 (15″)        | 5             | 2             |
+| 250×60 (27″)        | 7             | 5             |
+| 300×80 (27″ 4K)     | 13            | 9             |
+
+The new default intentionally favors wider panes over more panes on mid-size terminals; the per-session override (`cmcp zellij --max-panes N`) is the escape hatch for users who want to pack more.
+
 ## [0.6.6] — 2026-04-21
 
 ### Fixed

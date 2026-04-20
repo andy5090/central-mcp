@@ -55,12 +55,28 @@ class TestPickRows:
 class TestPickPanesPerWindow:
     from central_mcp.grid import pick_panes_per_window
 
-    def test_laptop_terminal_caps_reasonably(self) -> None:
+    def test_laptop_half_screen_returns_one(self) -> None:
         from central_mcp.grid import pick_panes_per_window
-        # 120x40 is a typical laptop terminal. Packing more than ~8 panes
-        # into it runs each pane below the readability floor.
-        n = pick_panes_per_window(term_size=(120, 40))
-        assert 2 <= n <= 12
+        # 120×40 — roughly a half-split laptop terminal. With the 70×15
+        # floor, even two panes don't fit (orch + 1 project = 60 cols
+        # each, below the 70-col minimum). Caller is expected to see a
+        # single-pane layout and add `--max-panes N` if they want more.
+        assert pick_panes_per_window(term_size=(120, 40)) == 1
+
+    def test_laptop_full_screen_returns_two_column_slices(self) -> None:
+        from central_mcp.grid import pick_panes_per_window, pick_rows
+        # 160×50 and 200×50 represent typical 13-15" laptop full-screen
+        # terminals. The readability floor is tuned so these land on
+        # exactly 2 total column slices (orch + one project column
+        # vertically stacked), which is the target.
+        for ts in [(160, 50), (200, 50)]:
+            n = pick_panes_per_window(term_size=ts)
+            r = pick_rows(n, term_size=ts)
+            top_cols = (max(n - 1, 1) + r - 1) // r
+            assert top_cols <= 1, (
+                f"terminal {ts} should land on ≤1 project columns, "
+                f"got n={n}, r={r}, top_cols={top_cols}"
+            )
 
     def test_ultra_wide_terminal_allows_more(self) -> None:
         from central_mcp.grid import pick_panes_per_window

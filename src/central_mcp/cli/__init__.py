@@ -66,7 +66,7 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p_up.add_argument(
-        "--panes-per-window",
+        "--max-panes",
         type=int,
         default=None,
         metavar="N",
@@ -132,7 +132,7 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p_tmux.add_argument(
-        "--panes-per-window", type=int, default=None, metavar="N",
+        "--max-panes", type=int, default=None, metavar="N",
         help="max panes per tmux window (default: auto — terminal-size derived)",
     )
     p_tmux.add_argument(
@@ -163,7 +163,7 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p_zellij.add_argument(
-        "--panes-per-window", type=int, default=None, metavar="N",
+        "--max-panes", type=int, default=None, metavar="N",
         help="max panes per zellij tab (default: auto — terminal-size derived)",
     )
     p_zellij.add_argument(
