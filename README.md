@@ -366,14 +366,16 @@ Only matters if you use the observation layer. If you don't (dispatch-only workf
 
 When you `central-mcp upgrade` (or `pip install -U central-mcp`) with a `cmcp up` session already running, the panes keep holding the **previous version's** orchestrator CLI and `central-mcp watch` child processes. Those processes don't pick up binary changes mid-flight — added event types, updated argv flags, new instruction files in `~/.central-mcp/`, etc, won't reach them until they restart. On attach you may see stale agent output or zellij's "Exit: 0 — Enter to re-run" message on a watch pane whose old child has died.
 
-Central-mcp guards against this with a version stamp (`~/.central-mcp/session-info.toml`). On the next `cmcp up` / `cmcp tmux` / `cmcp zellij`, if the stamp doesn't match the currently-installed version, the command refuses to attach and prints a warning. Two ways forward:
+**0.6.3+**: `central-mcp upgrade` **automatically tears down any live observation session** before replacing the binary. The common upgrade path (`central-mcp upgrade` followed by `cmcp zellij`) now "just works" — no manual cleanup required. (`--check` is read-only and skips the teardown.)
+
+For the other upgrade paths (`pip install -U`, `uv tool upgrade`, etc) that bypass `cmcp upgrade`, the version stamp (`~/.central-mcp/session-info.toml`) still guards the next attach. If the stamp doesn't match the currently-installed version, the `cmcp up` / `cmcp tmux` / `cmcp zellij` command refuses to attach and prints a warning. Two recovery paths:
 
 ```bash
 cmcp down && cmcp zellij        # manual: tear down, then re-attach with the new binary
 cmcp zellij --force-recreate    # one-step: rebuild the session in place
 ```
 
-After either path, every pane is respawned under the new version. The stamp is written by whichever of the three create-session paths (`up` / `tmux` / `zellij`) actually built the session, and cleared by `cmcp down`. Legacy sessions from before 0.6.1 have no stamp and attach without complaint — the guard only activates on an actual version mismatch.
+Either way, every pane is respawned under the new version. The stamp is written by whichever of the three create-session paths (`up` / `tmux` / `zellij`) actually built the session, and cleared by `cmcp down` (and by `cmcp upgrade`). Legacy sessions from before 0.6.1 have no stamp and attach without complaint — the guard only activates on an actual version mismatch.
 
 ## Registry resolution
 
