@@ -461,6 +461,89 @@ class TestPaneTitlesAndStyle:
         assert any("Central MCP Orchestrator" in t for t in titles)
         assert "proj" in titles
 
+    def test_orch_column_full_height_with_many_projects(
+        self, fake_home: Path, tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """E2E: with orch + 9 projects on a wide terminal, orchestrator
+        takes a full-height left column and projects land in a 2-row
+        grid on the right with equal widths within each row.
+
+        This is the scenario that regressed in 0.6.4 — without
+        `-x/-y` on `new-session` tmux would build the layout in an
+        80×24 window, and attach-time rescaling mangled the column
+        ratios. Passing terminal dimensions up front is what fixes it,
+        so we explicitly monkey-patch `get_terminal_size` to 200×50
+        and verify the geometry end-to-end.
+        """
+        import os
+        import shutil as _shutil
+        monkeypatch.setattr(
+            _shutil,
+            "get_terminal_size",
+            lambda fallback=None: os.terminal_size((200, 50)),
+        )
+
+        for i in range(9):
+            d = tmp_path / f"p{i}"
+            d.mkdir()
+            registry.add_project(f"p{i}", str(d), agent="shell")
+        orch_dir = tmp_path / "orch"
+        orch_dir.mkdir()
+        orch = layout.OrchestratorPane(command=":", cwd=str(orch_dir), label="stub")
+
+        created, messages = layout.ensure_session(
+            orchestrator=orch, panes_per_window=10,
+        )
+        assert created
+        assert not any("failed" in m for m in messages), messages
+
+        hub = layout.window_name(0, has_orchestrator=True)
+        r = tmux._run([
+            "list-panes", "-t", f"{layout.SESSION}:{hub}",
+            "-F", "#{pane_index}:#{pane_top}:#{pane_left}:#{pane_width}:#{pane_height}",
+        ])
+        assert r.ok
+        panes = []
+        for line in r.stdout.strip().splitlines():
+            idx, top, left, w, h = (int(x) for x in line.split(":"))
+            panes.append({"index": idx, "top": top, "left": left, "w": w, "h": h})
+
+        # Orchestrator = pane 0 at left=0, height spans the whole window
+        # (top row + bottom row combined).
+        orch_pane = next(p for p in panes if p["index"] == 0)
+        assert orch_pane["left"] == 0
+        # Full-height orchestrator: height covers both project rows.
+        assert orch_pane["h"] >= 48, (
+            f"orch pane should span full height, got h={orch_pane['h']}"
+        )
+
+        # Project panes split into top row (top≈1) and bottom row (top≈26+).
+        project_panes = [p for p in panes if p["index"] != 0]
+        top_row = [p for p in project_panes if p["top"] == 1]
+        bot_row = [p for p in project_panes if p["top"] > 1]
+
+        assert len(top_row) == 5, f"top row should have 5 projects, got {top_row!r}"
+        assert len(bot_row) == 4, f"bot row should have 4 projects, got {bot_row!r}"
+
+        # Within a row, widths should be equal (≤ 2 cells variance from
+        # whole-cell rounding).
+        top_widths = sorted(p["w"] for p in top_row)
+        assert top_widths[-1] - top_widths[0] <= 2, (
+            f"top row widths not equal: {top_widths!r}"
+        )
+        bot_widths = sorted(p["w"] for p in bot_row)
+        assert bot_widths[-1] - bot_widths[0] <= 2, (
+            f"bot row widths not equal: {bot_widths!r}"
+        )
+
+        # Orchestrator column width should match one top-row column
+        # (±2 cells of rounding).
+        assert abs(orch_pane["w"] - top_widths[0]) <= 2, (
+            f"orch column width {orch_pane['w']} not aligned with "
+            f"top-row col width {top_widths[0]}"
+        )
+
     def test_hub_row_panes_have_equal_widths(
         self, fake_home: Path, tmp_path: Path
     ) -> None:

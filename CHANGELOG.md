@@ -3,6 +3,22 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.6.5] — 2026-04-21
+
+### Fixed
+- **tmux layout widths mangled at attach time.** 0.6.4's orchestrator column + equal-width project grid computed sizes correctly, but `tmux new-session -d` defaulted to 80×24, and attach-time rescaling did not preserve those ratios — on a wide terminal you'd end up with the orchestrator taking ~36% width and a single project absorbing another 36% while the rest collapsed to ~12 cells each. `tmux.new_session` now accepts `width`/`height`, and `layout.ensure_session` passes the invoking terminal's dimensions via `shutil.get_terminal_size(fallback=(200, 50))` so the layout is built at its real size from the start. Verified with a new live E2E test (`test_orch_column_full_height_with_many_projects`) that dispatches orch + 9 projects on a 200×50 terminal and asserts the actual `list-panes` geometry.
+
+### Removed
+- 6 unnecessary unit tests identified in a suite audit. Removals were either (a) redundant with other tests that exercise the same behavior through a more realistic path, or (b) testing Python/stdlib defaults rather than central-mcp logic.
+  - `tests/test_watch.py::TestTailBehavior::test_creates_log_path_when_missing` — simulated `pathlib.mkdir` without calling `watch.run`.
+  - `tests/test_orchestration.py::TestDispatchHistory::test_single_project_history` — duplicated by `test_dispatch.py::test_dispatch_history_exposes_output_preview`.
+  - `tests/test_orchestration.py::TestOrchestrationHistory::test_includes_timeline_and_per_project_stats` — duplicated by `test_dispatch.py::test_orchestration_history_recent_includes_output_preview` plus `test_dispatch_writes_start_and_complete_events`.
+  - `tests/test_adapters.py::TestAdapterRegistry::test_every_valid_agent_has_an_adapter` — every per-agent `TestClaude`/`TestCodex`/etc. class already calls `get_adapter(name)`.
+  - `tests/test_registry.py::test_add_default_agent_is_claude` — tested the Python default-parameter value, not registry behavior.
+  - `tests/test_registry.py::test_write_creates_parent_dir` — tested `Path.mkdir(parents=True)` which is exercised transitively by every other test in the file.
+
+Net test count: 219 (was 224; −6 audit, +1 E2E geometry).
+
 ## [0.6.4] — 2026-04-20
 
 ### Changed

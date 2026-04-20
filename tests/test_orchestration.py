@@ -40,26 +40,6 @@ def _wait(dispatch_id: str, timeout: float = 10.0) -> dict:
 class TestDispatchHistory:
     """dispatch_history reads terminal events from the project's jsonl log."""
 
-    def test_single_project_history(
-        self, fake_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        _install_stub(monkeypatch, lambda p: [sys.executable, "-c", "print('ok')"])
-        cwd = tmp_path / "cwd"
-        cwd.mkdir()
-        registry.add_project(name="alpha", path_=str(cwd), agent="stub")
-
-        r = server.dispatch("alpha", "hello", permission_mode="bypass")
-        _wait(r["dispatch_id"])
-
-        hist = server.dispatch_history("alpha")
-        assert hist["ok"] is True
-        assert hist["project"] == "alpha"
-        assert hist["count"] >= 1
-        rec = hist["records"][0]
-        assert rec["dispatch_id"] == r["dispatch_id"]
-        assert rec["prompt"] == "hello"
-        assert rec["ok"] is True
-
     def test_unknown_project(self, fake_home: Path) -> None:
         r = server.dispatch_history("ghost")
         assert r["ok"] is False
@@ -68,39 +48,6 @@ class TestDispatchHistory:
 
 class TestOrchestrationHistory:
     """orchestration_history returns a cross-project snapshot."""
-
-    def test_includes_timeline_and_per_project_stats(
-        self, fake_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        _install_stub(monkeypatch, lambda p: [sys.executable, "-c", "print('ok')"])
-        a = tmp_path / "a"
-        a.mkdir()
-        b = tmp_path / "b"
-        b.mkdir()
-        registry.add_project(name="alpha", path_=str(a), agent="stub")
-        registry.add_project(name="beta", path_=str(b), agent="stub")
-
-        r1 = server.dispatch("alpha", "task1", permission_mode="bypass")
-        r2 = server.dispatch("beta", "task2", permission_mode="bypass")
-        _wait(r1["dispatch_id"])
-        _wait(r2["dispatch_id"])
-
-        snap = server.orchestration_history()
-        assert snap["ok"] is True
-
-        # Timeline covers both dispatched + complete events for both projects.
-        projects_in_recent = {rec.get("project") for rec in snap["recent"]}
-        assert "alpha" in projects_in_recent
-        assert "beta" in projects_in_recent
-
-        # Per-project stats aggregate outcomes.
-        assert snap["per_project"]["alpha"]["dispatched"] >= 1
-        assert snap["per_project"]["alpha"]["succeeded"] >= 1
-        assert snap["per_project"]["beta"]["succeeded"] >= 1
-
-        # Registered projects list included for context.
-        names = {p["name"] for p in snap["registered_projects"]}
-        assert {"alpha", "beta"} <= names
 
     def test_in_flight_reports_running_dispatches(
         self, fake_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

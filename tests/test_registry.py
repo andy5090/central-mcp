@@ -63,18 +63,6 @@ def test_find_project(fake_home: Path) -> None:
     assert registry.find_project("missing") is None
 
 
-def test_add_default_agent_is_claude(fake_home: Path) -> None:
-    proj = registry.add_project("p", "/p")
-    assert proj.agent == "claude"
-
-
-def test_write_creates_parent_dir(fake_home: Path) -> None:
-    # fake_home doesn't exist yet; first write must mkdir -p.
-    assert not fake_home.exists()
-    registry.add_project("first", "/tmp/first")
-    assert (fake_home / "registry.yaml").exists()
-
-
 def test_update_project_agent_only(fake_home: Path) -> None:
     registry.add_project("p", "/p", agent="claude", description="d", tags=["x"])
     updated = registry.update_project("p", agent="codex")

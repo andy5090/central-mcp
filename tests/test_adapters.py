@@ -13,11 +13,6 @@ from central_mcp.adapters.base import VALID_AGENTS, _ADAPTERS, get_adapter
 
 
 class TestAdapterRegistry:
-    def test_every_valid_agent_has_an_adapter(self) -> None:
-        for name in VALID_AGENTS:
-            adapter = get_adapter(name)
-            assert adapter.name == name
-
     def test_unknown_agent_falls_back_to_fallback_adapter(self) -> None:
         adapter = get_adapter("nonexistent")
         assert adapter.name == "(unknown)"

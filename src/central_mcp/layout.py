@@ -265,9 +265,21 @@ def ensure_session(
     for p in projects:
         plan.append((p.name, p.path, _pane_command(p), False))
 
+    # Size the tmux session to the invoking terminal. Without this,
+    # `new-session -d` defaults to 80×24 and any layout we build is
+    # scaled when a larger client attaches — and tmux's rescaling does
+    # NOT preserve the equal-width / orch-column ratios we set via
+    # `-l N%` splits. Capturing the current terminal dimensions at
+    # session creation time keeps those ratios intact at attach time.
+    import shutil as _shutil
+    _term_cols, _term_rows = _shutil.get_terminal_size(fallback=(200, 50))
+
     if not plan:
         messages.append("registry.yaml has no projects and no orchestrator — creating empty session")
-        r = tmux.new_session(SESSION, window_name(0), ".")
+        r = tmux.new_session(
+            SESSION, window_name(0), ".",
+            width=_term_cols, height=_term_rows,
+        )
         if not r.ok:
             messages.append(f"new-session failed: {r.stderr.strip()}")
             return False, messages
@@ -288,7 +300,10 @@ def ensure_session(
         first_title, first_cwd, first_cmd, first_is_orch = chunk[0]
 
         if win_idx == 0:
-            r = tmux.new_session(SESSION, wname, first_cwd, command=first_cmd)
+            r = tmux.new_session(
+                SESSION, wname, first_cwd, command=first_cmd,
+                width=_term_cols, height=_term_rows,
+            )
             op = "new-session"
         else:
             r = tmux.new_window(SESSION, wname, first_cwd, command=first_cmd)

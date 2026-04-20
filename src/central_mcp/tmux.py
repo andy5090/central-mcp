@@ -40,8 +40,27 @@ def has_session(name: str) -> bool:
     return _run(["has-session", "-t", name]).ok
 
 
-def new_session(name: str, window: str, cwd: str, command: str | None = None) -> TmuxResult:
+def new_session(
+    name: str,
+    window: str,
+    cwd: str,
+    command: str | None = None,
+    *,
+    width: int | None = None,
+    height: int | None = None,
+) -> TmuxResult:
+    """Create a detached tmux session.
+
+    `width`/`height` make tmux size the session's window to those
+    dimensions from the start. Without them, tmux defaults to 80×24,
+    and any layout built in that tiny window gets mangled when a
+    larger client later attaches (pane sizes don't proportionally
+    rescale). Passing real terminal dimensions keeps the layout
+    exactly as `select-layout` / manual splits produced it.
+    """
     args = ["new-session", "-d", "-s", name, "-n", window, "-c", cwd]
+    if width is not None and height is not None:
+        args += ["-x", str(width), "-y", str(height)]
     if command:
         args.append(command)
     return _run(args)

@@ -112,22 +112,3 @@ class TestRender:
         assert "unexpected exception" in out
 
 
-class TestTailBehavior:
-    def test_creates_log_path_when_missing(
-        self, fake_home: Path, monkeypatch
-    ) -> None:
-        """Watch must not fail when log file doesn't exist yet.
-
-        We don't actually follow forever; we just verify that the
-        file is created so `tail -f` semantics work on fresh projects.
-        """
-        from central_mcp import events
-
-        log = events.log_path("fresh")
-        assert not log.exists()
-
-        # Simulate what run() does before entering the tail loop:
-        log.parent.mkdir(parents=True, exist_ok=True)
-        log.touch()
-
-        assert log.exists()
