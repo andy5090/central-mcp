@@ -287,15 +287,11 @@ central-mcp upgrade [--check]      # self-update from PyPI (uv → pip fallback)
 
 ## Optional observation layer
 
-### Why it's *optional* (and why the default is "no panes at all")
+### Why it's *optional*
 
-Central-mcp is built so the **orchestrator itself is your surface** — not a wall of terminal panes. Each call to `dispatch` / `check_dispatch` / `list_dispatches` / `orchestration_history` returns a structured summary (output, exit code, duration, attempts, fallbacks, per-project stats); the orchestrator reads those and tells you what happened in natural language. You ask *"how did the refactor go?"*, the orchestrator answers. You don't need to eyeball scrolling stdout to know.
-
-That design exists because central-mcp aims to keep project work **doable from anywhere, anytime** — including moments when the user is away from their main desk and only has a phone or tablet reaching the machine over SSH / remote access. Not because that's the majority of usage, but because if the hub only functions while you're parked in front of a multi-pane dashboard, you lose the ability to make progress in those off-desk moments. So the orchestrator is designed to be sufficient on its own: talk to it in plain language, let it run the fleet, get structured summaries back. A full multiplexer grid layered on top is useful when available but is intentionally not a prerequisite.
-
-So **unless you specifically want real-time monitoring** — watching tokens land, catching a dispatch hang as it happens, tailing output for a long-running migration — you don't need the observation layer at all. The hub works fine without it, and `dispatch_history` / `orchestration_history` cover after-the-fact review.
-
-Turn it on when you actually benefit from the live view (local desktop, debugging a stuck agent, screen-sharing the fleet during a session, etc).
+- **Orchestrator is the primary surface.** `dispatch` / `check_dispatch` / `orchestration_history` return structured summaries; the orchestrator turns those into natural-language status — no scrolling stdout required.
+- **Work should be possible from anywhere.** central-mcp is designed so a phone/tablet over SSH is enough to keep moving. The hub can't require a multi-pane desktop to function.
+- **Turn observation on only when the live view actually helps** — debugging a stuck agent, tailing a long migration, or screen-sharing the fleet. For normal operation it adds noise, not signal.
 
 ### Backends
 
