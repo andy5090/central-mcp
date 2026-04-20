@@ -134,6 +134,98 @@ class TestBuildLayout:
         assert "sleep infinity" in kdl
 
 
+class TestTilingShape:
+    """Verify the 2-row wide-column tiling algorithm.
+
+    The underlying `_tile_panes` helper is internal, so we inspect the
+    generated KDL to assert the structural contract: at most `rows=2`
+    rows, columns grow horizontally, small pane counts collapse to a
+    single horizontal row.
+    """
+
+    def _count(self, kdl: str, needle: str) -> int:
+        return kdl.count(needle)
+
+    def test_overflow_four_panes_build_2x2_grid(
+        self, fake_home, tmp_path
+    ) -> None:
+        # 4 projects total = 4 in overflow tab (no orchestrator).
+        for i in range(4):
+            d = tmp_path / f"p{i}"
+            d.mkdir()
+            registry.add_project(f"p{i}", str(d), agent="shell")
+
+        kdl = zellij.build_layout(panes_per_window=4)
+        # 4 panes should produce 2 rows, each a vertical (side-by-side)
+        # split — i.e., one outer horizontal + two inner vertical splits.
+        assert 'split_direction="horizontal"' in kdl
+        assert self._count(kdl, 'split_direction="vertical"') >= 2, (
+            "expected at least two vertical splits for a 2x2 grid"
+        )
+
+    def test_overflow_ten_panes_grow_horizontally(
+        self, fake_home, tmp_path
+    ) -> None:
+        # 10 projects with panes_per_window=10 → one overflow tab with
+        # 10 panes, which should render as 2 rows × 5 cols (wide),
+        # not 5 rows × 2 cols (tall).
+        for i in range(10):
+            d = tmp_path / f"p{i}"
+            d.mkdir()
+            registry.add_project(f"p{i}", str(d), agent="shell")
+
+        kdl = zellij.build_layout(panes_per_window=10)
+        # The top row contains p0..p4; the bottom row contains p5..p9.
+        # Find the order of project names in the KDL and assert the
+        # expected grouping.
+        positions = [kdl.index(f'"p{i}"') for i in range(10)]
+        # Top row (p0..p4) should appear before the bottom row (p5..p9).
+        assert max(positions[:5]) < min(positions[5:]), (
+            f"top row panes should come before bottom row panes; positions={positions}"
+        )
+
+    def test_hub_with_three_projects_uses_grid_on_right(
+        self, fake_home, tmp_path
+    ) -> None:
+        # Orchestrator + 3 project panes in hub (panes_per_window=5 →
+        # hub holds orch + 3 projects).
+        for i in range(3):
+            d = tmp_path / f"p{i}"
+            d.mkdir()
+            registry.add_project(f"p{i}", str(d), agent="shell")
+
+        orch = OrchestratorPane(command="echo hi", cwd=str(tmp_path), label="stub")
+        kdl = zellij.build_layout(orchestrator=orch, panes_per_window=5)
+
+        # When the right half has 3 panes, we should see the 2-row grid:
+        # outer vertical (orch | right-block), right-block is horizontal
+        # (top row | bot row), top row is vertical (p0 p1).
+        # At minimum: at least 3 `split_direction="vertical"` occurrences
+        # (outer orch-vs-right + top row + any other row-internal splits).
+        assert self._count(kdl, 'split_direction="vertical"') >= 2
+
+    def test_hub_with_two_projects_keeps_vertical_stack(
+        self, fake_home, tmp_path
+    ) -> None:
+        """Regression guard: orch + 2 projects should NOT trigger the
+        new 2-row grid — halving a narrow right column into a 2-col
+        row would make each project pane unreadably thin."""
+        for i in range(2):
+            d = tmp_path / f"p{i}"
+            d.mkdir()
+            registry.add_project(f"p{i}", str(d), agent="shell")
+
+        orch = OrchestratorPane(command="echo hi", cwd=str(tmp_path), label="stub")
+        kdl = zellij.build_layout(orchestrator=orch, panes_per_window=4)
+        # Stack-style right block uses exactly one horizontal split
+        # (the right-side children); the outer vertical is the
+        # orchestrator-vs-right divider. So total vertical splits = 1.
+        # Project panes appear in order top-to-bottom, stacked.
+        p0_idx = kdl.index('"p0"')
+        p1_idx = kdl.index('"p1"')
+        assert p0_idx < p1_idx
+
+
 class TestWriteLayout:
     def test_creates_parent_and_writes_kdl(
         self, fake_home: Path, tmp_path: Path

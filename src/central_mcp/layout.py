@@ -57,6 +57,90 @@ def _wrap(launch: str) -> str:
     return f"sh -c '{launch}; exec $SHELL'"
 
 
+def _fill_2row_grid(
+    target: str,
+    wname: str,
+    anchor_id: str,
+    plans: list[tuple[str, str, str | None, bool]],
+    messages: list[str],
+) -> None:
+    """Extend an existing pane into a 2-row grid by splitting it.
+
+    `anchor_id` points at a pane that already occupies the target
+    area. `plans` is the list of additional (title, cwd, cmd, is_orch)
+    tuples to lay out alongside it. The algorithm:
+
+      - 0 plans: nothing to do.
+      - 1 plan: single horizontal split, new pane side-by-side with
+        the anchor (one row × two cols).
+      - 2+ plans: vertical split first to open the bottom row (anchor
+        stays in the top row), then alternate horizontal splits of the
+        current rightmost pane of each row until every plan is placed.
+        Top row receives `ceil(N/2)` panes (anchor counts toward that).
+
+    `tmux.select_layout` is *not* called — the sequential-split sizes
+    already lay the panes out in the intended 2-row × N-col pattern,
+    and `tiled` would undo the structure. Split failures are logged to
+    `messages` so the caller's summary line surfaces them.
+    """
+    if not plans:
+        return
+
+    # Single extra pane: just add it side-by-side with the anchor.
+    if len(plans) == 1:
+        title, cwd, cmd, _ = plans[0]
+        ok, new_id = tmux.split_window_with_id(
+            anchor_id, cwd, cmd, vertical=False,
+        )
+        if not ok:
+            messages.append(f"split-window for {title} failed")
+            return
+        messages.append(f"{wname} -> {title} ({cwd})")
+        tmux.set_pane_title(new_id, title)
+        return
+
+    # 2+ extra plans: open the bottom row with a vertical split, then
+    # alternate rows filling to the target column counts.
+    total = 1 + len(plans)
+    top_target = (total + 1) // 2  # ceil(total / 2)
+
+    first_bot = plans[0]
+    ok, bot_rightmost = tmux.split_window_with_id(
+        anchor_id, first_bot[1], first_bot[2], vertical=True,
+    )
+    if not ok:
+        messages.append(f"split-window for {first_bot[0]} failed")
+        return
+    messages.append(f"{wname} -> {first_bot[0]} ({first_bot[1]})")
+    tmux.set_pane_title(bot_rightmost, first_bot[0])
+
+    top_rightmost = anchor_id
+    top_count = 1  # anchor
+    bot_count = 1  # first_bot
+
+    for title, cwd, cmd, _ in plans[1:]:
+        if top_count < top_target:
+            ok, new_id = tmux.split_window_with_id(
+                top_rightmost, cwd, cmd, vertical=False,
+            )
+            if not ok:
+                messages.append(f"split-window for {title} failed")
+                continue
+            top_rightmost = new_id
+            top_count += 1
+        else:
+            ok, new_id = tmux.split_window_with_id(
+                bot_rightmost, cwd, cmd, vertical=False,
+            )
+            if not ok:
+                messages.append(f"split-window for {title} failed")
+                continue
+            bot_rightmost = new_id
+            bot_count += 1
+        messages.append(f"{wname} -> {title} ({cwd})")
+        tmux.set_pane_title(new_id, title)
+
+
 def _pane_command(p: Project) -> str:
     """Project pane command — stream this project's dispatch events.
 
@@ -167,23 +251,52 @@ def ensure_session(
             )
         tmux.set_pane_title(f"{target}.0", first_title)
 
-        for i, (title, cwd, cmd, is_orch) in enumerate(chunk[1:], start=1):
-            r = tmux.split_window(target, cwd, command=cmd)
-            if not r.ok:
-                messages.append(f"split-window for {title} failed: {r.stderr.strip()}")
-                continue
-            messages.append(f"{wname} pane {i} -> {title} ({cwd})")
-            tmux.set_pane_title(f"{target}.{i}", title)
-            # Re-tile after every split so tmux redistributes space.
-            tmux.select_layout(target, "tiled")
+        is_hub = (win_idx == 0 and has_orchestrator)
+        remaining = chunk[1:]
 
-        # Hub window uses main-vertical with a 50% split so the
-        # orchestrator gets the left half and projects stack on the
-        # right. Overflow windows stay tiled so equal-size project
-        # panes read well.
-        if win_idx == 0 and has_orchestrator:
-            tmux.set_window_option(target, "main-pane-width", "50%")
-            tmux.select_layout(target, "main-vertical")
+        if is_hub:
+            # Hub: orchestrator on the left, project panes on the right.
+            # 1–2 projects → keep the legacy main-vertical stack (each
+            # project gets a tall pane, same as old behavior).
+            # 3+ projects → split off the right half, then tile those
+            # project panes in a 2-row grid so columns grow horizontally
+            # instead of stacking into an unreadable tall column.
+            if len(remaining) <= 2:
+                for i, (title, cwd, cmd, _) in enumerate(remaining, start=1):
+                    r = tmux.split_window(target, cwd, command=cmd)
+                    if not r.ok:
+                        messages.append(
+                            f"split-window for {title} failed: {r.stderr.strip()}"
+                        )
+                        continue
+                    messages.append(f"{wname} pane {i} -> {title} ({cwd})")
+                    tmux.set_pane_title(f"{target}.{i}", title)
+                    tmux.select_layout(target, "tiled")
+                if remaining:
+                    tmux.set_window_option(target, "main-pane-width", "50%")
+                    tmux.select_layout(target, "main-vertical")
+            else:
+                # 3+ projects: split the orchestrator off to the left,
+                # then build the 2-row grid anchored at the new right
+                # pane (which carries the first project).
+                first_proj = remaining[0]
+                ok, right_anchor = tmux.split_window_with_id(
+                    f"{target}.0", first_proj[1], first_proj[2], vertical=False,
+                )
+                if not ok:
+                    messages.append(
+                        f"hub right-half split failed for {first_proj[0]!r}"
+                    )
+                else:
+                    messages.append(
+                        f"{wname} -> {first_proj[0]} ({first_proj[1]})"
+                    )
+                    tmux.set_pane_title(right_anchor, first_proj[0])
+                    _fill_2row_grid(target, wname, right_anchor, remaining[1:], messages)
+        else:
+            # Overflow: no orchestrator, fill the whole window with a
+            # 2-row grid anchored on pane 0.
+            _fill_2row_grid(target, wname, f"{target}.0", remaining, messages)
 
     # Focus the first window/pane so attaching users land on pane 0
     # (orchestrator when present) rather than the last-split pane.

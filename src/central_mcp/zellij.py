@@ -116,63 +116,51 @@ def _command_pane(name: str, cwd: str, command: str, readonly: bool = False) -> 
     return "\n".join(lines)
 
 
-def _hub_tab_kdl(tab_name: str, orch_pane: str, project_panes: list[str]) -> str:
-    """Hub tab: orchestrator on left, projects stacked on the right.
-
-    Mirrors tmux main-vertical 50% via Zellij's `split_direction="vertical"`
-    at the tab root with two children that divide the horizontal axis.
-    """
-    indent = "        "
-    right_children = "\n".join(
-        "\n".join(indent + ln for ln in p.splitlines()) for p in project_panes
-    )
-    orch_indented = "\n".join("        " + ln for ln in orch_pane.splitlines())
-    right_block = (
-        "    pane split_direction=\"horizontal\" {\n"
-        f"{right_children}\n"
-        "    }"
-        if project_panes
-        else ""
-    )
-    return (
-        f'tab name={_kdl_escape(tab_name)} {{\n'
-        '    pane split_direction="vertical" {\n'
-        f'{orch_indented}\n'
-        f'{right_block}\n'
-        '    }\n'
-        '}'
-    )
-
-
 def _indent(s: str, prefix: str) -> str:
     return "\n".join(prefix + ln for ln in s.splitlines())
 
 
-def _tile_panes(panes: list[str], cols: int = 2) -> str:
-    """Arrange project panes into a 2-column grid.
+def _tile_panes(panes: list[str], rows: int = 2) -> str:
+    """Arrange panes in a grid with **at most `rows` rows**; columns
+    grow horizontally as the pane count increases.
 
-    Zellij doesn't have a `tiled` layout primitive, so we build the
-    grid explicitly: an outer horizontal split (rows stacked top-to-
-    bottom), each row being a vertical split (panes side-by-side).
-    Single-pane and single-row cases degrade cleanly.
+    Example progression for rows=2:
+      n=1  → single pane
+      n=2  → 1 row × 2 cols (side by side)
+      n=3  → 2 rows (top 2, bottom 1)
+      n=4  → 2 rows × 2 cols
+      n=10 → 2 rows × 5 cols
+
+    Zellij has no `tiled` primitive, so we emit nested splits: outer
+    `split_direction="horizontal"` stacks rows top-to-bottom; each row
+    is a `split_direction="vertical"` putting its panes side-by-side.
     """
     if not panes:
         return ""
     if len(panes) == 1:
         return panes[0]
 
-    rows = [panes[i:i + cols] for i in range(0, len(panes), cols)]
-
-    if len(rows) == 1:
-        inner = "\n".join(_indent(p, "    ") for p in rows[0])
+    n = len(panes)
+    # Small counts (n <= rows) collapse to a single row side-by-side —
+    # wide screens benefit from filling horizontal space first.
+    if n <= rows:
+        inner = "\n".join(_indent(p, "    ") for p in panes)
         return f'pane split_direction="vertical" {{\n{inner}\n}}'
 
+    cols_per_row = (n + rows - 1) // rows  # ceil(n / rows)
+    groups: list[list[str]] = []
+    for i in range(rows):
+        start = i * cols_per_row
+        if start >= n:
+            break
+        groups.append(panes[start:start + cols_per_row])
+
     row_blocks: list[str] = []
-    for row in rows:
-        if len(row) == 1:
-            row_blocks.append(_indent(row[0], "    "))
+    for group in groups:
+        if len(group) == 1:
+            row_blocks.append(_indent(group[0], "    "))
         else:
-            inner = "\n".join(_indent(p, "        ") for p in row)
+            inner = "\n".join(_indent(p, "        ") for p in group)
             row_blocks.append(
                 f'    pane split_direction="vertical" {{\n{inner}\n    }}'
             )
@@ -183,9 +171,46 @@ def _tile_panes(panes: list[str], cols: int = 2) -> str:
     )
 
 
+def _hub_tab_kdl(tab_name: str, orch_pane: str, project_panes: list[str]) -> str:
+    """Hub tab: orchestrator on left, projects on the right.
+
+    For 1–2 project panes the right half keeps a simple vertical stack
+    (halving the already-narrow right column with a horizontal split
+    would produce unreadably thin panes at that size). For 3+ project
+    panes the right half switches to the 2-row grid so columns grow
+    horizontally instead of stacking into one tall column.
+    """
+    orch_indented = "\n".join("        " + ln for ln in orch_pane.splitlines())
+
+    if not project_panes:
+        right_block = ""
+    elif len(project_panes) <= 2:
+        indent = "        "
+        right_children = "\n".join(
+            "\n".join(indent + ln for ln in p.splitlines()) for p in project_panes
+        )
+        right_block = (
+            "    pane split_direction=\"horizontal\" {\n"
+            f"{right_children}\n"
+            "    }"
+        )
+    else:
+        grid = _tile_panes(project_panes, rows=2)
+        right_block = _indent(grid, "    ")
+
+    return (
+        f'tab name={_kdl_escape(tab_name)} {{\n'
+        '    pane split_direction="vertical" {\n'
+        f'{orch_indented}\n'
+        f'{right_block}\n'
+        '    }\n'
+        '}'
+    )
+
+
 def _project_tab_kdl(tab_name: str, project_panes: list[str]) -> str:
-    """Overflow tab: project panes tiled in a 2-column grid."""
-    grid = _tile_panes(project_panes, cols=2)
+    """Overflow tab: project panes tiled in the 2-row grid."""
+    grid = _tile_panes(project_panes, rows=2)
     return (
         f'tab name={_kdl_escape(tab_name)} {{\n'
         + _indent(grid, "    ")

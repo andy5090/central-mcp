@@ -3,6 +3,17 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.6.2] — 2026-04-20
+
+### Changed
+- **2-row wide-column pane layout** for both observation backends. The old zellij grid fixed `cols=2` and grew rows as panes were added (10 panes → 5 rows × 2 cols, very tall). The new `_tile_panes` helper fixes `rows=2` and grows columns instead (10 panes → 2 rows × 5 cols). On a wide screen this fills horizontal space cleanly instead of squashing each pane into a thin horizontal sliver.
+- **Hub right-half switches to 2-row grid at 3+ project panes.** For 1–2 projects the hub keeps the legacy vertical stack on the right (main-vertical for tmux, single `split_direction="horizontal"` for zellij) — splitting the already-narrow right column into two would produce unreadably thin panes at that scale. At 3+ project panes the right half flips to the 2-row grid so columns grow horizontally.
+- **tmux orchestration** now uses manual split-window calls anchored by pane ids rather than `select-layout tiled`. Added `central_mcp.tmux.split_window_with_id` (wraps tmux's `-P -F '#{pane_id}'`) to return the new pane's stable id so we can target specific panes for subsequent splits — necessary for building an exact 2-row × N-col layout that tiled can't produce.
+
+### Internal
+- New `central_mcp.layout._fill_2row_grid(target, wname, anchor_id, plans, messages)` helper that extends any anchor pane into a 2-row grid. Reused by both hub (anchor = right-half of orchestrator split) and overflow windows (anchor = pane 0).
+- 4 new zellij layout tests covering the 2-row grid shape (4-pane 2×2, 10-pane 2×5 ordering, hub-with-3 grid activation, hub-with-2 legacy stack regression guard). All 205 tests pass.
+
 ## [0.6.1] — 2026-04-20
 
 ### Added

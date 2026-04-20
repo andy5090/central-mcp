@@ -61,6 +61,31 @@ def split_window(target: str, cwd: str, command: str | None = None) -> TmuxResul
     return _run(args)
 
 
+def split_window_with_id(
+    target: str,
+    cwd: str,
+    command: str | None = None,
+    *,
+    vertical: bool = False,
+) -> tuple[bool, str]:
+    """Split a pane and return the new pane's unique id (e.g. `%23`).
+
+    `vertical=True` splits top/bottom (tmux `-v`); `False` splits
+    side-by-side (tmux `-h`). The returned id can be used as a target
+    for subsequent splits so callers can build a specific layout by
+    hand instead of relying on `select-layout tiled`.
+    """
+    args = ["split-window", "-t", target, "-c", cwd]
+    args.append("-v" if vertical else "-h")
+    args += ["-P", "-F", "#{pane_id}"]
+    if command:
+        args.append(command)
+    r = _run(args)
+    if not r.ok:
+        return False, ""
+    return True, r.stdout.strip()
+
+
 def select_layout(target: str, layout: str = "tiled") -> TmuxResult:
     return _run(["select-layout", "-t", target, layout])
 
