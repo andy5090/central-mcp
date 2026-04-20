@@ -110,6 +110,21 @@ def test_permission_mode_roundtrip(fake_home: Path) -> None:
     assert reloaded[0].permission_mode == "auto"
 
 
+def test_session_id_roundtrip(fake_home: Path) -> None:
+    registry.add_project("p", "/p")
+    registry.update_project("p", session_id="a1b2c3d4")
+    reloaded = registry.find_project("p")
+    assert reloaded.session_id == "a1b2c3d4"
+
+
+def test_session_id_empty_string_clears_pin(fake_home: Path) -> None:
+    registry.add_project("p", "/p")
+    registry.update_project("p", session_id="a1b2c3d4")
+    assert registry.find_project("p").session_id == "a1b2c3d4"
+    registry.update_project("p", session_id="")
+    assert registry.find_project("p").session_id is None
+
+
 def test_update_project_fallback(fake_home: Path) -> None:
     registry.add_project("p", "/p", agent="claude")
     updated = registry.update_project("p", fallback=["codex", "gemini"])

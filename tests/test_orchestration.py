@@ -17,7 +17,7 @@ class _StubAdapter(Adapter):
         super().__init__(name=name, launch=())
         self._argv_fn = argv_fn
 
-    def exec_argv(self, prompt, *, resume=True, permission_mode="restricted"):
+    def exec_argv(self, prompt, *, resume=True, permission_mode="restricted", session_id=None):
         return self._argv_fn(prompt)
 
 

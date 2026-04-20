@@ -3,6 +3,23 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.6.0] — 2026-04-20
+
+### Added
+- **Per-project session resumption with `session_id`** on every dispatch. Each agent now maps `session_id` to its own specific-session flag (claude `-r <uuid>`, codex `resume <uuid>`, gemini `--resume <index>`, droid `-s <uuid>`, opencode `-s <uuid>`). Resolution order: explicit `dispatch(session_id=...)` argument → project's saved pin → agent's default resume-latest flag.
+- **New MCP tool `list_project_sessions(name, limit=20)`** — enumerates the agent's resumable conversation sessions scoped to the project's cwd. Adapters implement discovery via filesystem scan (claude, codex, droid — read `~/.claude/projects/<slug>/`, `~/.codex/sessions/**/`, `~/.factory/sessions/<slug>/`) or subprocess call (gemini `--list-sessions`, opencode `session list`). Returns `id`, optional `title`, and `modified` (ISO 8601). Response echoes `pinned` so the orchestrator can mark the currently-locked session.
+- **`session_id` on `update_project`** — persist a pin so future dispatches always carry the specific-session flag, immune to ambient drift from interactive sessions sharing the cwd. Pass `session_id=""` (empty string) to clear.
+- **Orchestrator session-handling guidelines in `data/CLAUDE.md` / `data/AGENTS.md`** — when the user asks about "other sessions", `list_project_sessions`; when they want a one-shot switch, `dispatch(session_id=...)`; when they want drift-proof continuity (required for droid), `update_project(session_id=...)`.
+
+### Notes
+- **One-shot switch is usually enough.** For claude/codex/gemini/opencode, passing `session_id` to `dispatch` once is sufficient — the agent's own "resume latest" mechanism picks up the just-used session on subsequent default dispatches. Registry pinning is only needed when ambient state might drift (interactive sessions in the same cwd) or when the agent has no resume-latest.
+- **Droid exception.** `droid exec` has no headless "resume latest" — every dispatch without an explicit `session_id` is a fresh thread. To get continuity across droid dispatches, either pass `session_id` each time or `update_project(session_id=...)` to pin.
+- **Gemini caveat.** Gemini uses 1-based numeric session indexes (not UUIDs). Indexes shift when new sessions are added; treat them as momentary references rather than stable identifiers.
+- **Opencode caveat.** `opencode session list` returns sessions globally (not cwd-scoped). The candidate list is still useful for pin selection but may include sessions from other directories.
+
+### Upgrading
+- Adapter implementations outside this repo must add a `session_id: str | None = None` kwarg to `exec_argv`. Omitting it will raise `TypeError: got an unexpected keyword argument` when central-mcp dispatches to that adapter.
+
 ## [0.5.2] — 2026-04-19
 
 ### Added

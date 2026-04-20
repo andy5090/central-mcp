@@ -17,7 +17,7 @@ class _StubAdapter(Adapter):
         super().__init__(name=name, launch=())
         self._argv_fn = argv_fn
 
-    def exec_argv(self, prompt, *, resume=True, permission_mode="restricted"):
+    def exec_argv(self, prompt, *, resume=True, permission_mode="restricted", session_id=None):
         return self._argv_fn(prompt)
 
 
@@ -156,7 +156,7 @@ class _TaggedStub(Adapter):
         super().__init__(name=name, launch=())
         self._exit_code = exit_code
 
-    def exec_argv(self, prompt, *, resume=True, permission_mode="restricted"):
+    def exec_argv(self, prompt, *, resume=True, permission_mode="restricted", session_id=None):
         return [
             sys.executable,
             "-c",
@@ -350,7 +350,7 @@ def test_dispatch_timeout_does_not_trigger_fallback(
     cwd.mkdir()
 
     class _Sleeper(Adapter):
-        def exec_argv(self, prompt, *, resume=True, permission_mode="restricted"):
+        def exec_argv(self, prompt, *, resume=True, permission_mode="restricted", session_id=None):
             return [sys.executable, "-c", "import time; time.sleep(30)"]
 
     _install_adapter(monkeypatch, _Sleeper(name="sleeper", launch=()))
@@ -372,7 +372,7 @@ def test_cancel_stops_fallback_chain(
     cwd.mkdir()
 
     class _Sleeper(Adapter):
-        def exec_argv(self, prompt, *, resume=True, permission_mode="restricted"):
+        def exec_argv(self, prompt, *, resume=True, permission_mode="restricted", session_id=None):
             return [sys.executable, "-c", "import time; time.sleep(30)"]
 
     _install_adapter(monkeypatch, _Sleeper(name="sleeper", launch=()))
@@ -470,6 +470,100 @@ def test_orchestration_history_recent_includes_output_preview(
         "ORCHESTRATION_MARKER" in rec.get("output_preview", "")
         for rec in terminals
     ), f"no terminal milestone carries the expected output_preview: {terminals!r}"
+
+
+def test_dispatch_passes_session_id_to_adapter(
+    fake_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """dispatch(session_id="X") must reach the adapter's exec_argv so
+    the agent's specific-session flag ends up in argv."""
+    seen: dict = {}
+
+    class _Recorder(Adapter):
+        def exec_argv(self, prompt, *, resume=True, permission_mode="restricted", session_id=None):
+            seen["session_id"] = session_id
+            return [sys.executable, "-c", "print('ok')"]
+
+    from central_mcp.adapters import base
+    monkeypatch.setitem(base._ADAPTERS, "rec", _Recorder(name="rec", launch=()))
+
+    cwd = tmp_path / "p"
+    cwd.mkdir()
+    registry.add_project("p", str(cwd), agent="rec")
+
+    r = server.dispatch(
+        "p", "hi",
+        permission_mode="bypass",
+        session_id="requested-uuid",
+    )
+    _wait_for_complete(r["dispatch_id"])
+    assert seen["session_id"] == "requested-uuid"
+
+
+def test_dispatch_uses_saved_session_id_when_none_passed(
+    fake_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When dispatch is called without an explicit session_id, the
+    project's saved pin should be forwarded to the adapter."""
+    seen: dict = {}
+
+    class _Recorder(Adapter):
+        def exec_argv(self, prompt, *, resume=True, permission_mode="restricted", session_id=None):
+            seen["session_id"] = session_id
+            return [sys.executable, "-c", "print('ok')"]
+
+    from central_mcp.adapters import base
+    monkeypatch.setitem(base._ADAPTERS, "rec", _Recorder(name="rec", launch=()))
+
+    cwd = tmp_path / "p"
+    cwd.mkdir()
+    registry.add_project("p", str(cwd), agent="rec")
+    registry.update_project("p", session_id="pinned-uuid")
+
+    r = server.dispatch("p", "hi", permission_mode="bypass")
+    _wait_for_complete(r["dispatch_id"])
+    assert seen["session_id"] == "pinned-uuid"
+
+
+def test_list_project_sessions_delegates_to_adapter(
+    fake_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """list_project_sessions MCP tool must hand off to the adapter's
+    list_sessions and surface pinned + sessions in the response."""
+    from central_mcp.adapters import base
+    from central_mcp.adapters.base import SessionInfo
+
+    class _WithSessions(Adapter):
+        def exec_argv(self, prompt, *, resume=True, permission_mode="restricted", session_id=None):
+            return [sys.executable, "-c", "print('ok')"]
+
+        def list_sessions(self, cwd, limit=20):
+            return [
+                SessionInfo(id="s1", title="First session", modified="2026-04-20T10:00:00Z"),
+                SessionInfo(id="s2", title="Second session", modified="2026-04-19T10:00:00Z"),
+            ]
+
+    monkeypatch.setitem(base._ADAPTERS, "sessy", _WithSessions(name="sessy", launch=()))
+
+    cwd = tmp_path / "p"
+    cwd.mkdir()
+    registry.add_project("p", str(cwd), agent="sessy")
+    registry.update_project("p", session_id="s1")
+
+    r = server.list_project_sessions("p")
+    assert r["ok"] is True
+    assert r["project"] == "p"
+    assert r["agent"] == "sessy"
+    assert r["pinned"] == "s1"
+    assert r["count"] == 2
+    ids = [s["id"] for s in r["sessions"]]
+    assert ids == ["s1", "s2"]
+
+
+def test_list_project_sessions_missing_project(fake_home: Path) -> None:
+    r = server.list_project_sessions("ghost")
+    assert r["ok"] is False
+    assert "unknown project" in r["error"]
 
 
 def test_output_preview_truncates_long_stdout(

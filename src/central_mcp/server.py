@@ -96,7 +96,15 @@ instead:
                              opening per-project logs.
   - add_project            — register a new project
   - remove_project         — unregister a project
-  - update_project         — change a project's agent / fallback / permission_mode / etc.
+  - update_project         — change a project's agent / fallback /
+                             permission_mode / session_id / etc.
+  - list_project_sessions  — list the agent's resumable conversation
+                             sessions for one project. Each result
+                             carries an `id` the orchestrator can pass
+                             back via `dispatch(session_id=...)` as a
+                             one-shot switch — after that dispatch the
+                             agent's own "resume latest" keeps using
+                             that session without restating the id.
 
 dispatch is NON-BLOCKING. It spawns the agent as a subprocess and
 returns a dispatch_id instantly (<100ms). To get the result:
@@ -279,6 +287,7 @@ def dispatch(
     timeout: float = 600.0,
     agent: str | None = None,
     fallback: list[str] | None = None,
+    session_id: str | None = None,
 ) -> dict[str, Any]:
     """Dispatch a prompt to the project's agent. NON-BLOCKING.
 
@@ -300,6 +309,18 @@ def dispatch(
       - "restricted" — no skip flag; agent may fail on operations needing approval
       - None (default): use the project's saved mode, or "bypass" for new projects.
         The resolved value is saved to the registry for future dispatches.
+
+    **session_id** (optional): one-shot override for conversation resumption.
+      - Given → resume that specific session (agent-specific flag:
+        claude `-r <uuid>`, codex `resume <id>`, droid `-s <uuid>`,
+        opencode `-s <uuid>`, gemini `--resume <index>`). After this
+        dispatch the agent's own "resume latest" mechanism picks up the
+        just-used session, so subsequent default dispatches continue
+        from it without restating the id.
+      - None (default): use the project's saved `session_id` if any
+        (persistent pin), otherwise fall back to the agent's "resume
+        latest" flag. Droid has no headless "resume latest", so absence
+        of a session_id means a fresh session on every droid dispatch.
     """
     project, err = _require_project(name)
     if err:
@@ -348,6 +369,11 @@ def dispatch(
     if project.permission_mode != permission_mode:
         _registry_update(project.name, permission_mode=permission_mode)
 
+    # Resolve session_id: explicit one-shot arg wins; otherwise fall
+    # back to the project's pinned session. None means "let the agent's
+    # resume-latest mechanism handle it" (droid: fresh session).
+    effective_session = session_id if session_id else project.session_id
+
     # Validate every agent in the chain produces valid argv with the
     # real prompt + resolved mode, so adapters that conditionally
     # return None based on those inputs fail synchronously rather than
@@ -355,7 +381,10 @@ def dispatch(
     for a in chain:
         probe_adapter = get_adapter(a)
         probe_argv = probe_adapter.exec_argv(
-            prompt, resume=resume, permission_mode=permission_mode,
+            prompt,
+            resume=resume,
+            permission_mode=permission_mode,
+            session_id=effective_session,
         )
         if probe_argv is None:
             return {
@@ -379,7 +408,10 @@ def dispatch(
     # in the background thread.
     primary_adapter = get_adapter(primary_agent)
     initial_argv = primary_adapter.exec_argv(
-        prompt, resume=resume, permission_mode=permission_mode,
+        prompt,
+        resume=resume,
+        permission_mode=permission_mode,
+        session_id=effective_session,
     )
 
     dispatch_id = uuid.uuid4().hex[:8]
@@ -405,7 +437,10 @@ def dispatch(
         """
         adapter = get_adapter(agent_name)
         argv = adapter.exec_argv(
-            prompt, resume=resume, permission_mode=permission_mode,
+            prompt,
+            resume=resume,
+            permission_mode=permission_mode,
+            session_id=effective_session,
         )
         import os as _os
         env = _os.environ.copy()
@@ -784,13 +819,23 @@ def update_project(
     tags: list[str] | None = None,
     permission_mode: str | None = None,
     fallback: list[str] | None = None,
+    session_id: str | None = None,
 ) -> dict[str, Any]:
     """Update an existing project's fields. Omitted args stay unchanged.
 
     Use this to permanently change a project's primary agent, edit its
-    description/tags, flip its permission_mode preference, or set a
+    description/tags, flip its permission_mode preference, set a
     fallback chain of agents to try when the primary fails (e.g. token
-    limits hit).
+    limits hit), or pin a specific `session_id` for dispatches.
+
+    `session_id` behavior:
+      - A non-empty string → all future dispatches without an explicit
+        `session_id` will resume that session (useful for droid, which
+        has no headless "resume latest", and for guarding other agents
+        against ambient-drift when interactive sessions share the cwd).
+      - `""` (empty string) → clear the pin, returning to the agent's
+        default resume-latest behavior.
+      - `None` (omitted) → leave the pin untouched.
 
     Agent names in `agent` and `fallback` are validated. `permission_mode`
     must be one of "bypass", "auto", "restricted". If any value is
@@ -843,6 +888,7 @@ def update_project(
         tags=tags,
         permission_mode=permission_mode,
         fallback=fallback,
+        session_id=session_id,
     )
     if updated is None:
         return {"ok": False, "error": f"project {name!r} not found in registry"}
@@ -857,6 +903,49 @@ def update_project(
             result["codex_trust"] = trust_msg
 
     return _with_completed(result)
+
+
+@mcp.tool()
+def list_project_sessions(
+    name: str,
+    limit: int = 20,
+) -> dict[str, Any]:
+    """List resumable agent conversation sessions for one project.
+
+    Queries the project's agent for sessions saved in its own store
+    scoped to the project's cwd (filesystem scan for claude/codex/droid,
+    subprocess call for gemini/opencode). Returns at most `limit`
+    sessions sorted by most-recently-modified.
+
+    Each session dict carries `id`, optional `title`, optional
+    `created` / `modified` (ISO 8601), and optional `turns`. Use the
+    returned `id` with `dispatch(session_id=...)` to resume a specific
+    thread as a one-shot — the agent's own resume-latest mechanism
+    picks the just-used session up for subsequent default dispatches,
+    so the id rarely needs to be restated.
+
+    `pinned` echoes the project's currently saved `session_id` (if any)
+    so the orchestrator can mark it in UI.
+    """
+    project, err = _require_project(name)
+    if err:
+        return err
+    adapter = get_adapter(project.agent)
+    try:
+        sessions = adapter.list_sessions(project.path, limit=limit)
+    except Exception as exc:  # defensive — filesystem/subprocess hiccups
+        return {
+            "ok": False,
+            "error": f"list_sessions failed for {project.agent!r}: {exc}",
+        }
+    return _with_completed({
+        "ok": True,
+        "project": project.name,
+        "agent": project.agent,
+        "pinned": project.session_id,
+        "count": len(sessions),
+        "sessions": [s.to_dict() for s in sessions],
+    })
 
 
 @mcp.tool()

@@ -38,6 +38,14 @@ Beyond routing, sharpen multi-project sessions when the rhythm allows. These are
 - **Recap the arriving project, not the one being left.** When the user switches from project A to project B, pull `dispatch_history(B, n=3)` (plus `check_dispatch(last_id_of_B)` if in-flight) and show a compact summary so the user resumes B with state fresh. Skip only when B has no prior dispatches.
 - **Portfolio briefing on explicit ask, unprompted on heavy churn.** When the user asks for overall status / "how is everything?", always call `orchestration_history()` and group `recent[]` by project — per project, report prompts (`prompt_preview`), outcomes, and `output_preview` (tail of agent stdout) when present. Unprompted mode: volunteer the same snapshot once per session when the user has bounced across 3+ projects in a short span.
 
+## Session handling
+
+Default dispatch resumes the agent's most-recently-modified conversation (claude/codex/gemini/opencode). Droid has no headless resume-latest and starts fresh every dispatch unless pinned.
+
+- User asks to browse / switch sessions → `list_project_sessions(name)`, show id / title / modified.
+- One-shot switch to a specific session → `dispatch(name, prompt, session_id="…")` once. The agent's resume-latest picks it up on following dispatches automatically.
+- Persistent pin (drift-proof, required for droid continuity) → `update_project(name, session_id="…")`. Clear with `session_id=""`.
+
 ## Exception
 
 If the user asks to edit central-mcp's own source code → switch to normal developer mode.

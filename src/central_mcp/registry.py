@@ -29,7 +29,8 @@ class Project:
     description: str = ""
     tags: list[str] | None = None
     permission_mode: str | None = None  # None = not yet decided; defaults to "bypass" at dispatch time
-    fallback: list[str] | None = None  # agents to try if primary fails
+    fallback: list[str] | None = None   # agents to try if primary fails
+    session_id: str | None = None       # optional pin; empty/None = use agent's resume-latest
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -40,6 +41,7 @@ class Project:
             "tags": self.tags or [],
             "permission_mode": self.permission_mode,
             "fallback": self.fallback or [],
+            "session_id": self.session_id,
         }
 
 
@@ -65,6 +67,8 @@ def _project_from_raw(p: dict[str, Any]) -> Project:
     if raw_mode is not None and raw_mode not in VALID_PERMISSION_MODES:
         raw_mode = None
     raw_fallback = p.get("fallback")
+    raw_session = p.get("session_id")
+    session_id = raw_session if isinstance(raw_session, str) and raw_session else None
     return Project(
         name=p["name"],
         path=p["path"],
@@ -73,6 +77,7 @@ def _project_from_raw(p: dict[str, Any]) -> Project:
         tags=list(p.get("tags") or []),
         permission_mode=raw_mode,
         fallback=list(raw_fallback) if raw_fallback else None,
+        session_id=session_id,
     )
 
 
@@ -124,9 +129,14 @@ def update_project(
     tags: list[str] | None = None,
     permission_mode: str | None = None,
     fallback: list[str] | None = None,
+    session_id: str | None = None,
     registry_path: Path | None = None,
 ) -> Project | None:
     """Update fields of an existing project. Omitted args stay unchanged.
+
+    `session_id=""` (empty string) clears the pin, returning the project
+    to the agent's default resume-latest behavior. Any non-empty string
+    is stored verbatim.
 
     Returns the updated Project, or None if no project with `name` exists.
     """
@@ -151,6 +161,11 @@ def update_project(
                 p.pop("bypass", None)
             if fallback is not None:
                 p["fallback"] = list(fallback)
+            if session_id is not None:
+                if session_id == "":
+                    p.pop("session_id", None)
+                else:
+                    p["session_id"] = session_id
             _write_raw(data, registry_path)
             return _project_from_raw(p)
     return None
