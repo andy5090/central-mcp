@@ -1,22 +1,17 @@
-"""Observation-session version stamp.
+"""Observation-session metadata stamp.
 
-Writes the version of central-mcp that built a given tmux/zellij
-session so subsequent attaches can detect when the binary has been
-upgraded out from under the running panes. Stale sessions carry
-orchestrator processes and `central-mcp watch` children from the old
-binary — they keep running but miss anything the new version adds
-(new events, new argv flags, updated instruction files). Warning the
-user at attach time lets them `cmcp down` and recreate cleanly
-before more work happens on top of the stale state.
+Records which central-mcp version built a given tmux/zellij session
+and which multiplexer it targets. 0.6.8 made session rebuilds
+automatic on every `cmcp tmux` / `cmcp zellij`, so this file's
+original stale-attach guard is no longer wired up — the module
+survives as a lightweight breadcrumb for debugging / external tools
+that want to peek at the running session's provenance.
 
 File format (tomlkit, matches config.toml's style):
 
-    version = "0.6.0"
+    version = "0.6.8"
     multiplexer = "zellij"   # or "tmux"
-    created_at = "2026-04-20T17:42:00Z"
-
-Missing file = "no stamp yet" (legacy / never tracked) — callers
-treat this as "fresh enough, just stamp it".
+    created_at = "2026-04-21T17:42:00Z"
 """
 
 from __future__ import annotations
@@ -92,24 +87,3 @@ def clear() -> None:
         pass
 
 
-def staleness_warning(stamp: SessionStamp | None, now: str | None = None) -> str | None:
-    """Return a human-readable warning when the running session's
-    stamp doesn't match the installed version, else None.
-
-    A missing stamp is NOT stale — legacy sessions from before this
-    mechanism existed are allowed to attach without complaint. Only
-    an actual version mismatch triggers the warning.
-    """
-    if stamp is None:
-        return None
-    running = now or current_version()
-    if stamp.version == running:
-        return None
-    return (
-        f"observation session was created by central-mcp {stamp.version} "
-        f"but you're now running {running}. Existing panes still hold the "
-        f"old version's orchestrator + watch processes, so new features "
-        f"(e.g. added event types, updated argv flags) may not appear. "
-        f"Run `cmcp down && cmcp {stamp.multiplexer}` to rebuild cleanly, "
-        f"or re-run with --force-recreate to do it in one step."
-    )

@@ -40,6 +40,19 @@ def has_session(name: str) -> bool:
     return _run(["has-session", "-t", name]).ok
 
 
+def list_clients(name: str) -> list[str]:
+    """Return the list of client TTYs currently attached to `name`.
+
+    Empty list when the session exists but is detached, or when the
+    session doesn't exist. `tmux list-clients` exits non-zero for a
+    missing session; we swallow that and report empty.
+    """
+    r = _run(["list-clients", "-t", name, "-F", "#{client_tty}"])
+    if not r.ok:
+        return []
+    return [line.strip() for line in r.stdout.splitlines() if line.strip()]
+
+
 def new_session(
     name: str,
     window: str,

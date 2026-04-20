@@ -346,41 +346,34 @@ def cmd_tmux(args: argparse.Namespace) -> int:
         print("error: tmux is not installed or not on PATH", file=sys.stderr)
         return 1
 
-    session_exists = tmux.has_session(layout.SESSION)
+    # 0.6.8+: always teardown + rebuild so the layout reflects the
+    # current terminal's size (tmux's proportional rescale on attach
+    # does NOT preserve the equal-width / orch-column ratios we build
+    # with `-l N%` splits). Attached clients on the old session get
+    # disconnected — acceptable for the common single-terminal
+    # workflow. The `session_info` stamp guard from 0.6.1 is now
+    # redundant for this path but kept for direct `pip install -U`
+    # users who bypass the CLI.
+    if tmux.has_session(layout.SESSION):
+        _teardown_observation_session()
 
-    # Stale-version guard: if the session predates a central-mcp
-    # upgrade, its panes still carry the old binary's orchestrator +
-    # watch processes. Refuse to attach so the user can `cmcp down`
-    # and rebuild cleanly, unless they asked for --force-recreate.
-    if session_exists:
-        warning = session_info.staleness_warning(session_info.read())
-        if warning:
-            if getattr(args, "force_recreate", False):
-                print(f"(--force-recreate) {warning}", file=sys.stderr)
-                _teardown_observation_session()
-                session_exists = False
-            else:
-                print(f"warning: {warning}", file=sys.stderr)
-                return 1
-
-    if not session_exists:
-        orchestrator = _orchestrator_pane_for_up(args)
-        panes_per_window = _resolve_max_panes(args)
-        if panes_per_window < 1:
-            print(
-                f"error: --max-panes must be >= 1 (got {panes_per_window})",
-                file=sys.stderr,
-            )
-            return 1
-        created, messages = layout.ensure_session(
-            orchestrator=orchestrator,
-            panes_per_window=panes_per_window,
+    orchestrator = _orchestrator_pane_for_up(args)
+    panes_per_window = _resolve_max_panes(args)
+    if panes_per_window < 1:
+        print(
+            f"error: --max-panes must be >= 1 (got {panes_per_window})",
+            file=sys.stderr,
         )
-        for m in messages:
-            print(m)
-        if not created:
-            return 1
-        session_info.write(multiplexer="tmux")
+        return 1
+    created, messages = layout.ensure_session(
+        orchestrator=orchestrator,
+        panes_per_window=panes_per_window,
+    )
+    for m in messages:
+        print(m)
+    if not created:
+        return 1
+    session_info.write(multiplexer="tmux")
 
     os.execvp("tmux", ["tmux", "attach", "-t", layout.SESSION])
 
@@ -409,25 +402,13 @@ def cmd_zellij(args: argparse.Namespace) -> int:
         )
         return 1
 
-    session_exists = zellij.has_session(zellij.SESSION)
-
-    # Stale-version guard (mirrors cmd_tmux). Warn + block attach when
-    # the running session was built by an earlier central-mcp; the
-    # user can pass --force-recreate to tear down + rebuild in one step.
-    if session_exists:
-        warning = session_info.staleness_warning(session_info.read())
-        if warning:
-            if getattr(args, "force_recreate", False):
-                print(f"(--force-recreate) {warning}", file=sys.stderr)
-                _teardown_observation_session()
-                session_exists = False
-            else:
-                print(f"warning: {warning}", file=sys.stderr)
-                return 1
-
-    if session_exists:
-        print(f"(session '{zellij.SESSION}' already running — attaching)")
-        os.execvp("zellij", ["zellij", "attach", zellij.SESSION])
+    # 0.6.8+: always teardown + rebuild so the layout reflects the
+    # current terminal's size. Zellij's KDL is static — without a
+    # rebuild it keeps whatever ratios were baked in when the session
+    # first started, even if the user has since resized or switched
+    # between terminals with different aspect ratios.
+    if zellij.has_session(zellij.SESSION):
+        _teardown_observation_session()
 
     layout_path = paths.central_mcp_home() / "zellij-layout.kdl"
     zellij.write_layout(

@@ -3,6 +3,28 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.6.8] — 2026-04-21
+
+### Changed
+- **Observation sessions now rebuild on every `cmcp tmux` / `cmcp zellij`.** Prior behavior: if the `central` session already existed, the commands attached to it verbatim (plus a 0.6.1 stale-version guard that refused to attach and pointed at `--force-recreate`). New behavior: always tear down + recreate + attach, so the layout is freshly built at the current terminal's size and always carries the newly-installed binary. No configuration, no flag — it's the default and only path.
+- **BREAKING** — `--force-recreate` removed from `cmcp up` / `cmcp tmux` / `cmcp zellij`. Every invocation is now a "force-recreate" by default, so the explicit flag is redundant. Scripts passing `--force-recreate` will fail with "unrecognized argument" — remove the flag; the behavior is preserved automatically.
+
+### Added
+- **Narrow-terminal layout**. On terminals where `cols < 2 × min_pane_cols` (i.e. where even two panes side-by-side would go below the readability floor) the layout now falls back to a flat vertical stack: orchestrator on row 0 full-width, project panes stacked one per row below. Previously narrow terminals capped at `n=1` and left the user with a single full-screen pane even when vertical space was plentiful. The `pick_rows` heuristic returns `r=n` in this regime, and `pick_panes_per_window` scales with `rows // min_pane_rows` so a 60×120 SSH-from-phone session lands on 8 stacked panes (each 60×15) instead of 1.
+
+### Removed
+- `central_mcp.session_info.staleness_warning` and the three tests that covered it. With auto-rebuild on every invocation the staleness guard never fires — the module survives as a lightweight version stamp for debugging / introspection but no longer gates attach.
+
+### Results on tall / narrow terminals
+| Terminal            | 0.6.7 | 0.6.8 (narrow-mode) |
+|---------------------|-------|---------------------|
+| 60×80 (split-view)  | 1     | 5 (stacked) |
+| 80×60 (half-screen) | 1     | 4 |
+| 60×120 (portrait)   | 1     | 8 |
+| 40×120 (phone SSH)  | 1     | 8 |
+| 200×50 (wide)       | 2     | 2 (unchanged) |
+| 300×80 (ultra-wide) | 9     | 9 (unchanged) |
+
 ## [0.6.7] — 2026-04-21
 
 ### Changed

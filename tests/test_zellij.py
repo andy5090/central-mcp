@@ -161,7 +161,9 @@ class TestTilingShape:
             d.mkdir()
             registry.add_project(f"p{i}", str(d), agent="shell")
 
-        kdl = zellij.build_layout(panes_per_window=4)
+        # Force wide-terminal regime so the 2×2 grid actually fires —
+        # on a narrow terminal we'd fall back to a pure vertical stack.
+        kdl = zellij.build_layout(panes_per_window=4, term_size=(200, 100))
         # 4 panes should produce 2 rows, each a vertical (side-by-side)
         # split — i.e., one outer horizontal + two inner vertical splits.
         assert 'split_direction="horizontal"' in kdl
@@ -180,7 +182,7 @@ class TestTilingShape:
             d.mkdir()
             registry.add_project(f"p{i}", str(d), agent="shell")
 
-        kdl = zellij.build_layout(panes_per_window=10)
+        kdl = zellij.build_layout(panes_per_window=10, term_size=(300, 60))
         # The top row contains p0..p4; the bottom row contains p5..p9.
         # Find the order of project names in the KDL and assert the
         # expected grouping.
@@ -201,7 +203,9 @@ class TestTilingShape:
             registry.add_project(f"p{i}", str(d), agent="shell")
 
         orch = OrchestratorPane(command="echo hi", cwd=str(tmp_path), label="stub")
-        kdl = zellij.build_layout(orchestrator=orch, panes_per_window=5)
+        kdl = zellij.build_layout(
+            orchestrator=orch, panes_per_window=5, term_size=(200, 50),
+        )
 
         # When the right half has 3 panes, we should see the 2-row grid:
         # outer vertical (orch | right-block), right-block is horizontal
@@ -222,7 +226,9 @@ class TestTilingShape:
             registry.add_project(f"p{i}", str(d), agent="shell")
 
         orch = OrchestratorPane(command="echo hi", cwd=str(tmp_path), label="stub")
-        kdl = zellij.build_layout(orchestrator=orch, panes_per_window=4)
+        kdl = zellij.build_layout(
+            orchestrator=orch, panes_per_window=4, term_size=(200, 50),
+        )
         # Stack-style right block uses exactly one horizontal split
         # (the right-side children); the outer vertical is the
         # orchestrator-vs-right divider. So total vertical splits = 1.

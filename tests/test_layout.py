@@ -545,12 +545,27 @@ class TestPaneTitlesAndStyle:
         )
 
     def test_hub_row_panes_have_equal_widths(
-        self, fake_home: Path, tmp_path: Path
+        self, fake_home: Path, tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """0.6.3+: orchestrator no longer takes a forced 50% left column.
         On a wide terminal, orch + 2 projects land in a single row and
         every pane in that row has the same width (no main-vertical).
+
+        Monkey-patched to 200×50 so we specifically exercise the
+        wide-terminal branch — without it, a pytest runner hosting
+        this test in a narrow terminal would kick the layout into
+        narrow-mode vertical stack and the "all on the same row"
+        invariant wouldn't hold.
         """
+        import os
+        import shutil as _shutil
+        monkeypatch.setattr(
+            _shutil,
+            "get_terminal_size",
+            lambda fallback=None: os.terminal_size((200, 50)),
+        )
+
         for i in range(2):
             d = tmp_path / f"p{i}"
             d.mkdir()

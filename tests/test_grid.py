@@ -20,15 +20,18 @@ class TestPickRows:
         assert pick_rows(1, term_size=(200, 50)) == 1
 
     def test_two_panes_wide_terminal_stays_single_row(self) -> None:
-        # Two panes on a typical laptop / desktop terminal — keep them
-        # side-by-side on a single row.
-        assert pick_rows(2, term_size=(120, 40)) == 1
+        # Two panes on a genuinely wide terminal (≥ 2× the width
+        # floor) — keep them side-by-side in a single row.
         assert pick_rows(2, term_size=(200, 50)) == 1
+        assert pick_rows(2, term_size=(250, 60)) == 1
 
     def test_two_panes_narrow_terminal_stacks(self) -> None:
-        # SSH from a phone / split-view terminal → stack vertically
-        # rather than halving the already-tight width.
+        # SSH from a phone / split-view / half-screen → stack
+        # vertically rather than halving the already-tight width.
         assert pick_rows(2, term_size=(40, 30)) == 2
+        # And a half-screen laptop terminal (≈120 cols) is also
+        # narrow under the current floor — vertical stack is better.
+        assert pick_rows(2, term_size=(120, 40)) == 2
 
     def test_ten_panes_widescreen_prefers_two_rows(self) -> None:
         # 200x50 is a typical wide-monitor terminal. 10 panes should
@@ -41,10 +44,17 @@ class TestPickRows:
         # 60 cols × 80 rows → ceil-style bump.
         assert pick_rows(10, term_size=(60, 80)) >= 3
 
-    def test_four_panes_square_terminal(self) -> None:
-        # A typical "equal aspect" char-cell terminal — 2×2 grid makes
-        # sense and pick_rows should recommend it.
-        assert pick_rows(4, term_size=(120, 40)) == 2
+    def test_four_panes_on_balanced_terminal_uses_2x2_grid(self) -> None:
+        # For a 2×2 grid to win over a 4-wide single row, the
+        # aspect ratio has to be balanced enough that two rows ×
+        # two cols keeps each pane near pixel-square. 200×100
+        # satisfies `sqrt(2·100·4/200) = 2`.
+        assert pick_rows(4, term_size=(200, 100)) == 2
+
+    def test_four_panes_narrow_terminal_stacks(self) -> None:
+        # Half-screen laptop terminal (120 cols) is narrow — 4 panes
+        # stack vertically, one per row, keeping each pane full-width.
+        assert pick_rows(4, term_size=(120, 40)) == 4
 
     def test_rows_never_exceed_pane_count(self) -> None:
         # Edge case: absurdly tall, narrow terminal with 3 panes. Rows
@@ -55,13 +65,14 @@ class TestPickRows:
 class TestPickPanesPerWindow:
     from central_mcp.grid import pick_panes_per_window
 
-    def test_laptop_half_screen_returns_one(self) -> None:
+    def test_laptop_half_screen_stacks_vertically(self) -> None:
         from central_mcp.grid import pick_panes_per_window
-        # 120×40 — roughly a half-split laptop terminal. With the 70×15
-        # floor, even two panes don't fit (orch + 1 project = 60 cols
-        # each, below the 70-col minimum). Caller is expected to see a
-        # single-pane layout and add `--max-panes N` if they want more.
-        assert pick_panes_per_window(term_size=(120, 40)) == 1
+        # 120×40 — half-split laptop terminal. Horizontal splitting
+        # would put each pane below the 70-col floor, but vertical
+        # stacking preserves full column width while using 15-row
+        # slices per pane. Expect ~2 panes (40 rows / 15 = 2).
+        n = pick_panes_per_window(term_size=(120, 40))
+        assert n == 40 // 15, f"expected vertical-stack cap, got {n}"
 
     def test_laptop_full_screen_returns_two_column_slices(self) -> None:
         from central_mcp.grid import pick_panes_per_window, pick_rows

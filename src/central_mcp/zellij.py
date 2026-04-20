@@ -142,9 +142,17 @@ def _tile_panes(panes: list[str], rows: int = 2) -> str:
         return panes[0]
 
     n = len(panes)
-    # Small counts (n <= rows) collapse to a single row side-by-side —
-    # wide screens benefit from filling horizontal space first.
-    if n <= rows:
+    # When the requested rows ≥ pane count the layout degenerates to
+    # either a vertical stack (caller's `pick_rows` returned n meaning
+    # "put them all in separate rows") or a single row. We detect the
+    # vertical-stack intent by `rows == n` (pick_rows does that for
+    # narrow terminals) and emit a horizontal-split block, which in
+    # zellij's KDL conventions stacks children top-to-bottom.
+    if rows >= n and rows > 1:
+        inner = "\n".join(_indent(p, "    ") for p in panes)
+        return f'pane split_direction="horizontal" {{\n{inner}\n}}'
+    # Else if n fits in one row, side-by-side.
+    if n <= rows or rows <= 1:
         inner = "\n".join(_indent(p, "    ") for p in panes)
         return f'pane split_direction="vertical" {{\n{inner}\n}}'
 
@@ -178,6 +186,7 @@ def _tab_kdl(
     rows: int,
     *,
     orch_first: bool = False,
+    term_size: tuple[int, int] | None = None,
 ) -> str:
     """Render a tab.
 
@@ -191,13 +200,19 @@ def _tab_kdl(
 
     Without the flag, every pane gets an equal slot in the 2-row (or
     computed-row) grid — the 0.6.3 flat default.
+
+    `term_size` forwards through to the internal `pick_rows` call
+    used to shape the right-side project grid; without it that call
+    would read the invoking terminal and may pick a different grid
+    than the outer caller (who already decided based on its own
+    `term_size`).
     """
     if not panes:
         return f'tab name={_kdl_escape(tab_name)} {{\n    pane\n}}'
 
     if orch_first and len(panes) >= 2:
         orch_pane, project_panes = panes[0], panes[1:]
-        project_rows = pick_rows(len(project_panes))
+        project_rows = pick_rows(len(project_panes), term_size=term_size)
         top_cols = (len(project_panes) + project_rows - 1) // project_rows
         orch_size = max(1, 100 // (top_cols + 1))
         project_grid = _tile_panes(project_panes, rows=project_rows)
@@ -282,14 +297,23 @@ def build_layout(
             pane_kdls[i:i + panes_per_window]
             for i in range(0, len(pane_kdls), panes_per_window)
         ]
+        # Narrow terminals can't host an orchestrator-column layout —
+        # every column would fall below the readability floor. Fall
+        # back to the flat grid where orchestrator is just the first
+        # pane of a vertical stack on the first tab.
+        import shutil as _shutil
+        import central_mcp.grid as _grid
+        effective_cols = term_size[0] if term_size else _shutil.get_terminal_size(fallback=(120, 40)).columns
+        narrow = effective_cols < 2 * _grid._MIN_PANE_COLS
         for tab_idx, chunk in enumerate(chunks):
             tab_rows = pick_rows(len(chunk), term_size=term_size)
-            is_first_with_orch = (tab_idx == 0 and has_orchestrator)
+            is_first_with_orch = (tab_idx == 0 and has_orchestrator) and not narrow
             tabs.append(_tab_kdl(
                 window_name(tab_idx, has_orchestrator=has_orchestrator),
                 chunk,
                 rows=tab_rows,
                 orch_first=is_first_with_orch,
+                term_size=term_size,
             ))
 
     body = "\n".join(tabs)

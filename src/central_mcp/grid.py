@@ -33,17 +33,18 @@ def pick_rows(
 ) -> int:
     """Return the target number of grid rows for `n_panes`.
 
-    Heuristic: assuming each char cell is ~2× taller than wide, a
-    pane of C columns × R rows is pixel-square when C / (2·R) ≈ 1,
-    i.e. C ≈ 2R. Given a terminal of `cols × rows` and an r×c grid
-    (c = ceil(n/r)), we have pane_c = cols/c and pane_r = rows/r.
-    Solving `pane_c / pane_r = 2` for r gives
-    r ≈ sqrt(2 · rows · n / cols).
-
-    Special cases:
-      - n ≤ 1: 1 row (nothing to grid).
-      - n = 2: side-by-side unless the terminal is narrow (< 60 cols),
-        in which case stack vertically.
+    Three regimes:
+      - Single-pane / small-n trivia: n ≤ 1 → 1 row.
+      - Narrow terminal (cols < 2·_MIN_PANE_COLS): **force single-
+        column vertical stack** — any horizontal split would put each
+        pane below the readable width floor, whereas stacking top-to-
+        bottom preserves full terminal width per pane. Returns r = n.
+      - n = 2: side-by-side (1 row) unless the terminal is extremely
+        narrow (< 60 cols) — treated as a sub-case of the narrow
+        branch above, so this only applies when cols ≥ 2·70 = 140.
+      - Otherwise: r ≈ sqrt(2·rows·n/cols), derived by solving for
+        a pane whose char dimensions (cols/c × rows/r, with
+        c = ceil(n/r)) are pixel-square given a 2:1 char cell ratio.
     """
     if n_panes <= 1:
         return 1
@@ -51,9 +52,12 @@ def pick_rows(
         cols, rows = shutil.get_terminal_size(fallback=(120, 40))
     else:
         cols, rows = term_size
+    if cols < 2 * _MIN_PANE_COLS:
+        # Narrow terminal → stack all panes vertically so each keeps
+        # the full terminal width. Cap at n so we don't invent rows.
+        return n_panes
     if n_panes == 2:
-        return 2 if cols < 60 else 1
-
+        return 1
     r_est = math.sqrt(_CHAR_PX_RATIO * rows * n_panes / max(cols, 1))
     return max(1, min(n_panes, round(r_est)))
 
@@ -89,8 +93,17 @@ def pick_panes_per_window(
     else:
         cols, rows = term_size
 
-    if cols < min_pane_cols or rows < min_pane_rows:
+    if rows < min_pane_rows:
         return 1
+
+    # Narrow terminal (too tight to split horizontally without
+    # hitting the width floor): stack vertically as long as each row
+    # keeps its row budget. Each pane is full-width by construction,
+    # and the user has implicitly accepted the current column count
+    # by picking this terminal size — we shouldn't second-guess it
+    # with a hard cols floor here.
+    if cols < 2 * min_pane_cols:
+        return max(1, min(rows // max(min_pane_rows, 1), 32))
 
     # Scan the full candidate range and take the highest n whose grid
     # still clears the readability floor. We can't break on the first

@@ -360,16 +360,9 @@ Hub 윈도우(`cmcp-1-hub`)는 tmux의 `main-vertical` 레이아웃을 사용합
 
 `cmcp up` 세션이 살아 있는 상태에서 `central-mcp upgrade` (또는 `pip install -U central-mcp`) 를 실행하면, 각 pane은 **이전 버전의** orchestrator CLI와 `central-mcp watch` 자식 프로세스를 그대로 붙들고 있습니다. 이 프로세스들은 실행 도중 바이너리 변경을 반영하지 않아서, 새로 추가된 이벤트 타입, 변경된 argv 플래그, `~/.central-mcp/` 내 인스트럭션 파일 갱신 등이 pane에 도달하지 못합니다. 재접속 시 오래된 에이전트 출력이 보이거나, watch pane에서 자식이 죽은 채 zellij의 `Exit: 0 — Enter로 재실행` 메시지가 떠 있을 수 있습니다.
 
-**0.6.3+**: `central-mcp upgrade` 는 바이너리 교체 전에 **관찰 세션을 자동으로 내립니다**. 따라서 `central-mcp upgrade` → `cmcp zellij` 순서면 별도 수동 정리 없이 바로 새 버전 반영. (`--check` 는 read-only라 teardown 안 함.)
+**0.6.8+**: 신경 쓸 필요 없습니다. `cmcp tmux` / `cmcp zellij` 를 호출할 때마다 기존 관찰 세션이 있으면 자동으로 내리고 현재 터미널 크기 기준으로 새로 생성한 뒤 attach 합니다. 결과적으로 항상 최신 바이너리로 돌아가는 fresh pane 들이 현재 터미널 비율에 맞춰 배치됩니다. `central-mcp upgrade` 도 바이너리 교체 전에 관찰 세션을 자동으로 내려주므로 "업그레이드 중 세션 attach" 케이스도 커버됩니다.
 
-`pip install -U` / `uv tool upgrade` 처럼 `cmcp upgrade` 경로를 우회하는 업그레이드의 경우, 버전 스탬프(`~/.central-mcp/session-info.toml`) 가드가 대신 잡아줍니다. 스탬프의 버전이 현재 설치된 버전과 다르면 `cmcp up` / `cmcp tmux` / `cmcp zellij` 가 attach를 거부하고 경고를 출력합니다. 복구 방법 두 가지:
-
-```bash
-cmcp down && cmcp zellij        # 수동: 세션 내린 뒤 새 바이너리로 재접속
-cmcp zellij --force-recreate    # 한 번에: 세션을 그 자리에서 재생성
-```
-
-어느 경로를 택하든 모든 pane이 새 버전으로 respawn됩니다. 스탬프는 세 생성 경로(`up` / `tmux` / `zellij`) 중 실제로 세션을 만든 쪽이 기록하고, `cmcp down` 과 `cmcp upgrade` 가 삭제합니다. 0.6.1 이전에 만들어진 세션은 스탬프가 없어서 경고 없이 attach됩니다 — 가드는 실제 버전 불일치 시에만 동작합니다.
+트레이드오프: 두 터미널이 같은 세션에 동시에 attach 되어 있을 때 한 쪽에서 `cmcp tmux` 를 실행하면 나머지 한 쪽은 disconnect 됩니다. 대신 "세션에 남아있는 옛 바이너리" 를 신경 쓸 일이 영구적으로 사라집니다.
 
 ## 레지스트리 경로 해결
 

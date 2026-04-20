@@ -57,6 +57,37 @@ def _wrap(launch: str) -> str:
     return f"sh -c '{launch}; exec $SHELL'"
 
 
+def _fill_column(
+    wname: str,
+    col_anchor: str,
+    col_plans: list[tuple[str, str, str | None, bool]],
+    target_rows: int,
+    messages: list[str],
+) -> None:
+    """Stack `target_rows` panes top-to-bottom in a single column.
+
+    Mirrors `_fill_row` but with `-v` splits instead of `-h`. Used for
+    narrow-terminal layouts where horizontal splitting would put each
+    pane below the readable-width floor.
+    """
+    if not col_plans or target_rows <= 1:
+        return
+    bottommost = col_anchor
+    for i, (title, cwd, cmd, _) in enumerate(col_plans):
+        remaining_after = target_rows - 1 - i
+        parent_holds = target_rows - i
+        size = max(1, min(99, (remaining_after * 100) // parent_holds))
+        ok, new_id = tmux.split_window_with_id(
+            bottommost, cwd, cmd, vertical=True, size_percent=size,
+        )
+        if not ok:
+            messages.append(f"split-window for {title} failed")
+            continue
+        bottommost = new_id
+        tmux.set_pane_title(new_id, title)
+        messages.append(f"{wname} -> {title} ({cwd})")
+
+
 def _fill_row(
     wname: str,
     row_anchor: str,
@@ -158,6 +189,12 @@ def _fill_grid(
     if total <= 1:
         return
 
+    # When the caller asks for rows == total, build a pure vertical
+    # stack (1 col × total rows) — used for narrow terminals where
+    # horizontal splitting would violate the width floor.
+    if rows >= total and rows > 1:
+        _fill_column(wname, anchor_id, plans, target_rows=total, messages=messages)
+        return
     # Force single-row layout when caller asks for rows <= 1 or every
     # pane fits in a single row already.
     if rows <= 1 or total <= rows:
@@ -332,13 +369,17 @@ def ensure_session(
         # For the orchestrator's own tab (first window, has_orch=True),
         # give the orchestrator a full-height left column sized to one
         # project column. Overflow windows stay on the flat grid.
-        from central_mcp.grid import pick_rows
-        if win_idx == 0 and first_is_orch:
+        # Narrow terminals can't host an orch-column layout (the
+        # column would fall below the readable-width floor), so they
+        # also fall back to the flat vertical-stack grid.
+        from central_mcp.grid import pick_rows, _MIN_PANE_COLS
+        narrow = _term_cols < 2 * _MIN_PANE_COLS
+        if win_idx == 0 and first_is_orch and not narrow:
             _fill_orch_column_grid(
                 target, wname, f"{target}.0", chunk[1:], messages,
             )
         else:
-            rows = pick_rows(len(chunk))
+            rows = pick_rows(len(chunk), term_size=(_term_cols, _term_rows))
             _fill_grid(target, wname, f"{target}.0", chunk[1:], rows, messages)
 
     # Focus the first window/pane so attaching users land on pane 0
