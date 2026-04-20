@@ -72,6 +72,16 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="N",
         help="max panes per tmux window (default: 4); overflow spills to cmcp-2, cmcp-3, …",
     )
+    p_up.add_argument(
+        "--force-recreate",
+        dest="force_recreate",
+        action="store_true",
+        help=(
+            "tear down any existing observation session and rebuild it "
+            "from scratch. Useful after `central-mcp upgrade` when the "
+            "running panes carry the previous version's processes."
+        ),
+    )
     p_up.set_defaults(func=cmd_up)
 
     p_watch = sub.add_parser(
@@ -121,6 +131,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--panes-per-window", type=int, default=None, metavar="N",
         help="max panes per tmux window (default: 4)",
     )
+    p_tmux.add_argument(
+        "--force-recreate",
+        dest="force_recreate",
+        action="store_true",
+        help=(
+            "tear down any existing observation session and rebuild it "
+            "from scratch. Useful after `central-mcp upgrade` when the "
+            "running panes carry the previous version's processes."
+        ),
+    )
     p_tmux.set_defaults(func=cmd_tmux)
 
     p_zellij = sub.add_parser(
@@ -141,6 +161,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_zellij.add_argument(
         "--panes-per-window", type=int, default=None, metavar="N",
         help="max panes per tab (default: 4)",
+    )
+    p_zellij.add_argument(
+        "--force-recreate",
+        dest="force_recreate",
+        action="store_true",
+        help=(
+            "tear down any existing observation session and rebuild it "
+            "from scratch. Useful after `central-mcp upgrade` when the "
+            "running panes carry the previous version's processes."
+        ),
     )
     p_zellij.set_defaults(func=cmd_zellij)
 

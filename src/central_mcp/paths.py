@@ -71,3 +71,14 @@ def log_root() -> Path:
 def project_log_path(project_name: str) -> Path:
     """`logs/<project>/pane.log` under the log root."""
     return log_root() / project_name / "pane.log"
+
+
+def session_info_file() -> Path:
+    """Path to the observation-session metadata file.
+
+    Written by `cmcp up` / `cmcp tmux` / `cmcp zellij` when a session
+    is first created; read on every subsequent attach so version
+    mismatches can be surfaced before the user ends up with a pane
+    full of a now-stale agent or watch process.
+    """
+    return central_mcp_home() / "session-info.toml"

@@ -93,8 +93,9 @@ Multiple dispatches run in parallel.
 | `cancel_dispatch` | sync | Abort a running dispatch. |
 | `dispatch_history` | sync | Last N dispatches for **one project** (reads its jsonl log). |
 | `orchestration_history` | sync | Portfolio-wide snapshot: in-flight + recent cross-project milestones + per-project counts. Call this for "how is everything going?" |
+| `list_project_sessions` | sync | Enumerate the agent's resumable conversation sessions for one project. Use the returned `id` with `dispatch(session_id=...)` to switch threads. |
 | `add_project` | sync | Register a new project. Validates agent name. Auto-trusts codex dirs. |
-| `update_project` | sync | Change an existing project's agent, description, tags, permission_mode, or fallback. |
+| `update_project` | sync | Change an existing project's agent, description, tags, permission_mode, fallback, or `session_id` pin. |
 | `remove_project` | sync | Unregister a project. |
 
 ### How dispatch works
@@ -222,6 +223,42 @@ update_project(name="my-app", permission_mode="auto")              # flip withou
 
 If a project deals with sensitive code and you're not comfortable granting blanket `bypass`, switch to `auto` (claude + Sonnet/Opus 4.6) or keep `restricted` and stick to read-only dispatches.
 
+### Session handling (conversation continuity)
+
+By default, every dispatch resumes the agent's most-recently-modified conversation in the project's cwd — `claude --continue`, `codex exec resume --last`, `gemini --resume latest`, `opencode --continue`. **Droid is the exception**: its headless exec has no "resume latest", so a droid dispatch without an explicit session id always starts a fresh thread.
+
+When the user wants to switch to a specific session (or recover from ambient drift — e.g., an interactive session in the same cwd made the "latest" move), `dispatch(session_id=...)` is a **one-shot override**:
+
+```
+list_project_sessions("my-app")
+  → [{id: "a1b2...", title: "auth refactor", modified: "..."}, ...]
+
+dispatch("my-app", "continue from there", session_id="a1b2...")
+  # → claude -p "..." -r a1b2...
+```
+
+After that dispatch, the resumed session is now the most-recently-modified — so the **next** default `dispatch("my-app", "...")` picks it up via `--continue` automatically. You only restate the id when you want to switch threads.
+
+For drift-proof behavior (or for droid, which needs a persistent pin to keep continuity), pin the session:
+
+```
+update_project("my-app", session_id="a1b2...")
+# All future dispatches carry -r/-s <id> regardless of ambient state.
+
+update_project("my-app", session_id="")
+# Empty string clears the pin.
+```
+
+Resolution precedence when dispatching: explicit `session_id` arg > project's saved `session_id` > agent's resume-latest flag.
+
+| Agent | Specific-session flag | Source of session list |
+|---|---|---|
+| `claude` | `-r <uuid>` | `~/.claude/projects/<slug(cwd)>/*.jsonl` |
+| `codex` | `resume <uuid>` | `~/.codex/sessions/**/*.jsonl` filtered by `cwd` in session_meta |
+| `gemini` | `--resume <index>` | `gemini --list-sessions` (numeric indexes, not UUIDs) |
+| `droid` | `-s <uuid>` | `~/.factory/sessions/<slug(cwd)>/*.jsonl` |
+| `opencode` | `-s <uuid>` | `opencode session list` (global, not cwd-scoped) |
+
 ### Dispatch history (per project)
 
 Every dispatch streams its `start` / `output` / `complete` events into `~/.central-mcp/logs/<project>/dispatch.jsonl` (append-only). `dispatch_history` reads the terminal events back, merged with their matching `start`:
@@ -322,6 +359,21 @@ central-mcp down                   # tear the session back down
 The hub window (`cmcp-1-hub`) uses tmux's `main-vertical` layout: the orchestrator pane sits on the left taking two cells' worth of space, and project panes stack on the right. So the hub holds `panes_per_window − 1` panes (default 3 — orchestrator + 2 projects), and overflow windows get the full `panes_per_window` projects each. Every pane carries its role name on its top border, and the orchestrator border is highlighted in bold yellow so you can spot it at a glance.
 
 Kill with `central-mcp down` — the MCP dispatch path never depends on this layer, so tearing it down doesn't affect in-flight dispatches. The `watch` command is a read-only tail of `~/.central-mcp/logs/<project>/dispatch.jsonl`; you can also run it standalone in any terminal.
+
+#### Upgrading while an observation session is attached
+
+Only matters if you use the observation layer. If you don't (dispatch-only workflow), skip this subsection.
+
+When you `central-mcp upgrade` (or `pip install -U central-mcp`) with a `cmcp up` session already running, the panes keep holding the **previous version's** orchestrator CLI and `central-mcp watch` child processes. Those processes don't pick up binary changes mid-flight — added event types, updated argv flags, new instruction files in `~/.central-mcp/`, etc, won't reach them until they restart. On attach you may see stale agent output or zellij's "Exit: 0 — Enter to re-run" message on a watch pane whose old child has died.
+
+Central-mcp guards against this with a version stamp (`~/.central-mcp/session-info.toml`). On the next `cmcp up` / `cmcp tmux` / `cmcp zellij`, if the stamp doesn't match the currently-installed version, the command refuses to attach and prints a warning. Two ways forward:
+
+```bash
+cmcp down && cmcp zellij        # manual: tear down, then re-attach with the new binary
+cmcp zellij --force-recreate    # one-step: rebuild the session in place
+```
+
+After either path, every pane is respawned under the new version. The stamp is written by whichever of the three create-session paths (`up` / `tmux` / `zellij`) actually built the session, and cleared by `cmcp down`. Legacy sessions from before 0.6.1 have no stamp and attach without complaint — the guard only activates on an actual version mismatch.
 
 ## Registry resolution
 

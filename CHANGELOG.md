@@ -3,6 +3,16 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.6.1] — 2026-04-20
+
+### Added
+- **Observation-session version stamp.** `cmcp up` / `cmcp tmux` / `cmcp zellij` now write `~/.central-mcp/session-info.toml` with the central-mcp version that built the session. On every subsequent attach, the stamp is compared to the currently-installed version; when they diverge the command refuses to attach and prints a warning pointing at `cmcp down`. Guards against a common post-upgrade failure mode where panes keep running the previous version's orchestrator + watch processes and stop picking up new events, updated argv flags, or refreshed instruction files.
+- **`--force-recreate` flag** on `cmcp up` / `cmcp tmux` / `cmcp zellij` — tears down the existing session (both backends, plus the stamp file) and rebuilds in a single step instead of requiring a manual `cmcp down && cmcp zellij`.
+- README / README_KO: new "Upgrading while an observation session is attached" subsection under the observation-layer docs, explaining the stale-process problem, the guard, and the two recovery paths. Explicitly framed as "only matters if you use observation mode" so dispatch-only workflows skip it.
+
+### Internal
+- New `central_mcp.session_info` module encapsulates read / write / clear / `staleness_warning` logic with a `SessionStamp` dataclass. Covered by 8 unit tests (round-trip, malformed file tolerance, mismatch detection, mismatch-message contents).
+
 ## [0.6.0] — 2026-04-20
 
 ### Added

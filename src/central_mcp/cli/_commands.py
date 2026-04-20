@@ -245,6 +245,24 @@ def cmd_upgrade(args: argparse.Namespace) -> int:
     return upgrade.run(check_only=args.check)
 
 
+def _teardown_observation_session() -> bool:
+    """Kill tmux + zellij observation sessions if present and clear
+    the version stamp. Returns True if anything was actually torn down.
+    Silent — callers print their own surrounding context.
+    """
+    from central_mcp import session_info
+
+    any_killed, _ = layout.kill_all()
+    if shutil.which("zellij"):
+        from central_mcp import zellij as zj
+        if zj.has_session(zj.SESSION):
+            r = zj._run(["delete-session", zj.SESSION, "--force"])
+            if r.ok:
+                any_killed = True
+    session_info.clear()
+    return any_killed
+
+
 def cmd_down(args: argparse.Namespace) -> int:
     """Tear down the observation session for both backends.
 
@@ -253,6 +271,8 @@ def cmd_down(args: argparse.Namespace) -> int:
     Reports each backend's outcome so a partially-live state is
     visible.
     """
+    from central_mcp import session_info
+
     any_killed = False
     any_error = False
 
@@ -282,6 +302,10 @@ def cmd_down(args: argparse.Namespace) -> int:
         else:
             print(f"zellij: no session named '{zj.SESSION}'")
 
+    # Always clear the stamp so a later `cmcp up` isn't held back by
+    # an orphan file pointing at a version/multiplexer that's gone.
+    session_info.clear()
+
     if any_error:
         return 1
     return 0 if any_killed else 0
@@ -297,11 +321,30 @@ def cmd_tmux(args: argparse.Namespace) -> int:
     so a single command brings the whole layout up and drops the user
     in.
     """
+    from central_mcp import session_info
+
     if not shutil.which("tmux"):
         print("error: tmux is not installed or not on PATH", file=sys.stderr)
         return 1
 
-    if not tmux.has_session(layout.SESSION):
+    session_exists = tmux.has_session(layout.SESSION)
+
+    # Stale-version guard: if the session predates a central-mcp
+    # upgrade, its panes still carry the old binary's orchestrator +
+    # watch processes. Refuse to attach so the user can `cmcp down`
+    # and rebuild cleanly, unless they asked for --force-recreate.
+    if session_exists:
+        warning = session_info.staleness_warning(session_info.read())
+        if warning:
+            if getattr(args, "force_recreate", False):
+                print(f"(--force-recreate) {warning}", file=sys.stderr)
+                _teardown_observation_session()
+                session_exists = False
+            else:
+                print(f"warning: {warning}", file=sys.stderr)
+                return 1
+
+    if not session_exists:
         orchestrator = _orchestrator_pane_for_up(args)
         panes_per_window = args.panes_per_window or layout.DEFAULT_PANES_PER_WINDOW
         if panes_per_window < 1:
@@ -318,6 +361,7 @@ def cmd_tmux(args: argparse.Namespace) -> int:
             print(m)
         if not created:
             return 1
+        session_info.write(multiplexer="tmux")
 
     os.execvp("tmux", ["tmux", "attach", "-t", layout.SESSION])
 
@@ -331,7 +375,7 @@ def cmd_zellij(args: argparse.Namespace) -> int:
     (`central-mcp watch <project>` per project, the orchestrator on
     the left half of the hub tab).
     """
-    from central_mcp import zellij
+    from central_mcp import zellij, session_info
 
     if not shutil.which("zellij"):
         print("error: zellij is not installed or not on PATH", file=sys.stderr)
@@ -346,7 +390,23 @@ def cmd_zellij(args: argparse.Namespace) -> int:
         )
         return 1
 
-    if zellij.has_session(zellij.SESSION):
+    session_exists = zellij.has_session(zellij.SESSION)
+
+    # Stale-version guard (mirrors cmd_tmux). Warn + block attach when
+    # the running session was built by an earlier central-mcp; the
+    # user can pass --force-recreate to tear down + rebuild in one step.
+    if session_exists:
+        warning = session_info.staleness_warning(session_info.read())
+        if warning:
+            if getattr(args, "force_recreate", False):
+                print(f"(--force-recreate) {warning}", file=sys.stderr)
+                _teardown_observation_session()
+                session_exists = False
+            else:
+                print(f"warning: {warning}", file=sys.stderr)
+                return 1
+
+    if session_exists:
         print(f"(session '{zellij.SESSION}' already running — attaching)")
         os.execvp("zellij", ["zellij", "attach", zellij.SESSION])
 
@@ -357,6 +417,7 @@ def cmd_zellij(args: argparse.Namespace) -> int:
         panes_per_window=panes_per_window,
     )
     print(f"wrote layout: {layout_path}")
+    session_info.write(multiplexer="zellij")
     # `--session NAME --layout FILE` means "add FILE as a new tab to the
     # existing session NAME" and errors out if NAME doesn't exist yet.
     # `--new-session-with-layout` (-n) is the correct flag for creating
