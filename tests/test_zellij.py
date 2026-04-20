@@ -232,6 +232,80 @@ class TestTilingShape:
         assert p0_idx < p1_idx
 
 
+class TestOrchestratorColumn:
+    """0.6.4+: orchestrator pane gets a full-height left column sized
+    to match one project column, instead of the 0.6.3 flat grid that
+    treated it as just one of N equal-width cells.
+    """
+
+    def test_orch_column_has_size_attribute(
+        self, fake_home, tmp_path
+    ) -> None:
+        # 2 projects → rows=1, top_cols=2. Orch column = 1/(2+1) = 33%.
+        for i in range(2):
+            d = tmp_path / f"p{i}"
+            d.mkdir()
+            registry.add_project(f"p{i}", str(d), agent="shell")
+
+        orch = OrchestratorPane(command="echo hi", cwd=str(tmp_path), label="stub")
+        kdl = zellij.build_layout(
+            orchestrator=orch, term_size=(200, 50), panes_per_window=4,
+        )
+        # The orchestrator's pane block should carry `size="<N>%"`.
+        orch_line_idx = kdl.index("Central MCP Orchestrator")
+        # Walk back to the containing `pane name=...` line, then check
+        # the same line has a size attribute.
+        line_start = kdl.rfind("pane name=", 0, orch_line_idx)
+        line_end = kdl.find("\n", line_start)
+        orch_line = kdl[line_start:line_end]
+        assert 'size="' in orch_line, f"orch line missing size attr: {orch_line!r}"
+
+    def test_orch_with_one_project_is_fifty_fifty(
+        self, fake_home, tmp_path
+    ) -> None:
+        # 1 project → rows=1, top_cols=1. Orch = 1/(1+1) = 50%.
+        d = tmp_path / "solo"
+        d.mkdir()
+        registry.add_project("solo", str(d), agent="shell")
+
+        orch = OrchestratorPane(command="echo hi", cwd=str(tmp_path), label="stub")
+        kdl = zellij.build_layout(
+            orchestrator=orch, term_size=(200, 50), panes_per_window=4,
+        )
+        # Find the orch pane's size attribute and assert 50.
+        orch_idx = kdl.index("Central MCP Orchestrator")
+        line_start = kdl.rfind("pane name=", 0, orch_idx)
+        line_end = kdl.find("\n", line_start)
+        orch_line = kdl[line_start:line_end]
+        assert 'size="50%"' in orch_line, orch_line
+
+    def test_overflow_tab_does_not_use_orch_column(
+        self, fake_home, tmp_path
+    ) -> None:
+        # 6 projects with panes_per_window=4 → tab 0 (orch + 3 projects)
+        # uses the orch column, tab 1 (3 projects, no orch) does NOT.
+        for i in range(6):
+            d = tmp_path / f"p{i}"
+            d.mkdir()
+            registry.add_project(f"p{i}", str(d), agent="shell")
+
+        orch = OrchestratorPane(command="echo hi", cwd=str(tmp_path), label="stub")
+        kdl = zellij.build_layout(
+            orchestrator=orch, term_size=(200, 50), panes_per_window=4,
+        )
+        # Split the KDL at the overflow tab and inspect only that block.
+        overflow_tab_name = window_name(1, has_orchestrator=True)
+        overflow_start = kdl.index(f'tab name="{overflow_tab_name}"')
+        overflow_block = kdl[overflow_start:]
+        # Orchestrator shouldn't appear in the overflow, and no project
+        # pane there should carry a manually-set size attribute (they
+        # default to equal-share within the grid).
+        assert "Central MCP Orchestrator" not in overflow_block
+        # `size="` attributes only appear on the orch column — absent
+        # in the overflow tab.
+        assert 'size="' not in overflow_block
+
+
 class TestWriteLayout:
     def test_creates_parent_and_writes_kdl(
         self, fake_home: Path, tmp_path: Path

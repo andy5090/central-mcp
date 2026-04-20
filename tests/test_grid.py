@@ -52,6 +52,37 @@ class TestPickRows:
         assert pick_rows(3, term_size=(20, 200)) <= 3
 
 
+class TestPickPanesPerWindow:
+    from central_mcp.grid import pick_panes_per_window
+
+    def test_laptop_terminal_caps_reasonably(self) -> None:
+        from central_mcp.grid import pick_panes_per_window
+        # 120x40 is a typical laptop terminal. Packing more than ~8 panes
+        # into it runs each pane below the readability floor.
+        n = pick_panes_per_window(term_size=(120, 40))
+        assert 2 <= n <= 12
+
+    def test_ultra_wide_terminal_allows_more(self) -> None:
+        from central_mcp.grid import pick_panes_per_window
+        # A 250x60 terminal can fit more readable panes than 120x40.
+        wide = pick_panes_per_window(term_size=(250, 60))
+        narrow = pick_panes_per_window(term_size=(120, 40))
+        assert wide >= narrow
+
+    def test_tiny_terminal_returns_one(self) -> None:
+        from central_mcp.grid import pick_panes_per_window
+        # Below the minimum readable floor, one pane fills the window.
+        assert pick_panes_per_window(term_size=(30, 10)) == 1
+        assert pick_panes_per_window(term_size=(60, 5)) == 1
+
+    def test_min_pane_cols_parameter_respected(self) -> None:
+        from central_mcp.grid import pick_panes_per_window
+        # Tighter readable width → more panes fit in the same terminal.
+        loose = pick_panes_per_window(term_size=(200, 50), min_pane_cols=20)
+        strict = pick_panes_per_window(term_size=(200, 50), min_pane_cols=60)
+        assert loose > strict
+
+
 class TestRowSizes:
     def test_even_split(self) -> None:
         assert row_sizes(10, 2) == [5, 5]

@@ -21,6 +21,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from central_mcp.grid import pick_panes_per_window, pick_rows
 from central_mcp.layout import (
     DEFAULT_PANES_PER_WINDOW,
     OrchestratorPane,
@@ -171,23 +172,73 @@ def _tile_panes(panes: list[str], rows: int = 2) -> str:
     )
 
 
-def _tab_kdl(tab_name: str, panes: list[str], rows: int) -> str:
-    """Render a tab whose panes fill the tab area as an equal-size grid.
+def _tab_kdl(
+    tab_name: str,
+    panes: list[str],
+    rows: int,
+    *,
+    orch_first: bool = False,
+) -> str:
+    """Render a tab.
 
-    There's no hub-specific geometry anymore — the orchestrator (when
-    present) is just the first pane, and every pane in the same row
-    gets the same width. Users who want the orchestrator larger can
-    manually resize inside zellij; the default no longer forces a 50%
-    left column.
+    When `orch_first=True` the first pane is treated as an
+    orchestrator that gets its own full-height left column. The column
+    is sized to match the width of one project-column in the project
+    grid — so `orch + 1` reproduces the classic 50/50 layout, and
+    `orch + N` gives each project column the same width as the
+    orchestrator column (orchestrator no longer dominates with a hard
+    50% when there are many projects).
+
+    Without the flag, every pane gets an equal slot in the 2-row (or
+    computed-row) grid — the 0.6.3 flat default.
     """
     if not panes:
         return f'tab name={_kdl_escape(tab_name)} {{\n    pane\n}}'
+
+    if orch_first and len(panes) >= 2:
+        orch_pane, project_panes = panes[0], panes[1:]
+        project_rows = pick_rows(len(project_panes))
+        top_cols = (len(project_panes) + project_rows - 1) // project_rows
+        orch_size = max(1, 100 // (top_cols + 1))
+        project_grid = _tile_panes(project_panes, rows=project_rows)
+
+        orch_sized = _inject_size(orch_pane, f"{orch_size}%")
+        orch_indented = _indent(orch_sized, "        ")
+        grid_indented = _indent(project_grid, "        ")
+        return (
+            f'tab name={_kdl_escape(tab_name)} {{\n'
+            '    pane split_direction="vertical" {\n'
+            f'{orch_indented}\n'
+            f'{grid_indented}\n'
+            '    }\n'
+            '}'
+        )
+
     grid = _tile_panes(panes, rows=rows)
     return (
         f'tab name={_kdl_escape(tab_name)} {{\n'
         + _indent(grid, "    ")
         + '\n}'
     )
+
+
+def _inject_size(pane_block: str, size: str) -> str:
+    """Insert a `size="N%"` attribute into the opening `pane` line of
+    a KDL block. Safe to call on blocks that don't start with `pane` —
+    the original string is returned untouched.
+    """
+    if not pane_block.startswith("pane"):
+        return pane_block
+    first_nl = pane_block.find("\n")
+    first_line = pane_block[:first_nl] if first_nl != -1 else pane_block
+    rest = pane_block[first_nl:] if first_nl != -1 else ""
+    brace_idx = first_line.find("{")
+    if brace_idx == -1:
+        # Single-line `pane ...`: append size attribute at the end.
+        return first_line.rstrip() + f' size="{size}"' + rest
+    before_brace = first_line[:brace_idx].rstrip()
+    brace_and_after = first_line[brace_idx:]
+    return f'{before_brace} size="{size}" {brace_and_after}{rest}'
 
 
 def build_layout(
@@ -197,16 +248,18 @@ def build_layout(
 ) -> str:
     """Build the full KDL layout string for the current registry.
 
-    Every tab uses the same flat grid: the orchestrator (when present)
-    is just the first pane in the first tab, and every pane in the
-    same row gets an equal width. Rows per tab are chosen by
-    `grid.pick_rows` based on terminal size, so a wide terminal gets
-    a 2×N grid and a narrow terminal gets a taller grid.
+    The first tab puts the orchestrator (when present) in a full-
+    height left column whose width matches one project column in the
+    tab's project grid — so `orch + 1 project` reproduces a 50/50
+    split, and `orch + N` lets each project column match the
+    orchestrator column's width without the orchestrator dominating
+    a hard 50%. Overflow tabs (no orchestrator) stay on the flat grid.
+
+    `panes_per_window` defaults to the static constant; the CLI
+    resolves `None` via `grid.pick_panes_per_window` before calling.
     """
     if panes_per_window < 1:
         raise ValueError(f"panes_per_window must be >= 1, got {panes_per_window}")
-
-    from central_mcp.grid import pick_rows
 
     has_orchestrator = orchestrator is not None
     projects = load_registry()
@@ -231,10 +284,12 @@ def build_layout(
         ]
         for tab_idx, chunk in enumerate(chunks):
             tab_rows = pick_rows(len(chunk), term_size=term_size)
+            is_first_with_orch = (tab_idx == 0 and has_orchestrator)
             tabs.append(_tab_kdl(
                 window_name(tab_idx, has_orchestrator=has_orchestrator),
                 chunk,
                 rows=tab_rows,
+                orch_first=is_first_with_orch,
             ))
 
     body = "\n".join(tabs)

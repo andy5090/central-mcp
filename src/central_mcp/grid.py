@@ -58,6 +58,53 @@ def pick_rows(
     return max(1, min(n_panes, round(r_est)))
 
 
+# Minimum char dimensions below which a pane is effectively unreadable.
+# Tuned against typical `central-mcp watch` output (project name header,
+# one-line dispatch events, short error excerpts); anything narrower
+# than ~40 cols word-wraps every other line, and anything shorter than
+# ~10 rows shows barely a couple of events before scrolling off.
+_MIN_PANE_COLS = 40
+_MIN_PANE_ROWS = 10
+
+
+def pick_panes_per_window(
+    *,
+    term_size: tuple[int, int] | None = None,
+    min_pane_cols: int = _MIN_PANE_COLS,
+    min_pane_rows: int = _MIN_PANE_ROWS,
+) -> int:
+    """How many panes fit readably in one tmux/zellij tab on the
+    current terminal.
+
+    Picks the largest N such that a `rows = pick_rows(N)` grid can fit
+    at least `min_pane_cols × min_pane_rows` per pane. In practice the
+    answer sits between 2 and ~12 depending on terminal dimensions;
+    the caller clamps to `>= 1`.
+    """
+    if term_size is None:
+        import shutil
+        cols, rows = shutil.get_terminal_size(fallback=(120, 40))
+    else:
+        cols, rows = term_size
+
+    if cols < min_pane_cols or rows < min_pane_rows:
+        return 1
+
+    # Brute-force: ascend through candidate pane counts; stop when a
+    # grid no longer keeps each pane above the readability floor.
+    best = 1
+    for n in range(2, 33):  # hard cap at 32 panes/tab, plenty for orchestration
+        r = pick_rows(n, term_size=(cols, rows))
+        cols_per_row = (n + r - 1) // r
+        pane_w = cols // max(cols_per_row + 1, 1)   # +1 covers the orch column
+        pane_h = rows // max(r, 1)
+        if pane_w >= min_pane_cols and pane_h >= min_pane_rows:
+            best = n
+        else:
+            break
+    return best
+
+
 def row_sizes(n_panes: int, rows: int) -> list[int]:
     """Distribute `n_panes` across `rows` rows, top-row-heavy when the
     count doesn't divide evenly. Each entry is that row's column count.

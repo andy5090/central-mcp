@@ -93,6 +93,47 @@ def _fill_row(
         messages.append(f"{wname} -> {title} ({cwd})")
 
 
+def _fill_orch_column_grid(
+    target: str,
+    wname: str,
+    anchor_id: str,
+    plans: list[tuple[str, str, str | None, bool]],
+    messages: list[str],
+) -> None:
+    """Layout variant: anchor = orchestrator, taking a full-height
+    left column sized to match one project column. Right area holds
+    the project panes in a 2-row (or computed-row) grid.
+
+    For `k` project cols in the top project row, the orchestrator
+    column is sized to 1/(k+1) of the window width, matching one
+    project column. `orch + 1 project` reproduces a 50/50 split.
+    """
+    from central_mcp.grid import pick_rows
+
+    project_plans = plans
+    if not project_plans:
+        return
+    project_rows = pick_rows(len(project_plans))
+    top_cols = (len(project_plans) + project_rows - 1) // max(project_rows, 1)
+    # Orchestrator occupies 1 of (top_cols + 1) total columns.
+    right_size = max(1, min(99, top_cols * 100 // (top_cols + 1)))
+
+    first_proj = project_plans[0]
+    ok, right_anchor = tmux.split_window_with_id(
+        anchor_id, first_proj[1], first_proj[2],
+        vertical=False, size_percent=right_size,
+    )
+    if not ok:
+        messages.append(f"split-window for {first_proj[0]} failed")
+        return
+    tmux.set_pane_title(right_anchor, first_proj[0])
+    messages.append(f"{wname} -> {first_proj[0]} ({first_proj[1]})")
+    # Recurse into the right area with the normal grid layout.
+    _fill_grid(
+        target, wname, right_anchor, project_plans[1:], project_rows, messages,
+    )
+
+
 def _fill_grid(
     target: str,
     wname: str,
@@ -273,14 +314,17 @@ def ensure_session(
             )
         tmux.set_pane_title(f"{target}.0", first_title)
 
-        # Unified grid: orchestrator is just the first pane (its yellow-
-        # bold border style still makes it visually distinct) and shares
-        # width equally with row-mates. Row count is picked per-window
-        # so a narrow terminal stacks more rows and a wide one grows
-        # columns.
+        # For the orchestrator's own tab (first window, has_orch=True),
+        # give the orchestrator a full-height left column sized to one
+        # project column. Overflow windows stay on the flat grid.
         from central_mcp.grid import pick_rows
-        rows = pick_rows(len(chunk))
-        _fill_grid(target, wname, f"{target}.0", chunk[1:], rows, messages)
+        if win_idx == 0 and first_is_orch:
+            _fill_orch_column_grid(
+                target, wname, f"{target}.0", chunk[1:], messages,
+            )
+        else:
+            rows = pick_rows(len(chunk))
+            _fill_grid(target, wname, f"{target}.0", chunk[1:], rows, messages)
 
     # Focus the first window/pane so attaching users land on pane 0
     # (orchestrator when present) rather than the last-split pane.

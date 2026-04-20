@@ -112,6 +112,18 @@ def cmd_brief(args: argparse.Namespace) -> int:
 
 # ---------- observation layer (optional tmux) ----------
 
+def _resolve_panes_per_window(args: argparse.Namespace) -> int:
+    """Resolve the effective `panes_per_window` for `up` / `tmux` /
+    `zellij`. Falls back to `grid.pick_panes_per_window()` — which
+    reads the current terminal size — when the flag is absent.
+    """
+    explicit = getattr(args, "panes_per_window", None)
+    if explicit:
+        return explicit
+    from central_mcp.grid import pick_panes_per_window
+    return pick_panes_per_window()
+
+
 def _orchestrator_pane_for_up(args: argparse.Namespace) -> layout.OrchestratorPane | None:
     """Pick an orchestrator for pane 0 or return None to skip.
 
@@ -353,7 +365,7 @@ def cmd_tmux(args: argparse.Namespace) -> int:
 
     if not session_exists:
         orchestrator = _orchestrator_pane_for_up(args)
-        panes_per_window = args.panes_per_window or layout.DEFAULT_PANES_PER_WINDOW
+        panes_per_window = _resolve_panes_per_window(args)
         if panes_per_window < 1:
             print(
                 f"error: --panes-per-window must be >= 1 (got {panes_per_window})",
@@ -389,7 +401,7 @@ def cmd_zellij(args: argparse.Namespace) -> int:
         return 1
 
     orchestrator = _orchestrator_pane_for_up(args)
-    panes_per_window = args.panes_per_window or layout.DEFAULT_PANES_PER_WINDOW
+    panes_per_window = _resolve_panes_per_window(args)
     if panes_per_window < 1:
         print(
             f"error: --panes-per-window must be >= 1 (got {panes_per_window})",

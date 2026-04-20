@@ -3,6 +3,20 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.6.4] — 2026-04-20
+
+### Changed
+- **`--panes-per-window` defaults to `auto`** (was the hardcoded `4`). When no value is supplied, central-mcp reads the current terminal's size and picks how many panes fit while keeping each pane above a readability floor (~40 cols × 10 rows). On a 120×40 laptop terminal that's typically 6–8; on a 200×50 wide screen it reaches 10–12. Pass an explicit integer to override.
+- **Orchestrator gets its own full-height left column** on the first tab, sized to match one project column rather than forcing a 50% split. `orch + 1 project` still reproduces the classic 50/50, but `orch + 9 projects` now gives orch a ~17% column with a 2×5 project grid filling the remaining 83% — instead of the 0.6.3 flat layout that buried the orchestrator as one of six equal-width cells.
+
+### Added
+- `central_mcp.grid.pick_panes_per_window(term_size, min_pane_cols, min_pane_rows)` — the heuristic that backs the new auto default. Exposed as a public function for adapter/test use.
+- Internal `_fill_orch_column_grid` (tmux) and `orch_first=True` branch on `_tab_kdl` (zellij) render the orchestrator-column-plus-project-grid layout. Overflow tabs (no orchestrator) keep the flat 0.6.3 grid.
+- 7 new tests: 4 for `pick_panes_per_window` regimes (tiny terminal → 1, wide terminal packs more than narrow, `min_pane_cols` override) and 3 for the zellij orch-column (size attribute present, 50/50 with 1 project, overflow tab has no size attribute).
+
+### Upgrading note
+- The stale-session guard from 0.6.1 applies: running a 0.6.3 observation session with 0.6.4 installed will refuse to attach until you `cmcp down` (or pass `--force-recreate`). `cmcp upgrade` auto-teardown (0.6.3+) handles the common upgrade path for you.
+
 ## [0.6.3] — 2026-04-20
 
 ### Changed

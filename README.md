@@ -344,7 +344,9 @@ Both produce the same logical layout (hub tab + overflow tabs, project panes run
 - **Pane 0 — orchestrator** (Claude Code / Codex / Gemini / opencode), launched in `~/.central-mcp` so it picks up the hub's `CLAUDE.md` / `AGENTS.md`.
 - **Panes 1…N — one per registered project**, each streaming that project's dispatch activity live via `central-mcp watch <project>`. Every dispatch's prompt, output, exit code, and duration scrolls past in real time.
 
-Windows are named `cmcp-<N>` with the first window picking up a `-hub` suffix (`cmcp-1-hub`) when it holds the orchestrator — so you can tell at a glance which window to jump to. Cycle panes with `Ctrl+b n` / `Ctrl+b <digit>`. When the registry has more projects than fit in one window, extra windows (`cmcp-2`, `cmcp-3`, …) are added automatically — each holds up to `--panes-per-window` (default 4).
+Windows are named `cmcp-<N>` with the first window picking up a `-hub` suffix (`cmcp-1-hub`) when it holds the orchestrator — so you can tell at a glance which window to jump to. Cycle panes with `Ctrl+b n` / `Ctrl+b <digit>`. When the registry has more projects than fit in one window, extra windows (`cmcp-2`, `cmcp-3`, …) are added automatically. `--panes-per-window` defaults to **auto** (0.6.4+) — central-mcp reads the current terminal's size and picks how many panes fit above the readability floor (~40 cols × 10 rows per pane). Pass an integer to override.
+
+**Orchestrator layout**: the first window puts the orchestrator pane in a full-height left column sized to match one project column. So `orch + 1 project` reproduces a 50/50 split, `orch + 3 projects` yields four equal columns (orch + 3 projects in a single row), and `orch + 9 projects` gives orch a 1/6 column with 2 × 5 project grid on the right.
 
 ```bash
 central-mcp tmux                   # one-shot: create the session if missing, then attach
