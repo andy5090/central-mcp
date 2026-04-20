@@ -67,16 +67,25 @@ def split_window_with_id(
     command: str | None = None,
     *,
     vertical: bool = False,
+    size_percent: int | None = None,
 ) -> tuple[bool, str]:
     """Split a pane and return the new pane's unique id (e.g. `%23`).
 
     `vertical=True` splits top/bottom (tmux `-v`); `False` splits
-    side-by-side (tmux `-h`). The returned id can be used as a target
-    for subsequent splits so callers can build a specific layout by
-    hand instead of relying on `select-layout tiled`.
+    side-by-side (tmux `-h`). `size_percent` (1–99) controls what
+    fraction of the target pane the new pane takes — necessary when
+    building grids with equal-sized panes, since tmux's default 50/50
+    split would leave uneven widths when splitting the same column
+    repeatedly.
+
+    The returned id can be used as a target for subsequent splits so
+    callers can build a specific layout by hand instead of relying on
+    `select-layout tiled`.
     """
     args = ["split-window", "-t", target, "-c", cwd]
     args.append("-v" if vertical else "-h")
+    if size_percent is not None:
+        args += ["-l", f"{size_percent}%"]
     args += ["-P", "-F", "#{pane_id}"]
     if command:
         args.append(command)

@@ -242,6 +242,13 @@ def cmd_watch(args: argparse.Namespace) -> int:
 
 def cmd_upgrade(args: argparse.Namespace) -> int:
     from central_mcp import upgrade
+    # Always tear down any live observation session before replacing
+    # the binary — otherwise its orchestrator + `central-mcp watch`
+    # children hold the old version and the upgrade "doesn't take"
+    # from the user's POV. --check is read-only so we skip the
+    # teardown there.
+    if not args.check:
+        _teardown_observation_session()
     return upgrade.run(check_only=args.check)
 
 

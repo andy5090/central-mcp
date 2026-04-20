@@ -3,6 +3,26 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.6.3] — 2026-04-20
+
+### Changed
+- **Equal-width panes, no more 50% orchestrator lock.** The observation layer used to pin the orchestrator pane to 50% of the hub via tmux `main-vertical` / a zellij outer vertical split; projects then stacked in the remaining half. That gave a strong orchestrator bias and squeezed project panes whenever the count grew. 0.6.3 drops the special case — orchestrator is now just the first pane of the first tab, sharing width equally with its row mates. Users who want it larger can manually resize inside tmux/zellij.
+- **Flat chunking across tabs.** Every tab / window holds up to `panes_per_window` panes now, not `panes_per_window - 1` for the hub. With `panes_per_window=4`, orchestrator + 3 projects fits in one tab (was: hub=3 + overflow=1). Drops a whole class of off-by-one arithmetic in the layout code.
+- **Terminal-size-aware grid rows.** New `central_mcp.grid.pick_rows(n, term_size=None)` picks the target row count based on the invoking terminal's aspect ratio. On a typical wide screen (120×40, 200×50) it returns 2 — matching 0.6.2 behavior. On a narrow / tall terminal (SSH from phone, split pane) it bumps to 3+ so pane widths don't collapse. One-time measurement at session creation — resizes mid-session don't retrigger.
+- **Orchestrator pane width in a 3-pane row is now equal across all three** (previously degraded to `[50%, 25%, 25%]` after repeated 50/50 splits). tmux splits now pass size percentages tuned for equal final widths; the size formula produces a max deviation of ~2 char cells across a 3-pane row due to whole-cell rounding, verified in tests.
+
+### Added
+- `central-mcp upgrade` now tears down any live observation session before replacing the binary. Previously a running `cmcp up` session would hold the old version's orchestrator + `central-mcp watch` children, so the upgrade "didn't take" from the user's POV until they manually ran `cmcp down`. `--check` is read-only and skips the teardown.
+- `central_mcp.tmux.split_window_with_id(..., size_percent=N)` — wraps tmux's `-l N%` so callers can build layouts with exact equal-sized panes instead of relying on the 50/50 default.
+
+### Internal
+- `central_mcp.grid` module: `pick_rows` (row count picker) + `row_sizes` (top-row-heavy distribution helper). Covered by 10 unit tests.
+- `layout.py` helpers renamed: `_fill_2row_grid` → `_fill_grid(rows=N)` (generalized), `_fill_row(target_cols=N)` split out for reuse. Both use size percentages to keep sibling panes equal.
+- zellij: deleted `_hub_tab_kdl` and `_project_tab_kdl` in favor of a single `_tab_kdl(tab_name, panes, rows)` that renders every tab the same way.
+
+### Upgrading note
+- The old stale-session guard added in 0.6.1 applies: running a 0.6.2 observation session when 0.6.3 is installed will refuse to attach until you `cmcp down` (or pass `--force-recreate`). 0.6.3 takes this one step further by auto-tearing-down on `cmcp upgrade`, so the common upgrade path is now drop-in.
+
 ## [0.6.2] — 2026-04-20
 
 ### Changed

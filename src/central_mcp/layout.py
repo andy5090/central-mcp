@@ -57,88 +57,115 @@ def _wrap(launch: str) -> str:
     return f"sh -c '{launch}; exec $SHELL'"
 
 
-def _fill_2row_grid(
+def _fill_row(
+    wname: str,
+    row_anchor: str,
+    row_plans: list[tuple[str, str, str | None, bool]],
+    target_cols: int,
+    messages: list[str],
+) -> None:
+    """Extend `row_anchor` into a horizontal row of `target_cols` panes.
+
+    The row starts with one existing pane (the anchor). Each additional
+    pane is added via a horizontal split of the current rightmost pane
+    with a size percentage tuned so all `target_cols` panes end up with
+    equal widths. For the i-th additional split (0-indexed) out of
+    `target_cols - 1` total splits, the new pane takes
+    `(target_cols - 1 - i) / (target_cols - i)` of the split target;
+    plugging i=0 into k=4 gives 75% (leaves anchor at 25%, new at 75%),
+    i=1 gives 67%, i=2 gives 50%, producing [25%,25%,25%,25%] overall.
+    """
+    if not row_plans or target_cols <= 1:
+        return
+    rightmost = row_anchor
+    for i, (title, cwd, cmd, _) in enumerate(row_plans):
+        remaining_after = target_cols - 1 - i
+        parent_holds = target_cols - i
+        size = max(1, min(99, (remaining_after * 100) // parent_holds))
+        ok, new_id = tmux.split_window_with_id(
+            rightmost, cwd, cmd, vertical=False, size_percent=size,
+        )
+        if not ok:
+            messages.append(f"split-window for {title} failed")
+            continue
+        rightmost = new_id
+        tmux.set_pane_title(new_id, title)
+        messages.append(f"{wname} -> {title} ({cwd})")
+
+
+def _fill_grid(
     target: str,
     wname: str,
     anchor_id: str,
     plans: list[tuple[str, str, str | None, bool]],
+    rows: int,
     messages: list[str],
 ) -> None:
-    """Extend an existing pane into a 2-row grid by splitting it.
+    """Extend an existing anchor pane into an `rows` × dynamic-cols grid.
 
-    `anchor_id` points at a pane that already occupies the target
-    area. `plans` is the list of additional (title, cwd, cmd, is_orch)
-    tuples to lay out alongside it. The algorithm:
-
-      - 0 plans: nothing to do.
-      - 1 plan: single horizontal split, new pane side-by-side with
-        the anchor (one row × two cols).
-      - 2+ plans: vertical split first to open the bottom row (anchor
-        stays in the top row), then alternate horizontal splits of the
-        current rightmost pane of each row until every plan is placed.
-        Top row receives `ceil(N/2)` panes (anchor counts toward that).
-
-    `tmux.select_layout` is *not* called — the sequential-split sizes
-    already lay the panes out in the intended 2-row × N-col pattern,
-    and `tiled` would undo the structure. Split failures are logged to
-    `messages` so the caller's summary line surfaces them.
+    The anchor occupies the full target area. Plans are distributed
+    top-row-heavy: for total panes N = 1 + len(plans), the top row
+    takes `ceil(N / rows)` and subsequent rows take proportional
+    shares. Equal-size panes are achieved by size-percentage math on
+    each split rather than by calling `select-layout` (which would
+    undo the structure). Split failures append to `messages`; a
+    partially built grid is still usable.
     """
-    if not plans:
+    from central_mcp.grid import row_sizes
+
+    total = 1 + len(plans)
+    if total <= 1:
         return
 
-    # Single extra pane: just add it side-by-side with the anchor.
-    if len(plans) == 1:
-        title, cwd, cmd, _ = plans[0]
-        ok, new_id = tmux.split_window_with_id(
-            anchor_id, cwd, cmd, vertical=False,
+    # Force single-row layout when caller asks for rows <= 1 or every
+    # pane fits in a single row already.
+    if rows <= 1 or total <= rows:
+        # Single row, `total` equal-width cols.
+        _fill_row(wname, anchor_id, plans, target_cols=total, messages=messages)
+        return
+
+    sizes = row_sizes(total, rows)  # e.g. total=10, rows=2 → [5, 5]
+    # We'll hold a list of (row_anchor_id, cols_in_this_row) and fill each
+    # row with horizontal splits after we've created its anchor pane.
+    row_anchors: list[str] = [anchor_id]
+    plan_idx = 0
+
+    # Step 1: create one anchor pane per additional row via vertical
+    # splits. Each split targets the previous row's anchor; size
+    # percentages ensure all rows end up the same height.
+    for r_idx in range(1, len(sizes)):
+        remaining_rows_after = len(sizes) - 1 - (r_idx - 1)  # rows still to add
+        parent_holds_rows = len(sizes) - (r_idx - 1)
+        size = max(1, min(99, (remaining_rows_after * 100) // parent_holds_rows))
+        if plan_idx >= len(plans):
+            break
+        title, cwd, cmd, _ = plans[plan_idx]
+        plan_idx += 1
+        ok, new_anchor = tmux.split_window_with_id(
+            row_anchors[-1], cwd, cmd, vertical=True, size_percent=size,
         )
         if not ok:
             messages.append(f"split-window for {title} failed")
-            return
+            continue
+        tmux.set_pane_title(new_anchor, title)
         messages.append(f"{wname} -> {title} ({cwd})")
-        tmux.set_pane_title(new_id, title)
-        return
+        row_anchors.append(new_anchor)
 
-    # 2+ extra plans: open the bottom row with a vertical split, then
-    # alternate rows filling to the target column counts.
-    total = 1 + len(plans)
-    top_target = (total + 1) // 2  # ceil(total / 2)
-
-    first_bot = plans[0]
-    ok, bot_rightmost = tmux.split_window_with_id(
-        anchor_id, first_bot[1], first_bot[2], vertical=True,
-    )
-    if not ok:
-        messages.append(f"split-window for {first_bot[0]} failed")
-        return
-    messages.append(f"{wname} -> {first_bot[0]} ({first_bot[1]})")
-    tmux.set_pane_title(bot_rightmost, first_bot[0])
-
-    top_rightmost = anchor_id
-    top_count = 1  # anchor
-    bot_count = 1  # first_bot
-
-    for title, cwd, cmd, _ in plans[1:]:
-        if top_count < top_target:
-            ok, new_id = tmux.split_window_with_id(
-                top_rightmost, cwd, cmd, vertical=False,
-            )
-            if not ok:
-                messages.append(f"split-window for {title} failed")
-                continue
-            top_rightmost = new_id
-            top_count += 1
-        else:
-            ok, new_id = tmux.split_window_with_id(
-                bot_rightmost, cwd, cmd, vertical=False,
-            )
-            if not ok:
-                messages.append(f"split-window for {title} failed")
-                continue
-            bot_rightmost = new_id
-            bot_count += 1
-        messages.append(f"{wname} -> {title} ({cwd})")
-        tmux.set_pane_title(new_id, title)
+    # Step 2: for each row, split its anchor horizontally into `cols`
+    # equal-width panes. The anchor already counts as pane #1 of the
+    # row, so we only need `cols - 1` extra splits per row.
+    for r_idx, row_anchor in enumerate(row_anchors):
+        cols = sizes[r_idx]
+        needed = cols - 1
+        if needed <= 0:
+            continue
+        row_plans: list[tuple[str, str, str | None, bool]] = []
+        for _ in range(needed):
+            if plan_idx >= len(plans):
+                break
+            row_plans.append(plans[plan_idx])
+            plan_idx += 1
+        _fill_row(wname, row_anchor, row_plans, target_cols=cols, messages=messages)
 
 
 def _pane_command(p: Project) -> str:
@@ -205,19 +232,14 @@ def ensure_session(
             return False, messages
         return True, messages
 
-    # Chunk into windows.
-    # - Hub window (contains orchestrator) holds `panes_per_window - 1`
-    #   panes: orchestrator visually takes two cells via main-vertical,
-    #   so the window still feels like `panes_per_window` cells worth.
-    # - Overflow windows hold the full `panes_per_window` project panes.
-    chunks: list[list[tuple[str, str, str | None, bool]]] = []
-    first_size = panes_per_window - 1 if (has_orchestrator and panes_per_window >= 2) else panes_per_window
-    if first_size < 1:
-        first_size = 1
-    chunks.append(plan[:first_size])
-    remaining = plan[first_size:]
-    for i in range(0, len(remaining), panes_per_window):
-        chunks.append(remaining[i:i + panes_per_window])
+    # Chunk into windows. Every window holds up to `panes_per_window`
+    # panes — the orchestrator is no longer special-cased, so it just
+    # occupies the first cell of the first window and shares width
+    # equally with any row-mates.
+    chunks: list[list[tuple[str, str, str | None, bool]]] = [
+        plan[i:i + panes_per_window]
+        for i in range(0, len(plan), panes_per_window)
+    ]
 
     for win_idx, chunk in enumerate(chunks):
         wname = window_name(win_idx, has_orchestrator=has_orchestrator)
@@ -251,52 +273,14 @@ def ensure_session(
             )
         tmux.set_pane_title(f"{target}.0", first_title)
 
-        is_hub = (win_idx == 0 and has_orchestrator)
-        remaining = chunk[1:]
-
-        if is_hub:
-            # Hub: orchestrator on the left, project panes on the right.
-            # 1–2 projects → keep the legacy main-vertical stack (each
-            # project gets a tall pane, same as old behavior).
-            # 3+ projects → split off the right half, then tile those
-            # project panes in a 2-row grid so columns grow horizontally
-            # instead of stacking into an unreadable tall column.
-            if len(remaining) <= 2:
-                for i, (title, cwd, cmd, _) in enumerate(remaining, start=1):
-                    r = tmux.split_window(target, cwd, command=cmd)
-                    if not r.ok:
-                        messages.append(
-                            f"split-window for {title} failed: {r.stderr.strip()}"
-                        )
-                        continue
-                    messages.append(f"{wname} pane {i} -> {title} ({cwd})")
-                    tmux.set_pane_title(f"{target}.{i}", title)
-                    tmux.select_layout(target, "tiled")
-                if remaining:
-                    tmux.set_window_option(target, "main-pane-width", "50%")
-                    tmux.select_layout(target, "main-vertical")
-            else:
-                # 3+ projects: split the orchestrator off to the left,
-                # then build the 2-row grid anchored at the new right
-                # pane (which carries the first project).
-                first_proj = remaining[0]
-                ok, right_anchor = tmux.split_window_with_id(
-                    f"{target}.0", first_proj[1], first_proj[2], vertical=False,
-                )
-                if not ok:
-                    messages.append(
-                        f"hub right-half split failed for {first_proj[0]!r}"
-                    )
-                else:
-                    messages.append(
-                        f"{wname} -> {first_proj[0]} ({first_proj[1]})"
-                    )
-                    tmux.set_pane_title(right_anchor, first_proj[0])
-                    _fill_2row_grid(target, wname, right_anchor, remaining[1:], messages)
-        else:
-            # Overflow: no orchestrator, fill the whole window with a
-            # 2-row grid anchored on pane 0.
-            _fill_2row_grid(target, wname, f"{target}.0", remaining, messages)
+        # Unified grid: orchestrator is just the first pane (its yellow-
+        # bold border style still makes it visually distinct) and shares
+        # width equally with row-mates. Row count is picked per-window
+        # so a narrow terminal stacks more rows and a wide one grows
+        # columns.
+        from central_mcp.grid import pick_rows
+        rows = pick_rows(len(chunk))
+        _fill_grid(target, wname, f"{target}.0", chunk[1:], rows, messages)
 
     # Focus the first window/pane so attaching users land on pane 0
     # (orchestrator when present) rather than the last-split pane.

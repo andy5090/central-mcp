@@ -171,46 +171,18 @@ def _tile_panes(panes: list[str], rows: int = 2) -> str:
     )
 
 
-def _hub_tab_kdl(tab_name: str, orch_pane: str, project_panes: list[str]) -> str:
-    """Hub tab: orchestrator on left, projects on the right.
+def _tab_kdl(tab_name: str, panes: list[str], rows: int) -> str:
+    """Render a tab whose panes fill the tab area as an equal-size grid.
 
-    For 1–2 project panes the right half keeps a simple vertical stack
-    (halving the already-narrow right column with a horizontal split
-    would produce unreadably thin panes at that size). For 3+ project
-    panes the right half switches to the 2-row grid so columns grow
-    horizontally instead of stacking into one tall column.
+    There's no hub-specific geometry anymore — the orchestrator (when
+    present) is just the first pane, and every pane in the same row
+    gets the same width. Users who want the orchestrator larger can
+    manually resize inside zellij; the default no longer forces a 50%
+    left column.
     """
-    orch_indented = "\n".join("        " + ln for ln in orch_pane.splitlines())
-
-    if not project_panes:
-        right_block = ""
-    elif len(project_panes) <= 2:
-        indent = "        "
-        right_children = "\n".join(
-            "\n".join(indent + ln for ln in p.splitlines()) for p in project_panes
-        )
-        right_block = (
-            "    pane split_direction=\"horizontal\" {\n"
-            f"{right_children}\n"
-            "    }"
-        )
-    else:
-        grid = _tile_panes(project_panes, rows=2)
-        right_block = _indent(grid, "    ")
-
-    return (
-        f'tab name={_kdl_escape(tab_name)} {{\n'
-        '    pane split_direction="vertical" {\n'
-        f'{orch_indented}\n'
-        f'{right_block}\n'
-        '    }\n'
-        '}'
-    )
-
-
-def _project_tab_kdl(tab_name: str, project_panes: list[str]) -> str:
-    """Overflow tab: project panes tiled in the 2-row grid."""
-    grid = _tile_panes(project_panes, rows=2)
+    if not panes:
+        return f'tab name={_kdl_escape(tab_name)} {{\n    pane\n}}'
+    grid = _tile_panes(panes, rows=rows)
     return (
         f'tab name={_kdl_escape(tab_name)} {{\n'
         + _indent(grid, "    ")
@@ -221,67 +193,51 @@ def _project_tab_kdl(tab_name: str, project_panes: list[str]) -> str:
 def build_layout(
     orchestrator: OrchestratorPane | None = None,
     panes_per_window: int = DEFAULT_PANES_PER_WINDOW,
+    term_size: tuple[int, int] | None = None,
 ) -> str:
     """Build the full KDL layout string for the current registry.
 
-    Mirrors `layout.ensure_session`'s chunking rules:
-      - Hub tab with orchestrator + (panes_per_window - 1) project panes.
-      - Overflow tabs with up to panes_per_window project panes each.
+    Every tab uses the same flat grid: the orchestrator (when present)
+    is just the first pane in the first tab, and every pane in the
+    same row gets an equal width. Rows per tab are chosen by
+    `grid.pick_rows` based on terminal size, so a wide terminal gets
+    a 2×N grid and a narrow terminal gets a taller grid.
     """
     if panes_per_window < 1:
         raise ValueError(f"panes_per_window must be >= 1, got {panes_per_window}")
 
+    from central_mcp.grid import pick_rows
+
     has_orchestrator = orchestrator is not None
     projects = load_registry()
 
-    orch_kdl = (
-        _command_pane("Central MCP Orchestrator", orchestrator.cwd, orchestrator.command)
-        if orchestrator is not None else None
-    )
-    project_kdls = [
+    pane_kdls: list[str] = []
+    if orchestrator is not None:
+        pane_kdls.append(
+            _command_pane("Central MCP Orchestrator", orchestrator.cwd, orchestrator.command)
+        )
+    pane_kdls.extend(
         _command_pane(p.name, p.path, f"central-mcp watch {p.name}", readonly=True)
         for p in projects
-    ]
-
-    # Orchestrator visually takes two cells (it's the wide left pane in
-    # the hub split), so the hub window matches the tmux contract: total
-    # panes = panes_per_window - 1 (= orch + panes_per_window - 2 projects).
-    # Overflow windows still take the full panes_per_window projects.
-    if has_orchestrator:
-        hub_project_count = max(panes_per_window - 2, 0)
-    else:
-        hub_project_count = panes_per_window
-
-    hub_projects = project_kdls[:hub_project_count] if has_orchestrator else []
-    overflow_start = hub_project_count if has_orchestrator else 0
-    overflow = project_kdls[overflow_start:]
+    )
 
     tabs: list[str] = []
-    if has_orchestrator:
-        tabs.append(_hub_tab_kdl(
-            window_name(0, has_orchestrator=True),
-            orch_kdl,
-            hub_projects,
-        ))
-    elif not project_kdls:
-        # Empty registry + no orchestrator → still create a tab so zellij
-        # has something to show.
+    if not pane_kdls:
         tabs.append(f'tab name={_kdl_escape(window_name(0))} {{\n    pane\n}}')
+    else:
+        chunks = [
+            pane_kdls[i:i + panes_per_window]
+            for i in range(0, len(pane_kdls), panes_per_window)
+        ]
+        for tab_idx, chunk in enumerate(chunks):
+            tab_rows = pick_rows(len(chunk), term_size=term_size)
+            tabs.append(_tab_kdl(
+                window_name(tab_idx, has_orchestrator=has_orchestrator),
+                chunk,
+                rows=tab_rows,
+            ))
 
-    for i in range(0, len(overflow), panes_per_window):
-        idx = (1 if has_orchestrator else 0) + (i // panes_per_window)
-        if not has_orchestrator and idx == 0 and not tabs:
-            tabs.append(_project_tab_kdl(window_name(0), overflow[i:i + panes_per_window]))
-            continue
-        tabs.append(_project_tab_kdl(
-            window_name(idx, has_orchestrator=has_orchestrator),
-            overflow[i:i + panes_per_window],
-        ))
-
-    # When no orchestrator AND projects fit in one tab, the loop already
-    # handled it; otherwise fall through.
-
-    body = "\n".join(tabs) if tabs else 'tab name="cmcp-1" {\n    pane\n}'
+    body = "\n".join(tabs)
     # `default_tab_template` pins the tab-bar plugin to the bottom of
     # every tab. Bottom placement keeps the first row of every pane
     # (command banner, prompt) at the actual top of the terminal where

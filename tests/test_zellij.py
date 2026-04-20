@@ -40,22 +40,30 @@ class TestBuildLayout:
         assert "Central MCP Orchestrator" in kdl
         assert "proj" in kdl
 
-    def test_hub_uses_vertical_split_and_right_horizontal_stack(
+    def test_hub_flattens_orchestrator_with_projects(
         self, fake_home: Path, tmp_path: Path
     ) -> None:
+        """0.6.3+: orchestrator is no longer fixed at 50% of the hub
+        tab; it sits in the flat grid alongside project panes, equal
+        width with its row mates.
+        """
         for i in range(2):
             d = tmp_path / f"p{i}"
             d.mkdir()
             registry.add_project(f"p{i}", str(d), agent="shell")
 
         orch = OrchestratorPane(command="echo hi", cwd=str(tmp_path), label="stub")
-        kdl = zellij.build_layout(orchestrator=orch)
-        # Hub tab splits left/right, right side stacks projects vertically
-        # (zellij's "horizontal" split direction = left/right visually in
-        # their model — but we specifically want the orchestrator on the
-        # outer vertical split and projects stacked via a nested split).
+        kdl = zellij.build_layout(
+            orchestrator=orch, term_size=(200, 50),
+        )
+        # With 3 panes (orch + 2 projects) on a wide terminal,
+        # pick_rows returns 1, yielding a single row with a single
+        # vertical split encompassing all three panes equally.
         assert 'split_direction="vertical"' in kdl
-        assert 'split_direction="horizontal"' in kdl
+        # Orchestrator should appear before project panes in KDL order.
+        orch_idx = kdl.index("Central MCP Orchestrator")
+        p0_idx = kdl.index('"p0"')
+        assert orch_idx < p0_idx
 
     def test_overflow_tabs_follow_cmcp_n_naming(
         self, fake_home: Path, tmp_path: Path
@@ -87,14 +95,12 @@ class TestBuildLayout:
         with pytest.raises(ValueError, match="panes_per_window"):
             zellij.build_layout(panes_per_window=0)
 
-    def test_hub_holds_panes_per_window_minus_one(
+    def test_first_tab_holds_panes_per_window_panes(
         self, fake_home: Path, tmp_path: Path
     ) -> None:
-        """panes_per_window=4 + orchestrator → hub has 1 orch + 2 projects.
-
-        Mirrors tmux: the orchestrator visually takes 2 cells (main-
-        vertical left half), so the hub window only holds
-        panes_per_window - 1 panes total.
+        """0.6.3+: the orchestrator no longer gets a 2-cell visual
+        weight, so the first tab holds the full `panes_per_window`
+        count — orchestrator plus (panes_per_window - 1) projects.
         """
         for i in range(6):
             d = tmp_path / f"p{i}"
@@ -104,17 +110,17 @@ class TestBuildLayout:
         orch = OrchestratorPane(command="echo hi", cwd=str(tmp_path), label="stub")
         kdl = zellij.build_layout(orchestrator=orch, panes_per_window=4)
 
-        # Hub tab should reference p0 and p1 only (not p2+).
-        hub_start = kdl.index(f'tab name="{window_name(0, has_orchestrator=True)}"')
-        # Find the end of the hub tab block. Hub spans until next `tab name=` or EOF.
-        next_tab = kdl.find('tab name="', hub_start + 1)
-        hub_block = kdl[hub_start:next_tab] if next_tab != -1 else kdl[hub_start:]
-        assert '"p0"' in hub_block
-        assert '"p1"' in hub_block
-        assert '"p2"' not in hub_block
-        # p2..p5 should be in overflow tabs.
+        # First tab: orch + p0, p1, p2 (4 panes total).
+        first_start = kdl.index(f'tab name="{window_name(0, has_orchestrator=True)}"')
+        next_tab = kdl.find('tab name="', first_start + 1)
+        first_block = kdl[first_start:next_tab] if next_tab != -1 else kdl[first_start:]
+        assert "Central MCP Orchestrator" in first_block
+        for i in range(3):
+            assert f'"p{i}"' in first_block
+        assert '"p3"' not in first_block
+        # p3, p4, p5 should be in the overflow tab.
         tail = kdl[next_tab:] if next_tab != -1 else ""
-        for i in range(2, 6):
+        for i in range(3, 6):
             assert f'"p{i}"' in tail
 
     def test_project_pane_invokes_central_mcp_watch(

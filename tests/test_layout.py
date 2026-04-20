@@ -179,11 +179,12 @@ class TestOrchestratorPane:
 
         created, messages = layout.ensure_session(orchestrator=orch)
         assert created
-        # Pane 0 should be orchestrator, pane 1 project.
+        # Pane 0 should be orchestrator; project panes added via the flat
+        # grid helper log `{wname} -> {title}` (no numeric pane index).
         first = layout.window_name(0, has_orchestrator=True)
         assert first.endswith(layout.HUB_SUFFIX)
         assert any("pane 0 ->" in m and "Central MCP Orchestrator" in m and first in m for m in messages)
-        assert any("pane 1 -> proj" in m for m in messages)
+        assert any(f"{first} -> proj" in m for m in messages)
 
         r = tmux._run([
             "list-panes", "-t", f"{layout.SESSION}:{first}",
@@ -284,12 +285,14 @@ class TestWindowChunking:
         assert _window_names(layout.SESSION) == [hub]
         assert _pane_count(layout.SESSION, hub) == 3
 
-    def test_orchestrator_plus_three_projects_overflows_to_second_window(
+    def test_orchestrator_plus_four_projects_overflows_to_second_window(
         self, fake_home: Path, tmp_path: Path
     ) -> None:
-        # panes_per_window=4 + orch + 3 projects → hub (orch + 2 projects = 3)
-        # + overflow (1 project).
-        for i in range(3):
+        # 0.6.3+: orchestrator no longer takes extra visual weight, so
+        # the first window holds the full panes_per_window count.
+        # panes_per_window=4 + orch + 4 projects → first window (4: orch
+        # + 3 projects) + overflow (1 project).
+        for i in range(4):
             d = tmp_path / f"p{i}"
             d.mkdir()
             registry.add_project(f"p{i}", str(d), agent="shell")
@@ -304,14 +307,15 @@ class TestWindowChunking:
         hub = layout.window_name(0, has_orchestrator=True)
         overflow = layout.window_name(1, has_orchestrator=True)
         assert _window_names(layout.SESSION) == [hub, overflow]
-        assert _pane_count(layout.SESSION, hub) == 3
+        assert _pane_count(layout.SESSION, hub) == 4
         assert _pane_count(layout.SESSION, overflow) == 1
 
-    def test_overflow_windows_use_full_panes_per_window(
+    def test_orchestrator_plus_eight_projects_chunks_into_three_windows(
         self, fake_home: Path, tmp_path: Path
     ) -> None:
-        # Overflow windows get the full panes_per_window slots since they
-        # have no orchestrator hogging extra space.
+        # 0.6.3+: flat chunking — every window holds up to panes_per_window
+        # panes, orchestrator counts as one. 1 orch + 8 projects = 9 total
+        # → 4 + 4 + 1 with panes_per_window=4.
         for i in range(8):
             d = tmp_path / f"p{i}"
             d.mkdir()
@@ -323,12 +327,11 @@ class TestWindowChunking:
 
         created, messages = layout.ensure_session(orchestrator=orch)
         assert created
-        # 9 total panes → hub (3: orch+2) + overflow (4) + overflow (2)
         names = _window_names(layout.SESSION)
         assert len(names) == 3
-        assert _pane_count(layout.SESSION, names[0]) == 3
+        assert _pane_count(layout.SESSION, names[0]) == 4
         assert _pane_count(layout.SESSION, names[1]) == 4
-        assert _pane_count(layout.SESSION, names[2]) == 2
+        assert _pane_count(layout.SESSION, names[2]) == 1
 
     def test_twenty_projects_span_multiple_windows(
         self, fake_home: Path, tmp_path: Path
@@ -458,13 +461,12 @@ class TestPaneTitlesAndStyle:
         assert any("Central MCP Orchestrator" in t for t in titles)
         assert "proj" in titles
 
-    def test_hub_window_uses_main_vertical_layout(
+    def test_hub_row_panes_have_equal_widths(
         self, fake_home: Path, tmp_path: Path
     ) -> None:
-        """Orchestrator should get the wide left pane via main-vertical.
-
-        panes_per_window=4 + orch + 2 projects → hub holds 3 panes
-        (the orchestrator visually takes 2 cells via main-vertical).
+        """0.6.3+: orchestrator no longer takes a forced 50% left column.
+        On a wide terminal, orch + 2 projects land in a single row and
+        every pane in that row has the same width (no main-vertical).
         """
         for i in range(2):
             d = tmp_path / f"p{i}"
@@ -479,17 +481,28 @@ class TestPaneTitlesAndStyle:
         hub = layout.window_name(0, has_orchestrator=True)
         r = tmux._run([
             "list-panes", "-t", f"{layout.SESSION}:{hub}",
-            "-F", "#{pane_index}:#{pane_left}:#{pane_top}",
+            "-F", "#{pane_index}:#{pane_left}:#{pane_width}:#{pane_top}",
         ])
         assert r.ok
-        coords = {}
+        panes = []
         for line in r.stdout.strip().splitlines():
-            idx, left, top = line.split(":")
-            coords[int(idx)] = (int(left), int(top))
-        assert len(coords) == 3
-        # main-vertical with 50%: pane 0 is at the leftmost column,
-        # projects (1, 2) are to its right at the same column.
-        assert coords[0][0] == 0
-        assert coords[1][0] > 0
-        assert coords[2][0] > 0
-        assert coords[1][0] == coords[2][0]
+            idx, left, width, top = line.split(":")
+            panes.append({
+                "index": int(idx),
+                "left": int(left),
+                "width": int(width),
+                "top": int(top),
+            })
+        assert len(panes) == 3
+        # All three panes are on the same row → same `top` coord.
+        tops = {p["top"] for p in panes}
+        assert len(tops) == 1, f"panes not on the same row: {panes!r}"
+        # Widths should be within 2 cells of each other — tmux rounds
+        # each split to whole cells, and compounding rounding across
+        # sequential splits can stretch the max/min by 1-2 cells even
+        # with mathematically balanced percentages. Anything worse means
+        # the size-percentage formula has regressed.
+        widths = sorted(p["width"] for p in panes)
+        assert widths[-1] - widths[0] <= 2, (
+            f"row widths not equal: {widths!r}"
+        )
