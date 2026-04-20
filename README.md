@@ -287,6 +287,18 @@ central-mcp upgrade [--check]      # self-update from PyPI (uv → pip fallback)
 
 ## Optional observation layer
 
+### Why it's *optional* (and why the default is "no panes at all")
+
+Central-mcp is built so the **orchestrator itself is your surface** — not a wall of terminal panes. Each call to `dispatch` / `check_dispatch` / `list_dispatches` / `orchestration_history` returns a structured summary (output, exit code, duration, attempts, fallbacks, per-project stats); the orchestrator reads those and tells you what happened in natural language. You ask *"how did the refactor go?"*, the orchestrator answers. You don't need to eyeball scrolling stdout to know.
+
+That design matters because the expected usage is **not** "sit at a 6-pane tmux dashboard on a desktop". A large share of real usage is mobile / on-the-go — the user SSHs into their machine from a phone or tablet, talks to the orchestrator in plain language, and lets it run the fleet. In that context, a full multiplexer grid is actively worse: it eats screen real estate, fights small terminals, and most of its content is a noisier version of what the orchestrator is already summarizing for you.
+
+So **unless you specifically want real-time monitoring** — watching tokens land, catching a dispatch hang as it happens, tailing output for a long-running migration — you don't need the observation layer at all. The hub works fine without it, and `dispatch_history` / `orchestration_history` cover after-the-fact review.
+
+Turn it on when you actually benefit from the live view (local desktop, debugging a stuck agent, screen-sharing the fleet during a session, etc).
+
+### Backends
+
 Two multiplexer backends are supported:
 
 - **tmux** — `central-mcp tmux` (creates the session if missing, then attaches)
