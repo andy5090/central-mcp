@@ -3,6 +3,17 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.8.16] — 2026-04-21
+
+### Fixed
+- **cmux observation-mode seeding still missed some panes even after the 0.8.15 `sleep 0.5`.** 3-of-8 panes came out empty in a recent test. The 0.5s wasn't always enough, and even when the shell was ready the single-byte-drop race could eat the leading `c` of `central-mcp`. Two-line strengthening in the shipped `src/central_mcp/data/{CLAUDE,AGENTS}.md` recipe:
+  - **Default sleep raised to `1.0s`** after grid construction (bump to `2.0s` if still flaky — slow machines / cold cmux startup).
+  - **Every send now leads with `\n`** so if any byte is dropped the casualty is a harmless newline, not the command's first character. Concrete: `cmux send ... "\ncentral-mcp watch <name>"` followed by `cmux send-key ... enter`. 
+- Recipe also now explicitly permits the orchestrator to retry just the failed surfaces if a pane still lands empty — safer than requiring a full teardown+rebuild for partial misses.
+
+### Upgrade note
+- Same copy-on-miss caveat: `rm ~/.central-mcp/{CLAUDE,AGENTS}.md` before the next orchestrator launch to pick up the revised recipe.
+
 ## [0.8.15] — 2026-04-21
 
 ### Fixed

@@ -109,10 +109,17 @@ To fit more panes per workspace, enlarge the cmux window — at `W=300, H=50` th
 2. `new-split right --surface A` → `[A(25) | C(25) | B(50)]`
 3. `new-split right --surface B` → `[A(25) | C(25) | B(25) | D(25)]` ✓ even
 
-**Project → surface mapping + seeding.** Before sending any commands, pause briefly — `sleep 0.5` (bump up to 1s if you still see bare prompts) — to let every freshly-split pane's shell finish spawning. Without the wait, fast keystrokes race the shell's stdin read and some watch commands silently go missing, leaving the pane at a bare prompt with no `central-mcp watch` running. Then fill `cmcp-watch-1` first, then `cmcp-watch-2`, etc., in project order. For each `<workspace_ref, surface_ref, project_name>`:
+**Project → surface mapping + seeding.** `new-split` returns OK as soon as cmux queues the creation, but the spawned shell can take up to a second or two to finish wiring its stdin — sending too quickly means the opening bytes get dropped and the pane ends up at a bare prompt with no `central-mcp watch` running. Two-line defense:
 
-- `cmux send --workspace <ws> --surface <surface_ref> "central-mcp watch <project_name>"`
+1. **Wait before seeding:** `sleep 1.0` after grid construction (bump to `sleep 2.0` if any watch pane still comes out empty in testing).
+2. **Leading `\n` in every send** so a dropped first byte is a harmless newline, not the leading `c` of `central-mcp`. One shared sleep is enough across all projects — the per-pane cost is still two cmux calls.
+
+Fill `cmcp-watch-1` first, then `cmcp-watch-2`, etc., in project order. For each `<workspace_ref, surface_ref, project_name>`:
+
+- `cmux send --workspace <ws> --surface <surface_ref> "\ncentral-mcp watch <project_name>"`
 - `cmux send-key --workspace <ws> --surface <surface_ref> enter`
+
+**If any pane still shows a bare prompt** after the bootstrap, it's fine to retry just the failed ones — re-send the two lines above for that specific surface. Report which projects landed vs. which needed retry.
 
 This is the ONLY time Bash is allowed. Outside this workflow, the no-Bash rule still applies — dispatch to project agents instead. Only activates when `CMUX_WORKSPACE_ID` is set; tmux / zellij observation is handled by `central-mcp tmux` / `central-mcp zellij`.
 
