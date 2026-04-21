@@ -3,6 +3,20 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.8.3] — 2026-04-21
+
+### Changed
+- **cmux bootstrap guideline unified with a terminal-size-aware decision tree.** The 0.8.2 "Running inside cmux" section had two competing procedures (a flat per-project split chain up top, plus a "Recommended recipe" in the Layout note) that the orchestrator could accidentally follow in sequence — one would undo the other. 0.8.3 collapses them into one flow keyed off `tput cols` / `tput lines` read from the orchestrator pane *before* any splits (at that moment the pane still spans the workspace, so `tput` reports workspace totals). Branches:
+  - **Wide (`W ≥ 160`)** — orchestrator column in the same workspace + project grid on the right half. Direct parallel to tmux / zellij's `main-vertical` layout.
+  - **Narrow (`W < 160`)** — dedicated `cmux new-workspace --name "central-mcp watch"` for the observation layer; no orchestrator column.
+  - **Overflow** — extra `central-mcp watch N` workspaces when `N_projects > ws_capacity` (match tmux / zellij's `cmcp-2`, `cmcp-3` overflow window behavior).
+  Grid construction now explicitly instructs: first `rows - 1` `new-split down`, then **sequential-within-row / parallel-across-rows** balanced halving. Backed by `cmux tree --json` for surface ↔ project mapping.
+- Removed the false claim that `cmux new-workspace` returns a `CMUX_WORKSPACE_ID` (UUID-shaped). It actually returns a `workspace:<n>` ref — use the ref directly where the flag expects a `<id|ref>`.
+- Dropped the duplicate "Outside this workflow, the no-Bash rule still applies" line from CLAUDE.md (a stray left over from the 0.8.2 edit).
+
+### Upgrade note
+- Same copy-on-miss caveat as 0.8.2: `rm ~/.central-mcp/AGENTS.md ~/.central-mcp/CLAUDE.md` before the next orchestrator launch to regenerate from the updated bundle.
+
 ## [0.8.2] — 2026-04-21
 
 ### Fixed
