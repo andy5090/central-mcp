@@ -97,17 +97,83 @@ To fit more panes per workspace, enlarge the cmux window — at `W=300, H=50` th
 
 **Procedure per observation workspace** (`cmcp-watch-<i>` for `i` in 1..num_ws):
 
-1. `cmux new-workspace --name "cmcp-watch-<i>"` → returns `workspace:<n>` (a ref; use it directly).
-2. `cmux list-pane-surfaces --workspace <ws>` → grab the initial root surface ref.
-3. Do `rows_per_ws - 1` `new-split down --workspace <ws> --surface <row-base>` calls to create row-base surfaces (one per row).
-4. For each row-base, sequentially apply the **balanced halving pattern** to get `cols_per_row` equal columns. Rows may run in parallel; splits *within* one row must be sequential (concurrent splits observe stale layout and land uneven).
-5. Walk surfaces in visual order with `cmux tree --json --workspace <ws>` (`panes[].surfaces[].ref` reflects the layout order).
+> **CRITICAL — one split per tool call, strictly sequential. No parallelism, not even across rows.** Do NOT batch multiple `cmux new-split` calls in a single tool-call block. Do NOT split two different surfaces in parallel (no "row 0 and row 1 at the same time"). Every split mutates the layout tree, and the choice of *which surface to split next* depends on the updated tree; batching silently picks stale targets and produces uneven grids. Emit exactly one split per tool call, wait for the response, use its returned surface ref in the next decision, then issue the next split. This is the single most common cause of off-kilter grids.
 
-**Balanced halving pattern.** `new-split right --surface <ref>` always halves the target 50/50, so to get `N` equal columns you halve whichever pane is currently widest. Example for 4 columns from row-base `A`:
+Inputs: `R = rows_per_ws`, `C = cols_per_row` (from the aspect-clamped formulas above). In practice both are powers of 2 (1, 2, or 4) for typical cmux windows, and the algorithm below produces a balanced grid in that case. If R or C lands on 3 the grid is deterministic but unevenly sized — a known limitation of pure halving.
 
-1. `new-split right --surface A` → `[A(50) | B(50)]`
-2. `new-split right --surface A` → `[A(25) | C(25) | B(50)]`
-3. `new-split right --surface B` → `[A(25) | C(25) | B(25) | D(25)]` ✓ even
+**Algorithm (one step per tool call):**
+
+```
+# 1. Open the workspace; grab its sole starting surface.
+ws   = cmux new-workspace --name "cmcp-watch-<i>"
+root = (cmux list-pane-surfaces --workspace <ws>)[0]
+
+# 2. Build R rows by halving downward. Track each surface's current
+#    height fraction locally — cmux halves 50/50 on every new-split down,
+#    so no round-trip to cmux is needed between splits to know heights.
+#    At each step pick the TALLEST surface; ties → the TOPMOST one
+#    (smallest index in insertion order, which matches top-edge order).
+rows = [(root, 1.0)]
+repeat (R - 1) times:
+    idx               = argmax(rows, by fraction, tiebreak lowest index)
+    target_ref, frac  = rows[idx]
+    new_ref           = cmux new-split down --workspace <ws> --surface <target_ref>
+    rows[idx]         = (target_ref, frac / 2)
+    rows.insert(idx + 1, (new_ref, frac / 2))   # new surface lands immediately below target
+
+# 3. For each row IN ORDER (finish row i entirely before touching row i+1;
+#    never interleave splits across rows), halve horizontally the same way.
+#    Pick the WIDEST surface; ties → the LEFTMOST (smallest insertion index).
+for (row_ref, _) in rows:
+    in_row = [(row_ref, 1.0)]
+    repeat (C - 1) times:
+        idx              = argmax(in_row, by fraction, tiebreak lowest index)
+        target_ref, frac = in_row[idx]
+        new_ref          = cmux new-split right --workspace <ws> --surface <target_ref>
+        in_row[idx]      = (target_ref, frac / 2)
+        in_row.insert(idx + 1, (new_ref, frac / 2))
+
+# 4. Read the final visual order from the tree. panes[].surfaces[].ref
+#    is already in reading order (top→bottom, left→right), so it maps
+#    1:1 to your project list.
+cmux tree --json --workspace <ws>
+```
+
+Total splits per workspace: `(R − 1) + R × (C − 1) = R × C − 1`. For 2×2 → 3. For 2×4 → 7. For 1×N → N − 1.
+
+**Worked example — N = 4, W = 200, H = 50 (one 2×2):**
+
+`max_cols = 200 // 70 = 2`, `max_rows = 50 // 15 = 3`. Landscape: `rows_per_ws = min(3, 2) = 2`, `cols_per_row = 2`. `ws_capacity = 4`, `num_ws = 1`.
+
+Each numbered item is **one separate tool call**, in order (refs illustrative):
+
+1. `cmux new-workspace --name cmcp-watch-1` → `workspace:5`
+2. `cmux list-pane-surfaces --workspace workspace:5` → `[surface:10]` (call it A)
+3. `cmux new-split down --workspace workspace:5 --surface surface:10` → `surface:11` (B). Layout: `A(top 50%) / B(bot 50%)`. **Rows done.**
+4. `cmux new-split right --workspace workspace:5 --surface surface:10` → `surface:12` (C). Row 0: `[A|C]`. **Row 0 done.**
+5. `cmux new-split right --workspace workspace:5 --surface surface:11` → `surface:13` (D). Row 1: `[B|D]`. **Row 1 done.** Full layout: `[A|C] / [B|D]` ✓.
+6. `cmux tree --json --workspace workspace:5` → walk `panes[].surfaces[].ref` → `[A, C, B, D]` → project 1, 2, 3, 4.
+
+**Worked example — N = 8, W = 200, H = 50 (two 2×2):**
+
+Per-workspace math same as above; `num_ws = ceil(8 / 4) = 2`. Run the 5-call sequence above entirely in `cmcp-watch-1` for projects 1..4, **then** again in `cmcp-watch-2` for projects 5..8. Do not interleave workspaces.
+
+**Worked example — 2×4 in one workspace (when W ≥ 280 and R clamps to 2):**
+
+Sequence (one tool call each):
+
+1. `new-workspace cmcp-watch-1` → workspace:X
+2. `list-pane-surfaces` → root = A
+3. `new-split down --surface A` → B. Rows: `[A, B]`. **Rows done.**
+4. `new-split right --surface A` → C. Row 0: `[A(50) | C(50)]`
+5. `new-split right --surface A` → E. (A and C tied at 50 → leftmost = A.) Row 0: `[A(25) | E(25) | C(50)]`
+6. `new-split right --surface C` → F. (C is sole 50.) Row 0: `[A(25) | E(25) | C(25) | F(25)]` ✓
+7. `new-split right --surface B` → G. Row 1: `[B(50) | G(50)]`
+8. `new-split right --surface B` → H. (B and G tied → leftmost = B.) Row 1: `[B(25) | H(25) | G(50)]`
+9. `new-split right --surface G` → I. Row 1: `[B(25) | H(25) | G(25) | I(25)]` ✓
+10. `cmux tree --json` → `[A, E, C, F, B, H, G, I]` → project 1..8.
+
+Total 7 splits = 2 × 4 − 1. ✓
 
 **Project → surface mapping + seeding.** `new-split` returns OK as soon as cmux queues the pane, but the spawned shell may not yet be at a prompt. If you send before the first prompt renders, the text lands on the pre-prompt screen (e.g. visibly concatenated with `Last login:`) and never reaches the shell's command line. Fixed sleeps are unreliable because zsh + oh-my-zsh rc timing varies pane-to-pane.
 
