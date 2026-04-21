@@ -342,13 +342,14 @@ central-mcp upgrade [--check]      # self-update from PyPI (uv → pip fallback)
 
 ### Backends
 
-Three backends are supported (the third is macOS-only):
+Two multiplexer backends are supported as CLI commands:
 
 - **tmux** — `central-mcp tmux` (creates the session if missing, then attaches)
 - **zellij** — `central-mcp zellij` (generates a KDL layout, launches a zellij session named `central` or attaches to an existing one)
-- **cmux** — `central-mcp cmux` (macOS only; opens a workspace in the [cmux.app](https://github.com/manaflow-ai/cmux) GUI terminal. Layout is built by the orchestrator agent from a seed prompt — see [Running with cmux](#running-with-cmux) below.)
 
-tmux / zellij produce the same logical layout (hub tab + overflow tabs, project panes running `central-mcp watch <project>`). Pick the one you already have installed; you can use both from different terminals as long as they don't share a session name at the same time. cmux takes a different shape — agent-driven — so it's documented separately.
+Both produce the same logical layout (hub tab + overflow tabs, project panes running `central-mcp watch <project>`). Pick the one you already have installed; you can use both from different terminals as long as they don't share a session name at the same time.
+
+A third option — **cmux** on macOS — doesn't have its own CLI command: you run `cmcp` inside cmux.app yourself and ask the orchestrator to build the observation panes. See [Running inside cmux](#running-inside-cmux) below.
 
 `central-mcp up` creates a tmux session `central` with:
 
@@ -387,29 +388,17 @@ When you `central-mcp upgrade` (or `pip install -U central-mcp`) with a `cmcp up
 
 Trade-off: if two terminals are simultaneously attached to the same session and one runs `cmcp tmux`, the other disconnects. In exchange, you never have to think about "stale session vs new binary" ever again.
 
-### Running with cmux
+### Running inside cmux
 
-macOS only. [cmux.app](https://github.com/manaflow-ai/cmux) is a native GUI terminal where the orchestrator agent builds the observation layout itself, so central-mcp just opens the workspace and hands off.
-
-**Three steps:**
+macOS only. [cmux.app](https://github.com/manaflow-ai/cmux) is a native GUI terminal designed so that agents manage their own panes. The workflow:
 
 1. Launch cmux.app.
-2. Open a terminal pane inside cmux.
-3. Run `central-mcp cmux` from that pane.
+2. In a cmux pane, run `cmcp` — the orchestrator (claude / codex / gemini) starts inside cmux and inherits `CMUX_WORKSPACE_ID`.
+3. Ask the orchestrator to set up observation panes, e.g. *"set up watch panes for all projects"* or in Korean *"관찰 pane 구성해줘"*.
 
-That's it — claude / codex / gemini sets up one `central-mcp watch <project>` pane per registered project on its first turn.
+The orchestrator reads `~/.central-mcp/AGENTS.md` on launch — which includes a section covering exactly this workflow — and uses its Bash tool to call `cmux new-split` + `cmux send-text` for each registered project, landing one `central-mcp watch <project>` pane per entry.
 
-```bash
-central-mcp cmux                          # default (bypass)
-central-mcp cmux --permission-mode auto   # claude-only, classifier-reviewed
-central-mcp cmux --no-orchestrator        # blank workspace, DIY panes
-central-mcp down                          # close the workspace
-```
-
-**Caveats:**
-- **Orchestrator:** claude / codex / gemini only. For opencode / droid projects, use `central-mcp tmux` or `central-mcp zellij`.
-- **`--permission-mode restricted` stalls the bootstrap** on the first `cmux new-split` approval prompt — stick with the default (`bypass`) or `auto` (claude only).
-- **No `--max-panes`:** cmux resizes responsively in the GUI — one pane per registered project, always.
+No `central-mcp cmux` subcommand exists: central-mcp itself stays out of the cmux socket, the agent does the work. If pane setup fails partway, the orchestrator reports which projects succeeded and you can ask it to retry the missing ones.
 
 ## Registry resolution
 

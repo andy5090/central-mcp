@@ -53,26 +53,21 @@ Status legend: ✅ done · 🚧 in progress · 📋 planned · 💭 idea
 
 ---
 
-## Phase 2b — cmux backend (macOS-only, shipped unreleased)
+## Phase 2b — cmux (macOS, agent-driven only — no CLI surface)
 
-**Goal**: give macOS users a native-GUI option for the observation layer alongside the terminal-resident tmux / zellij backends. cmux (manaflow-ai/cmux) is an AppKit / Ghostty-based terminal with vertical tabs, notifications, and a CLI that talks to the running app over `~/.cmux/cmux.sock`.
+**Goal**: let macOS users get the observation layer via [cmux.app](https://github.com/manaflow-ai/cmux) without adding a brittle CLI wrapper. cmux is a native GUI terminal designed so that agents manage their own panes (it injects `CMUX_WORKSPACE_ID` / `CMUX_SURFACE_ID` into every pane it spawns), so the orchestrator agent handles observation-pane setup directly.
 
-✅ **Agent-driven bootstrap (works against cmux 0.63.2)**
-- The shipped cmux `new-workspace` only accepts `--name/--description/--cwd/--command` — no declarative `--layout`. central-mcp therefore owns a single CLI call per session: `cmux new-workspace --name central --cwd <orch-cwd> --command '<agent> <seed>'`. The orchestrator pane inherits `CMUX_WORKSPACE_ID` from cmux, and on first user turn processes a seed prompt telling it to call `cmux new-split` / `cmux send-text` for each registered project, one `central-mcp watch <project>` pane per project.
-- `Adapter.interactive_argv(seed_prompt, permission_mode)` builds the argv for seeded interactive sessions (claude positional, codex positional, gemini `-i`). opencode / droid return `None` because their interactive-seed entry point is unconfirmed; `cmd_cmux` refuses those agents with a clear error pointing users at tmux / zellij.
-- Exposed as `central-mcp cmux` — backend-named subcommand, matching `tmux` and `zellij`. No `--max-panes` since cmux resizes responsively in the GUI.
+✅ **Agent-driven workflow (no dedicated CLI command)**
+- Open cmux.app, run `cmcp` in a pane to launch the configured orchestrator, then ask the orchestrator to set up observation panes. The orchestrator reads `src/central_mcp/data/AGENTS.md` (shipped to `~/.central-mcp/AGENTS.md` at hub init) which includes a "Running inside cmux" section covering the exact cmux CLI incantations (`cmux new-split` → `cmux --json list-pane-surfaces` → `cmux send-text`). On `CMUX_WORKSPACE_ID` absence the section is a no-op, so the same guideline file is safe across tmux / zellij / cmux contexts.
 
-✅ **Platform gating**
-- `_detect_multiplexers()` includes `cmux` only when `platform.system() == "Darwin"`, so Linux / Windows users never see it offered.
-- `cmd_cmux` refuses to run on non-darwin, checks the binary is on PATH, and pings the socket before attempting to open a workspace — each failure gets its own actionable error.
+💭 **Why no CLI command**
+- An earlier 0.8.0 attempt shipped `central-mcp cmux` that spawned a workspace via `cmux new-workspace --command 'claude "<seed prompt>"'`. Long seed payloads (1k+ chars) proved fragile — cmux's keystroke-injection truncated mid-string in the wild, and shell quoting races made the launch unreliable. Delegating to the agent's Bash tool avoids both failure modes: command lengths stay small, no shell inside the cmux pane, the agent sees each cmux CLI call's output and can retry per-project on failure.
 
-💭 **Explicit out-of-scope**
-- Central-mcp-side layout construction. Reserved for whenever `cmux new-workspace --layout <json>` lands in a shipped release (the JSON schema is already documented in `docs/architecture/cmux-layout-schema.md` for when we can wire the declarative path back in). For now, the agent handles it.
-- Responsive pane-count tuning (`grid.pick_rows` / char-cell floors). cmux resizes in the GUI on its own — we don't read terminal dimensions for this backend.
+💭 **Declarative layout (future path)**
+- cmux source has `--layout <json>` wired up on `new-workspace`, but it hasn't landed in a shipped release (0.63.2 rejects the flag). If a future release exposes it, central-mcp could add back a "build the whole layout up front" path as a parallel option, without removing the agent-driven flow.
 
-⚠️ **Caveats**
-- `--permission-mode restricted` halts the bootstrap on the first `cmux new-split` approval prompt, leaving the layout incomplete. Use `bypass` (default) or `auto` for unattended setup.
-- opencode / droid projects can't use this backend; fall back to tmux / zellij for those.
+⚠️ **Scope**
+- opencode / droid are supported like any other orchestrator on the tmux / zellij backends. Inside cmux, any agent whose Bash tool can execute `cmux new-split` will work — the AGENTS.md section is agent-agnostic.
 
 ---
 

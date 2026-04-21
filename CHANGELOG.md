@@ -3,6 +3,20 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.8.1] — 2026-04-21
+
+### Removed
+- **BREAKING — `central-mcp cmux` subcommand removed.** 0.8.0's bootstrap (spawn a cmux workspace, inject a 1k+ char seed prompt via `new-workspace --command`) proved fragile in practice: cmux 0.63.2 silently truncates long `--command` payloads, and the agent launch step often didn't complete even when the command arrived intact. The replacement is lighter: run `cmcp` yourself from inside a cmux pane, and ask the orchestrator to set up the observation panes. No CLI surface, no subprocess keystroke injection — the orchestrator uses its Bash tool to call `cmux new-split` / `cmux send-text` per project.
+- `Adapter.interactive_argv()` was only used by the old `cmd_cmux` bootstrap; removed too.
+- `src/central_mcp/cmux.py` module, `tests/test_cmux.py`, `docs/architecture/cmux-layout-schema.md` — all tied to the old bootstrap, all gone.
+
+### Changed
+- **`src/central_mcp/data/AGENTS.md` + `CLAUDE.md` gain a "Running inside cmux" section** describing exactly which CLI commands the orchestrator should issue when `CMUX_WORKSPACE_ID` is set and the user asks for observation panes. This is the only place in the orchestrator guidelines where Bash usage is allowed.
+- README / README_KO "Running inside cmux" section rewritten to match the new flow: launch cmux.app → `cmcp` in a pane → ask the orchestrator to set panes up.
+
+### Notes
+- The declarative-layout draft (whose wire schema lived in `docs/architecture/cmux-layout-schema.md`) is still a path we could take once cmux ships `--layout` on `new-workspace` in a released build. For now the agent-driven flow is more reliable and the docs / code are aligned on it.
+
 ## [0.8.0] — 2026-04-21
 
 ### Added

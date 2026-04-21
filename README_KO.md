@@ -334,13 +334,14 @@ central-mcp upgrade [--check]      # PyPI에서 최신 버전 확인 후 자동 
 
 ### 백엔드
 
-세 가지 백엔드를 지원합니다 (세 번째는 macOS 전용):
+CLI 명령으로 지원되는 두 가지 멀티플렉서 백엔드:
 
 - **tmux** — `central-mcp tmux` (세션 없으면 생성 후 attach)
 - **zellij** — `central-mcp zellij` (KDL 레이아웃 생성 후 `central` 세션 실행 / attach)
-- **cmux** — `central-mcp cmux` (macOS 전용; [cmux.app](https://github.com/manaflow-ai/cmux) GUI 터미널에 워크스페이스를 엶. 레이아웃은 오케스트레이터 에이전트가 시드 프롬프트로 직접 구성 — 아래 [cmux 관찰모드](#cmux-관찰모드) 참조.)
 
-tmux / zellij 는 동일한 레이아웃(허브 탭 + 오버플로우 탭, 각 프로젝트 pane 이 `central-mcp watch <project>` 실행)을 만듭니다. 설치되어 있는 쪽을 고르면 됩니다. cmux 는 agent-driven 방식이라 별도 섹션에서 설명합니다.
+두 백엔드는 동일한 레이아웃(허브 탭 + 오버플로우 탭, 각 프로젝트 pane 이 `central-mcp watch <project>` 실행)을 만듭니다. 설치되어 있는 쪽을 고르면 됩니다.
+
+세 번째 옵션 — **cmux** (macOS) — 는 별도 CLI 명령 없이 cmux.app 안에서 직접 `cmcp` 를 실행하고, 오케스트레이터에게 관찰 pane 구성을 요청하는 방식입니다. 아래 [cmux 관찰모드](#cmux-관찰모드) 참조.
 
 `central-mcp up`은 tmux 세션 `central`을 만듭니다:
 
@@ -381,27 +382,15 @@ zellij watch pane이 dispatch 이벤트를 스트리밍하지 않고 `<ENTER> to
 
 ### cmux 관찰모드
 
-macOS 전용. [cmux.app](https://github.com/manaflow-ai/cmux) 은 네이티브 GUI 터미널로, 오케스트레이터 에이전트가 관찰 레이아웃을 직접 구성하는 방식을 따릅니다. central-mcp 는 워크스페이스만 열고 나머지는 에이전트에게 맡깁니다.
+macOS 전용. [cmux.app](https://github.com/manaflow-ai/cmux) 은 에이전트가 자기 pane 을 직접 관리하도록 설계된 네이티브 GUI 터미널입니다. 워크플로우:
 
-**3단계:**
+1. cmux.app 실행.
+2. cmux pane 에서 `cmcp` 실행 — 오케스트레이터 (claude / codex / gemini) 가 cmux 안에서 기동되고 `CMUX_WORKSPACE_ID` 환경변수를 자동 상속.
+3. 오케스트레이터에게 관찰 pane 구성 요청: *"관찰 pane 구성해줘"* / *"set up watch panes for all projects"*.
 
-1. cmux.app 을 실행합니다.
-2. cmux 안에서 터미널 pane 을 엽니다.
-3. 그 pane 에서 `central-mcp cmux` 를 실행합니다.
+오케스트레이터는 기동시 `~/.central-mcp/AGENTS.md` 를 읽는데 거기에 이 워크플로우 섹션이 들어있어, Bash 툴로 `cmux new-split` + `cmux send-text` 를 각 프로젝트마다 호출해서 `central-mcp watch <project>` pane 을 하나씩 구성합니다.
 
-끝. claude / codex / gemini 가 첫 턴에 등록된 각 프로젝트마다 `central-mcp watch <project>` pane 을 하나씩 구성합니다.
-
-```bash
-central-mcp cmux                          # 기본값 (bypass)
-central-mcp cmux --permission-mode auto   # claude 전용, 분류기 검토
-central-mcp cmux --no-orchestrator        # 빈 워크스페이스, pane 은 직접 구성
-central-mcp down                          # 워크스페이스 종료
-```
-
-**주의사항:**
-- **오케스트레이터:** claude / codex / gemini 만 지원. opencode / droid 프로젝트는 `central-mcp tmux` 또는 `central-mcp zellij` 쓰세요.
-- **`--permission-mode restricted` 는 부트스트랩을 멈춥니다** — 첫 `cmux new-split` 승인 프롬프트에서 셋업이 중단됩니다. 기본값(`bypass`) 또는 `auto` (claude 전용) 쓰시면 됩니다.
-- **`--max-panes` 없음:** cmux 가 GUI 에서 responsive 하게 resize — 등록된 프로젝트당 1 pane.
+`central-mcp cmux` 같은 서브커맨드는 없습니다 — central-mcp 자체는 cmux 소켓을 건드리지 않고, 에이전트가 직접 처리합니다. pane 구성이 중간에 실패하면 오케스트레이터가 어떤 프로젝트까지 됐는지 보고하니, 실패한 것만 재시도 지시하시면 됩니다.
 
 ## 레지스트리 경로 해결
 
