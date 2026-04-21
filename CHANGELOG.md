@@ -3,6 +3,11 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.8.7] — 2026-04-21
+
+### Fixed
+- **PyPI project page logo now renders.** The `<img src="docs/logo.png">` in both README.md and README_KO.md was a repo-relative path — fine on GitHub, broken on PyPI because PyPI doesn't resolve relatives against the source repo. Swapped for the absolute `https://raw.githubusercontent.com/andy5090/central-mcp/main/docs/logo.png` URL so the image renders on both GitHub and PyPI.
+
 ## [0.8.6] — 2026-04-21
 
 ### Changed
