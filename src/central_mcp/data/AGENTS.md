@@ -57,40 +57,38 @@ If env var `CMUX_WORKSPACE_ID` is set, you were launched inside a cmux.app pane.
 When the user asks you to build observation panes (e.g., "cmux 관찰 pane 구성해줘" / "set up watch panes"):
 
 1. Call `list_projects` to get the target set.
-2. **Before any splits**, capture the workspace's usable size from the orchestrator pane (which at this moment spans the full workspace, so `tput` reports the workspace totals): `W=$(tput cols)` and `H=$(tput lines)`.
-3. Follow the **Layout note** below to pick the wide-vs-narrow branch, build the grid, and seed each pane with `central-mcp watch <project-name>` using `cmux new-split <dir>`, `cmux send`, and `cmux send-key`.
-4. Report per-project success/failure and which workspace each pane landed in.
+2. **Before creating anything**, capture the current cmux window size from the orchestrator shell: `W=$(tput cols)` and `H=$(tput lines)`. New workspaces created in the same window inherit these dimensions.
+3. Rename the orchestrator's own workspace (once): `cmux rename-workspace --workspace "$CMUX_WORKSPACE_ID" cmcp-hub`. This mirrors tmux / zellij's `cmcp-1-hub` convention.
+4. Create one or more dedicated observation workspaces named `cmcp-watch-1`, `cmcp-watch-2`, …, build the grid in each, and seed with `central-mcp watch <project-name>`.
+5. Report per-project success/failure and which workspace each pane landed in.
 
-**Layout note — terminal-size-aware.** cmux splits always 50/50 on the target surface (no auto-equalize), so the layout is determined by *which* surface you split, *in what order*, and the workspace's width at the start. The pattern mirrors tmux/zellij's `main-vertical` + overflow-windows scheme, adapted to cmux's surface / workspace primitives.
+**Layout — always dedicated workspaces.** The observation layer always lives in its own `cmcp-watch-<n>` workspaces — never mixed with the orchestrator pane. This keeps the orch context clean and matches the window-vs-window mental model tmux / zellij users already have. The terminal size determines *how many* watch workspaces to create and *how densely* to pack each one, not whether the orchestrator shares a workspace with them (it never does).
 
-Readability floor (match tmux/zellij defaults): **~80 cols × 20 lines per pane**. With `W`/`H` captured above:
+Readability floor (match tmux / zellij defaults): **~80 cols × 20 lines per pane**. With `W` / `H`:
 
 - `rows_per_ws = max(1, H // 20)`
-- `cols_per_row = max(1, W // 80)` (narrow branch) or `max(1, (W // 2) // 80)` (wide branch, projects get half the width)
+- `cols_per_row = max(1, W // 80)`
 - `ws_capacity = rows_per_ws × cols_per_row`
+- `num_ws = ceil(N_projects / ws_capacity)` — the number of `cmcp-watch-<n>` workspaces you'll need.
 
-**Branches:**
+**Procedure per observation workspace** (`cmcp-watch-<i>` for `i` in 1..num_ws):
 
-- **Wide (`W >= 160`)** — orchestrator column in the *same* workspace (the tmux/zellij main-vertical parallel). Use `$CMUX_SURFACE_ID` as the orchestrator surface `O`, then: `cmux new-split right --workspace "$CMUX_WORKSPACE_ID" --surface "$CMUX_SURFACE_ID"` yields `R` (right half, ~W/2 cols wide). Build the project grid on `R`. Optionally shave the orchestrator column with `cmux resize-pane --pane <orch-pane-ref> -L --amount <delta>` if `W` is well above 160, to give projects more room.
-- **Narrow (`W < 160`)** — the orchestrator can't afford a column. Open a dedicated observation workspace: `cmux new-workspace --name "central-mcp watch"` returns `workspace:<n>` (a ref, NOT a UUID-shaped `CMUX_WORKSPACE_ID` — use the ref directly). Its first pane's surface becomes the grid root (`cmux list-pane-surfaces --workspace <ws>` surfaces the initial ref). Build the grid there; width available is `W` (no split with orchestrator).
-- **Overflow** — when `N_projects > ws_capacity`, spawn `central-mcp watch 2`, `central-mcp watch 3`, … workspaces. Users tab between them in cmux's sidebar.
+1. `cmux new-workspace --name "cmcp-watch-<i>"` → returns `workspace:<n>` (a ref; use it directly).
+2. `cmux list-pane-surfaces --workspace <ws>` → grab the initial root surface ref.
+3. Do `rows_per_ws - 1` `new-split down --workspace <ws> --surface <row-base>` calls to create row-base surfaces (one per row).
+4. For each row-base, sequentially apply the **balanced halving pattern** to get `cols_per_row` equal columns. Rows may run in parallel; splits *within* one row must be sequential (concurrent splits observe stale layout and land uneven).
+5. Walk surfaces in visual order with `cmux tree --json --workspace <ws>` (`panes[].surfaces[].ref` reflects the layout order).
 
-**Grid construction on the project-area root surface:**
+**Balanced halving pattern.** `new-split right --surface <ref>` always halves the target 50/50, so to get `N` equal columns you halve whichever pane is currently widest. Example for 4 columns from row-base `A`:
 
-- First do `rows_per_ws - 1` `new-split down` calls on the root to create `rows_per_ws` row-base surfaces.
-- Then, **sequentially within each row** (but **parallel across rows**), apply the **balanced halving pattern** — `new-split right --surface <row-base>` halves the row-base into two equal halves; repeat against whichever surface is widest to keep the row even. Example for 4 equal columns from row-base `A`:
-  1. `new-split right --surface A` → `[A(50) | B(50)]`
-  2. `new-split right --surface A` → `[A(25) | C(25) | B(50)]`
-  3. `new-split right --surface B` → `[A(25) | C(25) | B(25) | D(25)]` ✓ even
+1. `new-split right --surface A` → `[A(50) | B(50)]`
+2. `new-split right --surface A` → `[A(25) | C(25) | B(50)]`
+3. `new-split right --surface B` → `[A(25) | C(25) | B(25) | D(25)]` ✓ even
 
-Sequential-within-row matters: concurrent splits on the same row observe stale layout state and land uneven.
+**Project → surface mapping + seeding.** Fill `cmcp-watch-1` first, then `cmcp-watch-2`, etc., in project order. For each `<workspace_ref, surface_ref, project_name>`:
 
-**Surface ↔ project mapping + seeding:**
-
-- `cmux tree --json --workspace <ws>` walks the workspace's surfaces in visual order (`panes[].surfaces[].ref`). Skip the orchestrator's own surface (`$CMUX_SURFACE_ID`) when pairing.
-- For each `<surface_ref, project_name>` pair:
-  - `cmux send --workspace <ws> --surface <surface_ref> "central-mcp watch <project_name>"`
-  - `cmux send-key --workspace <ws> --surface <surface_ref> enter`
+- `cmux send --workspace <ws> --surface <surface_ref> "central-mcp watch <project_name>"`
+- `cmux send-key --workspace <ws> --surface <surface_ref> enter`
 
 Outside this workflow, the no-Bash rule still applies — dispatch to project agents instead. Only applies inside cmux; tmux / zellij observation is handled by `central-mcp tmux` / `central-mcp zellij`.
 

@@ -3,6 +3,16 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.8.6] — 2026-04-21
+
+### Changed
+- **cmux bootstrap recipe simplified: always dedicated observation workspaces.** Empirical testing (including wide screens) showed that the orchestrator in practice never executes the wide-branch same-workspace split — it consistently opens dedicated workspaces for watch panes regardless of `W`. The 0.8.3 wide/narrow branching was accurate in theory but unused; 0.8.6 drops it. Observation now *always* goes into separate `cmcp-watch-<n>` workspaces and the orchestrator's workspace is renamed to `cmcp-hub` (mirroring tmux / zellij's `cmcp-1-hub`). Terminal size still gates *how many* watch workspaces and *how densely* to pack each (`rows_per_ws × cols_per_row` respecting the 80 × 20 readability floor), just not whether the orchestrator shares space with them (it never does).
+- **Workspace naming aligned with tmux / zellij window convention** — `cmcp-hub` for the orchestrator's workspace (renamed via `cmux rename-workspace`), `cmcp-watch-1`, `cmcp-watch-2`, … for observation workspaces. README / README_KO reference the same names.
+- The old `central-mcp watch` / `central-mcp watch 2` workspace names are retired; if you had observation workspaces from 0.8.3–0.8.5 still open, close them manually from cmux's sidebar before running the bootstrap again.
+
+### Upgrade note
+- Same copy-on-miss caveat as earlier 0.8.x releases: `rm ~/.central-mcp/AGENTS.md ~/.central-mcp/CLAUDE.md` before the next orchestrator launch to regenerate from the updated bundle.
+
 ## [0.8.5] — 2026-04-21
 
 ### Added

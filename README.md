@@ -402,7 +402,7 @@ macOS only. [cmux.app](https://github.com/manaflow-ai/cmux) is a native GUI term
 2. In a cmux pane, run `cmcp` — the orchestrator (claude / codex / gemini) starts inside cmux and inherits `CMUX_WORKSPACE_ID`.
 3. Ask the orchestrator to set up observation panes, e.g. *"set up watch panes for all projects"* or in Korean *"관찰 pane 구성해줘"*.
 
-The orchestrator reads `~/.central-mcp/AGENTS.md` on launch — which includes a terminal-size-aware recipe for this workflow — and uses its Bash tool to chain `cmux new-split`, `cmux send`, and `cmux send-key` per project. The layout mirrors the tmux / zellij behavior: wide cmux windows get an orchestrator column plus a project grid in the same workspace (like `main-vertical`); narrower windows spill the observation layer into dedicated `central-mcp watch` workspaces that cmux lets you tab between.
+The orchestrator reads `~/.central-mcp/AGENTS.md` on launch — which includes a terminal-size-aware recipe for this workflow — and uses its Bash tool to chain `cmux new-split`, `cmux send`, and `cmux send-key` per project. Workspace naming mirrors tmux / zellij's window convention: the orchestrator's own workspace is renamed to `cmcp-hub`, and observation panes go into dedicated workspaces named `cmcp-watch-1`, `cmcp-watch-2`, … (one per terminal-size-derived grid chunk). cmux lets you tab between them from its sidebar.
 
 No `central-mcp cmux` subcommand exists: central-mcp itself stays out of the cmux socket, the agent does the work. If pane setup fails partway, the orchestrator reports which projects succeeded and you can ask it to retry the missing ones.
 
