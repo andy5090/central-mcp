@@ -94,7 +94,7 @@ To fit more panes per workspace, enlarge the cmux window — at `W=300, H=50` th
 2. `new-split right --surface A` → `[A(25) | C(25) | B(50)]`
 3. `new-split right --surface B` → `[A(25) | C(25) | B(25) | D(25)]` ✓ even
 
-**Project → surface mapping + seeding.** `new-split` returns OK as soon as cmux queues the pane, but the spawned shell's init phase can *discard* pending stdin while it runs rc files. Observed in practice: zsh + heavy oh-my-zsh themes eat entire chunks of typed input — multiple characters, not just a single-byte race. Fixed sleeps don't rescue this because the discard happens at an arbitrary moment inside the shell's startup sequence.
+**Project → surface mapping + seeding.** `new-split` returns OK as soon as cmux queues the pane, but the spawned shell may not yet be at a prompt. If you send before the first prompt renders, the text lands on the pre-prompt screen (e.g. visibly concatenated with `Last login:`) and never reaches the shell's command line. Fixed sleeps are unreliable because zsh + oh-my-zsh rc timing varies pane-to-pane.
 
 Reliable fix: **poll `cmux tree --json` for per-surface readiness** before sending. The `tty` field is populated once the pty is wired up to a shell process; `title` becomes non-empty once the shell renders its first prompt. Either signal works as a "safe to send" indicator.
 
@@ -118,7 +118,7 @@ for w in d.get('windows', []):
   sleep 0.3
 done
 
-# Seed. Leading \n is belt-and-suspenders for any residual 1-byte race.
+# Seed. Leading \n is a belt-and-suspenders flush for any residual input.
 cmux send --workspace <ws> --surface <surface_ref> "\ncentral-mcp watch <project_name>"
 cmux send-key --workspace <ws> --surface <surface_ref> enter
 ```
