@@ -3,6 +3,11 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.8.4] — 2026-04-21
+
+### Changed
+- **README / README_KO "Running inside cmux" blurb updated** to match the 0.8.3 AGENTS.md rewrite: references the correct cmux verbs (`cmux new-split`, `cmux send`, `cmux send-key` — not the non-existent `send-text`) and explains that the layout mirrors tmux / zellij behavior (same-workspace orchestrator column for wide windows, dedicated `central-mcp watch` workspaces for narrow/overflow). Same version would've left PyPI's project page showing the stale 0.8.1-era wording; this bump re-publishes the corrected README.
+
 ## [0.8.3] — 2026-04-21
 
 ### Changed
