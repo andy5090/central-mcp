@@ -44,7 +44,7 @@ Run central-mcp on the platform it's been exercised on, and expect a bit of roug
 
 - **macOS** — primary development and test target.
 - **Linux** — expected to work (pure Python, tmux/zellij are cross-platform), but not regularly tested; please file issues if you hit edges.
-- **Windows** — not supported.
+- **Windows** — not officially tested. The core (Python + MCP tools + the tmux / zellij backends where those run on Windows) should work in principle; the cmux backend is macOS-only, so the observation-layer options on Windows collapse to whichever of tmux / zellij you can install. Treat Windows as an unsupported best-effort target and please file issues if you hit edges.
 
 ## Quickstart
 
