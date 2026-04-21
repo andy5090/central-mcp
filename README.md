@@ -72,12 +72,7 @@ The first `central-mcp` run auto-creates `~/.central-mcp/registry.yaml` and regi
 > - `central-mcp install claude` — register with a single client
 > - `central-mcp init` — create the registry without launching
 
-Inside the orchestrator session, speak naturally:
-
-- *"Add ~/Projects/my-app to the hub, agent=claude."*
-- *"What projects do I have?"*
-- *"Send this to my-app: add error handling to the auth module."*
-- *"Also send to gluecut-dawg: summarize the project structure."*
+Inside the orchestrator session, speak naturally — full example catalog in [First session](#first-session--natural-language-examples) below.
 
 The orchestrator calls `dispatch` for each request and **continues the conversation immediately** — you don't wait. Results arrive through three channels:
 
@@ -86,6 +81,39 @@ The orchestrator calls `dispatch` for each request and **continues the conversat
 - **User-driven check (100% reliable):** ask "any updates?" anytime.
 
 Multiple dispatches run in parallel.
+
+## First session — natural-language examples
+
+Everything below is spoken to the orchestrator in plain language. The orchestrator picks the right MCP tool and moves on. You do NOT need to memorize `dispatch(...)` / `add_project(...)` / `check_dispatch(...)` — those are the MCP-layer verbs shown elsewhere in the README for reference, not commands you type.
+
+**Set up (once):**
+- *"Add ~/Projects/my-app to the hub. Use claude as its agent."*
+- *"Register ~/Projects/gluecut-dawg — default agent is fine."*
+- *"What projects do I have?"*
+
+**Send work:**
+- *"Ask my-app to add a dark mode toggle in settings."*
+- *"Send gluecut-dawg and retro-hog the same prompt: tighten up the README."*
+- *"Dispatch to my-app with codex instead of claude this time."*
+
+**Check progress:**
+- *"What's running right now?"*
+- *"Any updates?"* / *"status?"*
+- *"How did that last dispatch to my-app go?"*
+- *"Show the last 3 dispatches for gluecut-dawg."*
+- *"Overall status across all projects?"* (triggers a portfolio-wide summary)
+
+**Recover / switch threads:**
+- *"Cancel the my-app dispatch — the prompt was wrong."*
+- *"What conversation sessions do I have for retro-hog?"*
+- *"Switch retro-hog to session abc123 for the next dispatch."*
+- *"Back to the default / latest session for retro-hog."*
+
+**Shape the fleet:**
+- *"Put gluecut-dawg and rink-service at the top of the list."*
+- *"Remove the old programming-history project."*
+
+**Observation tip for first-time users.** Starting out, it's worth running `central-mcp tmux` (or `zellij` — or `cmcp` inside cmux.app on macOS) in a second terminal so you can see the per-project dispatch streams live while you chat with the orchestrator. It builds intuition for how fast dispatches really are and what kinds of prompts produce useful output. Once the orchestrator's summaries match what you'd have checked in the panes anyway, drop observation and work from the orchestrator alone — see [Optional observation layer](#optional-observation-layer) below for the full story.
 
 ## MCP tools
 
@@ -291,18 +319,18 @@ orchestration_history(window_minutes=60) # only count activity in the last hour
 
 The response bundles: `in_flight` (running now), `recent` (newest milestones), `per_project` (dispatched/succeeded/failed/cancelled counts, last timestamp), and a registry snapshot. The orchestrator uses this to write a multi-project summary in one pass.
 
-### Performance tip: use a faster model for the orchestrator
+### Performance / cost tip: lighter model for the orchestrator
 
-The orchestrator's job is just routing — it doesn't need top-tier reasoning:
+The orchestrator's job is routing — it doesn't need top-tier reasoning. With Claude Opus 4.7 turns already land in ~2-3 seconds for routing, so latency is not a strong reason to switch. The stronger reason is **tokens**: every turn the orchestrator takes is billed against its model, and a routing turn with a lighter model is meaningfully cheaper. Optional tunings:
 
 | Orchestrator client | Tip |
 |---|---|
-| Claude Code | `/model sonnet` — ~1-2s/turn vs ~5-8s on Opus |
-| Codex CLI | Use a lighter model (e.g. `-spark` variant) via `/model` or `config.toml` |
-| Gemini CLI | Use Flash instead of Pro if available via model config |
-| opencode | Select a faster model via `-m provider/model` or in `opencode.json` |
+| Claude Code | `/model sonnet` — still comfortably fast, materially fewer tokens per routing turn. `/model haiku` if you want to go cheaper and your workflow tolerates it. |
+| Codex CLI | Use a lighter model (e.g. `-spark` variant) via `/model` or `config.toml`. |
+| Gemini CLI | Use Flash instead of Pro if your account offers it. |
+| opencode | Select a faster model via `-m provider/model` or in `opencode.json`. |
 
-The sub-agent model is independent — each `dispatch` spawns its own process with whatever model the project's agent defaults to.
+The sub-agent model is independent — each `dispatch` spawns its own process with whatever model the project's agent defaults to, so lightening the orchestrator does not lighten the sub-agents.
 
 ## CLI reference
 

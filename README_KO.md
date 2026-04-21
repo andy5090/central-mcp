@@ -68,12 +68,7 @@ central-mcp
 > - `central-mcp install claude` — 특정 클라이언트만 등록
 > - `central-mcp init` — 레지스트리만 생성 (기동 안 함)
 
-오케스트레이터 세션 안에서 자연어로:
-
-- *"~/Projects/my-app을 허브에 추가해줘, agent=claude."*
-- *"내 프로젝트 목록은?"*
-- *"my-app에 보내줘: auth 모듈에 에러 핸들링 추가해."*
-- *"gluecut-dawg에도 보내줘: 프로젝트 구조 요약해."*
+오케스트레이터 세션 안에서 자연어로 말하면 됩니다 — 전체 예시는 아래 [첫 세션 — 자연어 사용 예시](#첫-세션--자연어-사용-예시) 참조.
 
 오케스트레이터는 `dispatch`를 호출하고 **즉시 대화를 이어갑니다** — 기다릴 필요 없음. 결과는 세 가지 경로로 도착:
 
@@ -82,6 +77,39 @@ central-mcp
 - **사용자 질문 (100% 신뢰):** "결과는?" / "업데이트 있어?" 하면 즉시 답변.
 
 여러 디스패치가 병렬로 실행됩니다.
+
+## 첫 세션 — 자연어 사용 예시
+
+아래는 전부 오케스트레이터에게 평소처럼 한국어(또는 영어)로 말하면 됩니다. 오케스트레이터가 적절한 MCP 도구를 골라 호출하므로, `dispatch(...)` / `add_project(...)` / `check_dispatch(...)` 같은 MCP 레이어 함수명을 외울 필요 없습니다 (README 의 다른 섹션에 나오는 함수명은 동작 참고용이지 사용자가 직접 치는 명령이 아님).
+
+**최초 설정 (한 번):**
+- *"~/Projects/my-app 을 허브에 추가해줘. 에이전트는 claude."*
+- *"~/Projects/gluecut-dawg 등록해줘 — 기본 에이전트면 돼."*
+- *"내 프로젝트 목록 보여줘."*
+
+**작업 보내기:**
+- *"my-app 에 설정에 다크 모드 토글 추가해달라고 해."*
+- *"gluecut-dawg 와 retro-hog 에 같은 프롬프트 보내줘: README 좀 다듬어줘."*
+- *"my-app 한 번만 claude 대신 codex 로 dispatch 해줘."*
+
+**진행상황 체크:**
+- *"지금 뭐 돌고 있어?"*
+- *"업데이트 있어?"* / *"status?"* / *"결과는?"*
+- *"my-app 에 아까 dispatch 한 거 어떻게 됐어?"*
+- *"gluecut-dawg 최근 dispatch 3개 보여줘."*
+- *"전체적으로 어떻게 진행되고 있어?"* (portfolio 요약 트리거)
+
+**복구 / 세션 전환:**
+- *"my-app dispatch 취소해 — 프롬프트 틀렸어."*
+- *"retro-hog 에 어떤 세션들 있어?"*
+- *"retro-hog 다음 dispatch 때 abc123 세션으로 전환."*
+- *"retro-hog 은 다시 default / latest 세션으로."*
+
+**프로젝트 목록 관리:**
+- *"gluecut-dawg 와 rink-service 를 리스트 맨 위로 올려줘."*
+- *"오래된 programming-history 프로젝트 제거."*
+
+**처음이라면 관찰 레이어 켜두는 걸 추천.** 다른 터미널에서 `central-mcp tmux` (또는 `zellij`, macOS 면 cmux.app 안에서 `cmcp` 실행) 한 번 돌려두면 오케스트레이터와 대화하는 동안 프로젝트별 dispatch 이벤트 스트림을 실시간으로 볼 수 있습니다. dispatch 가 실제로 얼마나 빠른지, 어떤 프롬프트가 쓸만한 출력을 내는지 감을 쌓는 데 도움이 됩니다. 오케스트레이터의 요약이 pane 에서 봤을 내용과 어긋나지 않기 시작하면 관찰 레이어를 내리고 오케스트레이터만으로 작업하면 됩니다 — 자세한 내용은 아래 [선택적 관찰 레이어](#선택적-관찰-레이어) 참조.
 
 ## MCP 도구
 
@@ -285,18 +313,18 @@ orchestration_history(window_minutes=60) # 최근 1시간 활동만
 
 응답에는 `in_flight` (현재 실행 중), `recent` (최근 milestone), `per_project` (프로젝트별 dispatched/succeeded/failed/cancelled 카운트 + 최근 ts), 레지스트리 스냅샷이 포함됩니다. 오케스트레이터가 이 한 번의 호출로 복수 프로젝트 현황을 자연어로 요약할 수 있습니다.
 
-### 성능 팁: 오케스트레이터에 빠른 모델 사용
+### 성능 / 비용 팁: 오케스트레이터는 가벼운 모델로
 
-오케스트레이터는 라우팅만 하므로 최상위 모델이 필요 없습니다:
+오케스트레이터 역할은 라우팅 — 최상위 추론 불필요. Claude Opus 4.7 기준으로 라우팅 턴이 ~2-3초면 끝나므로 **속도는 이미 충분**합니다. 모델 다운그레이드의 강한 이유는 **토큰 비용** — 오케스트레이터가 돌릴 때마다 그 모델의 토큰을 씁니다. 라우팅 턴 하나에 Opus 쓸지 Sonnet 쓸지의 차이는 latency 가 아니라 월 청구서에서 드러납니다. 선택적 조정:
 
 | 오케스트레이터 클라이언트 | 팁 |
 |---|---|
-| Claude Code | `/model sonnet` — 턴당 ~1-2초 vs Opus ~5-8초 |
-| Codex CLI | 경량 모델 사용 (예: `-spark` 변형) `/model` 또는 `config.toml`에서 설정 |
-| Gemini CLI | 가능하면 Pro 대신 Flash 사용 |
-| opencode | `-m provider/model` 또는 `opencode.json`에서 빠른 모델 선택 |
+| Claude Code | `/model sonnet` — 속도 비슷하고 라우팅 턴당 토큰 훨씬 적음. 더 저렴하게 가고 싶으면 `/model haiku`. |
+| Codex CLI | 경량 모델 사용 (예: `-spark` 변형) — `/model` 또는 `config.toml`. |
+| Gemini CLI | 계정에서 지원하면 Pro 대신 Flash. |
+| opencode | `-m provider/model` 또는 `opencode.json` 에서 빠른 모델 선택. |
 
-서브에이전트 모델은 독립적 — 각 `dispatch`는 프로젝트 에이전트의 기본 모델로 자체 프로세스를 생성합니다.
+서브에이전트 모델은 독립적 — 각 `dispatch`는 프로젝트 에이전트의 기본 모델로 자체 프로세스를 생성. 오케스트레이터 경량화가 서브에이전트 경량화로 이어지지 않습니다.
 
 ## CLI 레퍼런스
 

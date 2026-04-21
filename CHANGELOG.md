@@ -3,6 +3,12 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.8.13] — 2026-04-21
+
+### Changed
+- **README / README_KO: new "First session — natural-language examples" section** right after Quickstart. Replaces the 4-bullet snippet in Quickstart with a grouped catalog (setup / send work / check progress / recover+switch threads / shape fleet), all phrased as things the user says to the orchestrator. Explicit note that `dispatch(...)` / `add_project(...)` etc. are MCP-layer function names shown for reference — users never type those. Also surfaces the "start with observation, drop it later" onboarding tip near the top with a link to the full explanation in the Observation layer section.
+- **Performance tip reworded.** Claude Opus 4.7 is fast enough that routing turns aren't latency-bound anymore (~2-3s/turn), so the old "Sonnet for speed" framing was misleading. Rewrote as a **cost** tip: the orchestrator takes many short turns, and those add up in tokens — downgrading to Sonnet (or Haiku) is primarily a billing optimization, not a speed one. Framed both README and README_KO the same way.
+
 ## [0.8.12] — 2026-04-21
 
 ### Changed
