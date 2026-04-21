@@ -8,6 +8,15 @@ socket (`~/.cmux/cmux.sock`). We only use its declarative surface
 new-pane) is explicitly out of scope — orchestrator agents can call
 the `cmux` CLI directly if they need that.
 
+Layout schema is the cmux `CmuxLayoutNode` tree (see
+`Sources/CmuxConfig.swift` in manaflow-ai/cmux): each node is either
+`{"pane": {"surfaces": [...]}}` or
+`{"direction": "horizontal"|"vertical", "split": 0.1-0.9,
+"children": [left, right]}` (exactly two children). The CLI sends
+this subtree verbatim as `params["layout"]` on the v2
+`workspace.create` method; the workspace title / cwd go on separate
+`--name` / `--cwd` flags (not embedded in the layout JSON).
+
 Because the layout tree is sized by the cmux GUI (not by char cells),
 this module skips the terminal-size heuristics in `grid.pick_rows` —
 cmux handles responsive sizing on its own. Tiling reduces to: ≤2
@@ -154,7 +163,14 @@ def _terminal_surface(
 def _pane(
     name: str, cwd: str, command: str, *, focus: bool = False,
 ) -> dict[str, Any]:
-    return {"surfaces": [_terminal_surface(name, cwd, command, focus=focus)]}
+    """Build a pane node matching cmux's `CmuxLayoutNode.pane` branch:
+    `{"pane": {"surfaces": [...]}}`. The outer `pane` key is what
+    distinguishes a leaf from a split node (which uses `direction`)."""
+    return {
+        "pane": {
+            "surfaces": [_terminal_surface(name, cwd, command, focus=focus)],
+        },
+    }
 
 
 def _split(
@@ -164,11 +180,13 @@ def _split(
     *,
     split: float = 0.5,
 ) -> dict[str, Any]:
+    """Build a split node matching `CmuxSplitDefinition`: `direction`,
+    optional `split` ratio (0.1-0.9, clamped server-side), and exactly
+    two entries in `children`. Decoder rejects >2 or <2 children."""
     return {
         "direction": direction,
         "split": split,
-        "first": first,
-        "second": second,
+        "children": [first, second],
     }
 
 
@@ -205,10 +223,20 @@ def build_layout_json(
     orchestrator: OrchestratorPane | None,
     projects: list[Project],
 ) -> dict[str, Any]:
-    """Produce the JSON dict passed to `cmux new-workspace --layout`.
+    """Build the `CmuxLayoutNode` subtree passed to `cmux new-workspace
+    --layout`. Matches the Swift decoder in
+    `Sources/CmuxConfig.swift` — each node is either
+    `{"pane": {"surfaces": [...]}}` or
+    `{"direction": ..., "split": ..., "children": [left, right]}`.
+
+    The workspace title / cwd are NOT part of this subtree — they go
+    to `--name` and `--cwd` on the CLI (which `sendV2` forwards as
+    separate `params` keys: `title` and `cwd`). The server decodes
+    `params["layout"]` directly as `CmuxLayoutNode`.
 
     Branches:
-      - Empty registry AND no orchestrator → one empty terminal surface.
+      - Empty registry AND no orchestrator → single pane with one
+        empty terminal surface.
       - Orchestrator + ≥1 project → horizontal split, orch on left,
         project subtree on right.
       - Orchestrator only → a single pane leaf.
@@ -216,8 +244,8 @@ def build_layout_json(
         gets focus so cmux lands the user on p0.
     """
     if orchestrator is None and not projects:
-        layout: dict[str, Any] = {"surfaces": [{"type": "terminal", "focus": True}]}
-    elif orchestrator is not None and projects:
+        return {"pane": {"surfaces": [{"type": "terminal", "focus": True}]}}
+    if orchestrator is not None and projects:
         orch_pane = _pane(
             "Central MCP Orchestrator",
             orchestrator.cwd,
@@ -225,23 +253,17 @@ def build_layout_json(
             focus=True,
         )
         projects_tree = _tile_projects(_project_panes(projects))
-        layout = _split("horizontal", orch_pane, projects_tree)
-    elif orchestrator is not None:
-        layout = _pane(
+        return _split("horizontal", orch_pane, projects_tree)
+    if orchestrator is not None:
+        return _pane(
             "Central MCP Orchestrator",
             orchestrator.cwd,
             _orch_command(orchestrator.command),
             focus=True,
         )
-    else:
-        panes = _project_panes(projects)
-        panes[0]["surfaces"][0]["focus"] = True
-        layout = _tile_projects(panes)
-    return {
-        "name": SESSION,
-        "cwd": ".",
-        "layout": layout,
-    }
+    panes = _project_panes(projects)
+    panes[0]["pane"]["surfaces"][0]["focus"] = True
+    return _tile_projects(panes)
 
 
 def ensure_workspace(
