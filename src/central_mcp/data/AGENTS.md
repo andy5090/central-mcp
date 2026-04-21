@@ -64,10 +64,10 @@ When the user asks you to build observation panes (e.g., "cmux 관찰 pane 구�
 
 **Layout — always dedicated workspaces.** The observation layer always lives in its own `cmcp-watch-<n>` workspaces — never mixed with the orchestrator pane. This keeps the orch context clean and matches the window-vs-window mental model tmux / zellij users already have. The terminal size determines *how many* watch workspaces to create and *how densely* to pack each one, not whether the orchestrator shares a workspace with them (it never does).
 
-Readability floor (match tmux / zellij defaults): **~80 cols × 20 lines per pane**. With `W` / `H`:
+Readability floor — same as tmux / zellij's `_MIN_PANE_COLS=70` / `_MIN_PANE_ROWS=15` in `src/central_mcp/grid.py`: **~70 cols × 15 lines per pane**. The floor is the "pane that can usefully show an agent's live output" threshold. Match it for cross-backend consistency — if a user's terminal is too small to fit multiple panes at that floor, they get one workspace per project (same as tmux/zellij's overflow-windows). To fit more panes per workspace, enlarge the cmux window first. With `W` / `H`:
 
-- `rows_per_ws = max(1, H // 20)`
-- `cols_per_row = max(1, W // 80)`
+- `rows_per_ws = max(1, H // 15)`
+- `cols_per_row = max(1, W // 70)`
 - `ws_capacity = rows_per_ws × cols_per_row`
 - `num_ws = ceil(N_projects / ws_capacity)` — the number of `cmcp-watch-<n>` workspaces you'll need.
 

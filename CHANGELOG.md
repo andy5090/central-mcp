@@ -3,6 +3,15 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.8.8] — 2026-04-21
+
+### Changed
+- **cmux pane readability floor aligned with tmux / zellij** — 70 cols × 15 lines per pane (previously 80 × 20). The prior values treated cmux more conservatively than the other backends for no good reason; 0.8.7 testing at 80×24 showed `cmcp-watch-<n>` being spawned one-per-project, which is correct given the old floor but surprising since tmux / zellij *also* collapse to one-pane-per-window at 80×24. Matching `_MIN_PANE_COLS=70` / `_MIN_PANE_ROWS=15` from `src/central_mcp/grid.py` restores parity: the only way to pack more panes per workspace is to enlarge the cmux window, same as tmux / zellij's story.
+- **Repo-root `/CLAUDE.md` + `/AGENTS.md` split from runtime copies.** They were previously symlinks into `src/central_mcp/data/` — writing to root silently overwrote the shipped runtime files (observed in this release cycle). Root now holds a **dev-mode** guide (repo layout, testing, release flow, key invariants) aimed at contributors; `src/central_mcp/data/{CLAUDE,AGENTS}.md` stays as the shipped orchestrator runtime guidelines. The dev-mode guide explicitly notes the symlink history as a footgun to avoid.
+
+### Upgrade note
+- Same copy-on-miss caveat as prior 0.8.x releases: `rm ~/.central-mcp/{CLAUDE,AGENTS}.md` before the next orchestrator launch to pick up the new floor values.
+
 ## [0.8.7] — 2026-04-21
 
 ### Fixed
