@@ -50,6 +50,21 @@ Default dispatch resumes the agent's most-recently-modified conversation (claude
 
 User asks to reorder projects → call `reorder_projects(order=[...])`. Lenient by default: listed names move to the front; unmentioned ones keep their relative order. Persists to `registry.yaml` immediately. Mention that the observation layer picks up the new pane order on the next `cmcp tmux` / `cmcp zellij`.
 
+## Running inside cmux (optional observation layer, macOS)
+
+If env var `CMUX_WORKSPACE_ID` is set, you were launched inside a cmux.app pane. cmux is designed so agents manage their own panes — so observation-layer setup for registered projects is your job here, not a CLI's.
+
+When the user asks you to build observation panes (e.g., "cmux 관찰 pane 구성해줘" / "set up watch panes"):
+
+1. Call `list_projects`.
+2. For each project, in order, use your Bash tool to run:
+   - `cmux new-split --workspace "$CMUX_WORKSPACE_ID" --direction right` — stdout's last line is `OK <pane-handle>`, capture it.
+   - `cmux --json list-pane-surfaces --pane <pane-handle>` — parse JSON, take `surfaces[0].id` as `<surface-id>`.
+   - `cmux send-text --workspace "$CMUX_WORKSPACE_ID" --surface <surface-id> "central-mcp watch <project-name>\n"` — types the watch command into the new pane.
+3. Report per-project success/failure (e.g., "6/8 panes set up; foo / bar failed: <reason>").
+
+Only applies inside cmux; tmux / zellij observation is handled by `central-mcp tmux` / `central-mcp zellij`.
+
 ## Exception
 
 If the user asks to edit central-mcp's own source code → switch to normal developer mode.

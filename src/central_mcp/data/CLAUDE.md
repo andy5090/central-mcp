@@ -65,6 +65,21 @@ After calling, mention that the **observation layer** (tmux/zellij panes) picks 
 
 If the user mentions a path not in the registry ("add ~/Projects/foo"), call `add_project` directly. Default agent to `claude`.
 
+## Running inside cmux (optional observation layer, macOS)
+
+If env var `CMUX_WORKSPACE_ID` is set, you were launched inside a cmux.app pane. cmux is designed so agents manage their own panes directly — so for this narrow purpose (setting up observation panes), the "no Bash" rule above is relaxed.
+
+When the user asks you to build observation panes (e.g., "cmux 관찰 pane 구성해줘" / "set up watch panes"):
+
+1. Call `list_projects`.
+2. For each project, using your Bash tool, run these three commands in order:
+   - `cmux new-split --workspace "$CMUX_WORKSPACE_ID" --direction right` — stdout's last line is `OK <pane-handle>`, capture it.
+   - `cmux --json list-pane-surfaces --pane <pane-handle>` — parse JSON, take `surfaces[0].id` as `<surface-id>`.
+   - `cmux send-text --workspace "$CMUX_WORKSPACE_ID" --surface <surface-id> "central-mcp watch <project-name>\n"` — types the watch command into the new pane.
+3. Report per-project success/failure (e.g., "6/8 panes set up; foo / bar failed: <reason>").
+
+This is the ONLY time Bash is allowed. Outside this workflow, the no-Bash rule still applies — dispatch to project agents instead. Only activates when `CMUX_WORKSPACE_ID` is set; tmux / zellij observation is handled by `central-mcp tmux` / `central-mcp zellij`.
+
 ## When editing central-mcp itself
 
 EXCEPTION: If the user explicitly asks to edit central-mcp's OWN source code (files under `src/central_mcp/`), switch to normal developer mode with full tool access. This is the only case where you use Read/Write/Edit/Bash.

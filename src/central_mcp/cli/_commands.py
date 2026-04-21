@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import platform
 import shutil
 import sys
 from importlib.resources import files
@@ -175,22 +174,9 @@ MULTIPLEXERS: list[tuple[str, str]] = [
     ("zellij", "zellij"),
 ]
 
-# `cmux` is macOS-only (native AppKit GUI) — we include it in the
-# detection list only when running on darwin so Linux / Windows users
-# never see it offered as a backend.
-_CMUX_MULTIPLEXER: tuple[str, str] = ("cmux", "cmux")
-
-
 def _detect_multiplexers() -> list[tuple[str, str]]:
-    """Return (name, binary) pairs for every installed multiplexer.
-
-    tmux and zellij are portable; `cmux` is added only on darwin since
-    it's a macOS-native GUI app with no Linux/Windows build.
-    """
-    candidates: list[tuple[str, str]] = list(MULTIPLEXERS)
-    if platform.system() == "Darwin":
-        candidates.append(_CMUX_MULTIPLEXER)
-    return [(name, binary) for name, binary in candidates if shutil.which(binary)]
+    """Return (name, binary) pairs for every installed multiplexer."""
+    return [(name, binary) for name, binary in MULTIPLEXERS if shutil.which(binary)]
 
 
 def _pick_multiplexer_interactive(installed: list[tuple[str, str]]) -> str:
@@ -256,8 +242,6 @@ def cmd_up(args: argparse.Namespace) -> int:
         return cmd_tmux(args)
     if backend == "zellij":
         return cmd_zellij(args)
-    if backend == "cmux":
-        return cmd_cmux(args)
     print(f"error: unsupported multiplexer {backend!r}", file=sys.stderr)
     return 1
 
@@ -280,9 +264,9 @@ def cmd_upgrade(args: argparse.Namespace) -> int:
 
 
 def _teardown_observation_session() -> bool:
-    """Kill tmux + zellij + cmux observation sessions if present and
-    clear the version stamp. Returns True if anything was actually
-    torn down. Silent — callers print their own surrounding context.
+    """Kill tmux + zellij observation sessions if present and clear
+    the version stamp. Returns True if anything was actually torn
+    down. Silent — callers print their own surrounding context.
     """
     from central_mcp import session_info
 
@@ -291,12 +275,6 @@ def _teardown_observation_session() -> bool:
         from central_mcp import zellij as zj
         if zj.has_session(zj.SESSION):
             r = zj._run(["delete-session", zj.SESSION, "--force"])
-            if r.ok:
-                any_killed = True
-    if platform.system() == "Darwin" and shutil.which("cmux"):
-        from central_mcp import cmux as cmx
-        if cmx.has_workspace(cmx.SESSION):
-            r = cmx.kill_workspace(cmx.SESSION)
             if r.ok:
                 any_killed = True
     session_info.clear()
@@ -341,24 +319,6 @@ def cmd_down(args: argparse.Namespace) -> int:
                 any_error = True
         else:
             print(f"zellij: no session named '{zj.SESSION}'")
-
-    # cmux is macOS-only — skip silently elsewhere. We also check the
-    # stamp so `cmcp down` on a Linux host with the stamp pointing at
-    # cmux doesn't crash on a missing binary: darwin-only binary check
-    # already gates that path.
-    if platform.system() == "Darwin" and shutil.which("cmux"):
-        from central_mcp import cmux as cmx
-        if cmx.has_workspace(cmx.SESSION):
-            r = cmx.kill_workspace(cmx.SESSION)
-            if r.ok:
-                print(f"cmux: closed workspace '{cmx.SESSION}'")
-                any_killed = True
-            else:
-                detail = (r.stderr or r.stdout or "").strip()
-                print(f"cmux: close-workspace failed{': ' + detail if detail else ''}")
-                any_error = True
-        else:
-            print(f"cmux: no workspace titled '{cmx.SESSION}'")
 
     # Always clear the stamp so a later `cmcp up` isn't held back by
     # an orphan file pointing at a version/multiplexer that's gone.
@@ -467,144 +427,6 @@ def cmd_zellij(args: argparse.Namespace) -> int:
         ["zellij", "--session", zellij.SESSION,
          "--new-session-with-layout", str(layout_path)],
     )
-
-
-def _resolve_cmux_orchestrator(
-    args: argparse.Namespace,
-) -> tuple[str, str] | None:
-    """Pick (agent_key, cwd) for cmux's seed-based bootstrap.
-
-    Mirrors `_orchestrator_pane_for_up` but returns the agent KEY
-    (needed for adapter lookup) rather than a pre-built launch
-    command. Returns None when `--no-orchestrator` was passed or no
-    orchestrator CLI is installed — caller then opens a bare
-    workspace with no seed.
-    """
-    if args.no_orchestrator:
-        return None
-    installed = _detect_installed()
-    if not installed:
-        print(
-            "warning: no orchestrator CLI on PATH — opening an empty cmux workspace",
-            file=sys.stderr,
-        )
-        return None
-    choice: tuple[str, str, str] | None = None
-    pref = _load_preference()
-    if pref:
-        for entry in installed:
-            if entry[0] == pref:
-                choice = entry
-                break
-    if choice is None:
-        choice = installed[0]
-    key, _binary, _label = choice
-    launch_dir = paths.central_mcp_home()
-    _ensure_launch_dir(launch_dir)
-    return key, str(launch_dir)
-
-
-def cmd_cmux(args: argparse.Namespace) -> int:
-    """Open the central-mcp workspace in the cmux macOS GUI app.
-
-    cmux's shipped CLI (0.63.2) doesn't have a declarative `--layout`
-    flag, so central-mcp can't construct the multi-pane observation
-    layout itself. Instead we open a single orchestrator pane with a
-    seed prompt telling the agent to call `cmux new-split` / `cmux
-    send-text` for each registered project. The orchestrator
-    (claude / codex / gemini) handles layout setup on first turn
-    without user confirmation — it inherits `CMUX_WORKSPACE_ID` from
-    the pane env, so the cmux CLI calls target the right workspace.
-
-    Agents without an interactive-seed entry point (opencode, droid)
-    are incompatible: for those projects, use tmux or zellij instead.
-    `--permission-mode restricted` will stall mid-bootstrap on the
-    first approval prompt; bypass or auto are recommended.
-    """
-    import shlex
-
-    from central_mcp import cmux, session_info
-    from central_mcp.adapters.base import get_adapter
-    from central_mcp.registry import load_registry
-
-    if platform.system() != "Darwin":
-        print(
-            "error: cmux backend is macOS-only "
-            f"(current platform: {platform.system()})",
-            file=sys.stderr,
-        )
-        return 1
-    if not shutil.which("cmux"):
-        print(
-            "error: cmux CLI is not installed or not on PATH. "
-            "Install cmux.app and its CLI: https://github.com/manaflow-ai/cmux",
-            file=sys.stderr,
-        )
-        return 1
-    if not cmux.ping():
-        print(
-            "error: cmux GUI is not running (socket at ~/.cmux/cmux.sock "
-            "did not answer). Launch cmux.app and try again.",
-            file=sys.stderr,
-        )
-        return 1
-
-    # 0.6.8+ convention: always teardown + rebuild so the workspace
-    # reflects the current registry. cmux workspaces are fully
-    # declarative once created — no live swap — so the rebuild is
-    # close + new.
-    if cmux.has_workspace(cmux.SESSION):
-        _teardown_observation_session()
-
-    if args.permission_mode == "restricted":
-        print(
-            "warning: --permission-mode restricted — the orchestrator will "
-            "stall on the first approval prompt during bootstrap, so pane "
-            "setup may be incomplete. Use bypass or auto for an unattended "
-            "layout.",
-            file=sys.stderr,
-        )
-
-    resolved = _resolve_cmux_orchestrator(args)
-    if resolved is None:
-        # --no-orchestrator or no CLI: open a bare workspace.
-        created, messages = cmux.ensure_workspace()
-        for m in messages:
-            print(m)
-        if not created:
-            return 1
-        session_info.write(multiplexer="cmux")
-        return 0
-
-    agent_name, cwd = resolved
-    adapter = get_adapter(agent_name)
-    projects = load_registry()
-    seed = cmux.build_cmux_seed_prompt(projects)
-    argv = adapter.interactive_argv(
-        seed_prompt=seed or None,
-        permission_mode=args.permission_mode,
-    )
-    if argv is None:
-        print(
-            f"error: cmux backend needs an orchestrator with interactive-seed "
-            f"support; {agent_name!r} has none. Use `central-mcp tmux` or "
-            "`central-mcp zellij` with this orchestrator, or switch the "
-            "preference to claude / codex / gemini.",
-            file=sys.stderr,
-        )
-        return 1
-    shell_command = shlex.join(argv)
-
-    created, messages = cmux.ensure_workspace(
-        orchestrator_cwd=cwd,
-        shell_command=shell_command,
-    )
-    for m in messages:
-        print(m)
-    if not created:
-        return 1
-    session_info.write(multiplexer="cmux")
-    return 0
 
 
 # ---------- registry mutation ----------

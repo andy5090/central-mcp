@@ -93,24 +93,6 @@ class Adapter:
     ) -> list[str] | None:
         return None
 
-    def interactive_argv(
-        self,
-        seed_prompt: str | None = None,
-        *,
-        permission_mode: str = "bypass",
-    ) -> list[str] | None:
-        """Build argv for an interactive session whose first user turn is
-        `seed_prompt`, if the agent supports that pattern.
-
-        Used by the cmux backend to auto-bootstrap the observation
-        layout: the orchestrator launches with a seed prompt that
-        tells it to call `cmux new-split` / `cmux send-text` for each
-        project. Returns None when the agent cannot seed an
-        interactive session from argv (making it incompatible with
-        cmux's no-user-trigger requirement).
-        """
-        return None
-
     def list_sessions(
         self,
         cwd: str | Path,
@@ -245,23 +227,6 @@ class _Claude(Adapter):
             argv.extend(["--enable-auto-mode", "--permission-mode", "auto"])
         return argv
 
-    def interactive_argv(
-        self,
-        seed_prompt: str | None = None,
-        *,
-        permission_mode: str = "bypass",
-    ) -> list[str] | None:
-        # `claude [options] [prompt]` — the positional arg seeds the
-        # interactive session's first user turn.
-        argv = ["claude"]
-        if permission_mode == "bypass":
-            argv.append("--dangerously-skip-permissions")
-        elif permission_mode == "auto":
-            argv.extend(["--enable-auto-mode", "--permission-mode", "auto"])
-        if seed_prompt:
-            argv.append(seed_prompt)
-        return argv
-
     def list_sessions(self, cwd: str | Path, limit: int = 20) -> list[SessionInfo]:
         project_dir = Path.home() / ".claude" / "projects" / _slug_cwd(cwd)
         return _list_jsonl_directory(project_dir, limit)
@@ -284,21 +249,6 @@ class _Codex(Adapter):
             argv = ["codex", "exec", prompt]
         if permission_mode == "bypass":
             argv.append("--dangerously-bypass-approvals-and-sandbox")
-        return argv
-
-    def interactive_argv(
-        self,
-        seed_prompt: str | None = None,
-        *,
-        permission_mode: str = "bypass",
-    ) -> list[str] | None:
-        # `codex [OPTIONS] [PROMPT]` — no subcommand means interactive.
-        # PROMPT is "Optional user prompt to start the session".
-        argv = ["codex"]
-        if permission_mode == "bypass":
-            argv.append("--dangerously-bypass-approvals-and-sandbox")
-        if seed_prompt:
-            argv.append(seed_prompt)
         return argv
 
     def list_sessions(self, cwd: str | Path, limit: int = 20) -> list[SessionInfo]:
@@ -381,22 +331,6 @@ class _Gemini(Adapter):
             argv += ["--resume", "latest"]
         if permission_mode == "bypass":
             argv.append("--yolo")
-        return argv
-
-    def interactive_argv(
-        self,
-        seed_prompt: str | None = None,
-        *,
-        permission_mode: str = "bypass",
-    ) -> list[str] | None:
-        # `gemini -i <prompt>` / `--prompt-interactive` executes the
-        # prompt and continues in interactive mode — perfect for
-        # seeding the cmux bootstrap.
-        argv = ["gemini"]
-        if permission_mode == "bypass":
-            argv.append("--yolo")
-        if seed_prompt:
-            argv += ["-i", seed_prompt]
         return argv
 
     def list_sessions(self, cwd: str | Path, limit: int = 20) -> list[SessionInfo]:
