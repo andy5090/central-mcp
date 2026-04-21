@@ -393,8 +393,8 @@ Trade-off: if two terminals are simultaneously attached to the same session and 
 
 **Requirements**
 - macOS.
-- cmux.app installed and running (the CLI talks to the running app; if the app isn't up, you'll get a ping-failed error).
-- The cmux CLI on `PATH` — typically at `/Applications/cmux.app/Contents/Resources/bin/cmux`.
+- **Launch cmux.app first, then run `central-mcp cmux` from a terminal pane opened inside cmux.** The CLI needs socket access to the running app (`~/.cmux/cmux.sock`); panes cmux opens inherit that access automatically, so running from inside cmux is the no-config path. Running from a regular terminal outside cmux works too if the app is up, but edge cases around socket auth go away when you launch from a cmux pane.
+- `cmux` binary on `PATH` (typically `/Applications/cmux.app/Contents/Resources/bin/cmux`).
 
 ```bash
 central-mcp cmux                          # bypass mode (default) — recommended

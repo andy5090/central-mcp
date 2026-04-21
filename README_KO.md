@@ -385,8 +385,8 @@ zellij watch pane이 dispatch 이벤트를 스트리밍하지 않고 `<ENTER> to
 
 **요구사항**
 - macOS.
-- cmux.app 설치 + 실행 중 (CLI 는 실행 중인 앱과 통신; 앱이 안 떠 있으면 ping-failed 에러).
-- cmux CLI 가 `PATH` 에 — 보통 `/Applications/cmux.app/Contents/Resources/bin/cmux`.
+- **cmux.app 을 먼저 띄운 뒤, `central-mcp cmux` 는 cmux 에서 연 터미널 pane 안에서 실행하세요.** CLI 가 실행 중인 앱의 소켓(`~/.cmux/cmux.sock`)과 통신해야 하는데, cmux 가 직접 연 pane 은 소켓 접근이 이미 풀려있어 별도 설정이 필요 없습니다. 앱이 떠있는 동안에는 일반 터미널에서 실행해도 동작하지만, cmux pane 에서 실행하면 소켓 인증 관련 edge case 들이 전부 사라집니다.
+- `cmux` 바이너리가 `PATH` 에 — 보통 `/Applications/cmux.app/Contents/Resources/bin/cmux`.
 
 ```bash
 central-mcp cmux                          # bypass 모드 (기본값) — 권장
