@@ -3,6 +3,17 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.8.12] — 2026-04-21
+
+### Changed
+- **cmux grid layout now aspect-matches the window.** The earlier formula — `rows = H // 15`, `cols = W // 70` — picked max rows and max cols independently, so a landscape window like `200×50` produced `max_cols=2, max_rows=3` → a **3×2** grid (3 rows of 2 panes) inside a wide window. Visually wrong: a landscape container should host a landscape grid. 0.8.12 adds an aspect clamp on top of the floor:
+  - Landscape window (`W >= H`): `rows_per_ws = min(max_rows, max_cols)`, `cols_per_row = max_cols`. Grids never go taller than they are wide.
+  - Portrait window (`W < H`): `cols_per_row = min(max_cols, max_rows)`, `rows_per_ws = max_rows`. Grids never go wider than they are tall.
+- Result at `200×50`: `2×2` (was `3×2`). At `300×50`: `3×4`. At `80×200`: `1×13`. Matches the window's long axis.
+
+### Upgrade note
+- Same copy-on-miss caveat: `rm ~/.central-mcp/{CLAUDE,AGENTS}.md` before the next orchestrator launch to pick up the clamp.
+
 ## [0.8.11] — 2026-04-21
 
 ### Fixed
