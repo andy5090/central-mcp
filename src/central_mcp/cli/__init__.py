@@ -19,6 +19,7 @@ from central_mcp.cli._commands import (
     cmd_add,
     cmd_alias,
     cmd_brief,
+    cmd_cmux,
     cmd_down,
     cmd_init,
     cmd_install,
@@ -148,6 +149,29 @@ def build_parser() -> argparse.ArgumentParser:
         help="max panes per zellij tab (default: auto — terminal-size derived)",
     )
     p_zellij.set_defaults(func=cmd_zellij)
+
+    p_cmux = sub.add_parser(
+        "cmux",
+        help=(
+            "open the observation workspace in cmux, a macOS-only GUI "
+            "terminal (manaflow-ai/cmux). Requires the cmux.app to be "
+            "installed and running."
+        ),
+    )
+    p_cmux.add_argument("--no-orchestrator", action="store_true")
+    p_cmux.add_argument(
+        "--permission-mode",
+        dest="permission_mode",
+        choices=["bypass", "auto", "restricted"],
+        default="bypass",
+        help=(
+            "orchestrator pane's permission mode (default: bypass). "
+            "auto is claude-only (Team/Enterprise/API + Sonnet/Opus 4.6)."
+        ),
+    )
+    # No --max-panes here: cmux is a GUI with responsive sizing, so
+    # the char-cell readability floor used by tmux/zellij doesn't apply.
+    p_cmux.set_defaults(func=cmd_cmux)
 
     p_list = sub.add_parser("list", help="print the registry")
     p_list.set_defaults(func=cmd_list)

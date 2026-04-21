@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import platform
 import shutil
 import sys
 from importlib.resources import files
@@ -174,10 +175,22 @@ MULTIPLEXERS: list[tuple[str, str]] = [
     ("zellij", "zellij"),
 ]
 
+# `cmux` is macOS-only (native AppKit GUI) — we include it in the
+# detection list only when running on darwin so Linux / Windows users
+# never see it offered as a backend.
+_CMUX_MULTIPLEXER: tuple[str, str] = ("cmux", "cmux")
+
 
 def _detect_multiplexers() -> list[tuple[str, str]]:
-    """Return (name, binary) pairs for every installed multiplexer."""
-    return [(name, binary) for name, binary in MULTIPLEXERS if shutil.which(binary)]
+    """Return (name, binary) pairs for every installed multiplexer.
+
+    tmux and zellij are portable; `cmux` is added only on darwin since
+    it's a macOS-native GUI app with no Linux/Windows build.
+    """
+    candidates: list[tuple[str, str]] = list(MULTIPLEXERS)
+    if platform.system() == "Darwin":
+        candidates.append(_CMUX_MULTIPLEXER)
+    return [(name, binary) for name, binary in candidates if shutil.which(binary)]
 
 
 def _pick_multiplexer_interactive(installed: list[tuple[str, str]]) -> str:
@@ -243,6 +256,8 @@ def cmd_up(args: argparse.Namespace) -> int:
         return cmd_tmux(args)
     if backend == "zellij":
         return cmd_zellij(args)
+    if backend == "cmux":
+        return cmd_cmux(args)
     print(f"error: unsupported multiplexer {backend!r}", file=sys.stderr)
     return 1
 
@@ -265,9 +280,9 @@ def cmd_upgrade(args: argparse.Namespace) -> int:
 
 
 def _teardown_observation_session() -> bool:
-    """Kill tmux + zellij observation sessions if present and clear
-    the version stamp. Returns True if anything was actually torn down.
-    Silent — callers print their own surrounding context.
+    """Kill tmux + zellij + cmux observation sessions if present and
+    clear the version stamp. Returns True if anything was actually
+    torn down. Silent — callers print their own surrounding context.
     """
     from central_mcp import session_info
 
@@ -276,6 +291,12 @@ def _teardown_observation_session() -> bool:
         from central_mcp import zellij as zj
         if zj.has_session(zj.SESSION):
             r = zj._run(["delete-session", zj.SESSION, "--force"])
+            if r.ok:
+                any_killed = True
+    if platform.system() == "Darwin" and shutil.which("cmux"):
+        from central_mcp import cmux as cmx
+        if cmx.has_workspace(cmx.SESSION):
+            r = cmx.kill_workspace(cmx.SESSION)
             if r.ok:
                 any_killed = True
     session_info.clear()
@@ -320,6 +341,24 @@ def cmd_down(args: argparse.Namespace) -> int:
                 any_error = True
         else:
             print(f"zellij: no session named '{zj.SESSION}'")
+
+    # cmux is macOS-only — skip silently elsewhere. We also check the
+    # stamp so `cmcp down` on a Linux host with the stamp pointing at
+    # cmux doesn't crash on a missing binary: darwin-only binary check
+    # already gates that path.
+    if platform.system() == "Darwin" and shutil.which("cmux"):
+        from central_mcp import cmux as cmx
+        if cmx.has_workspace(cmx.SESSION):
+            r = cmx.kill_workspace(cmx.SESSION)
+            if r.ok:
+                print(f"cmux: closed workspace '{cmx.SESSION}'")
+                any_killed = True
+            else:
+                detail = (r.stderr or r.stdout or "").strip()
+                print(f"cmux: close-workspace failed{': ' + detail if detail else ''}")
+                any_error = True
+        else:
+            print(f"cmux: no workspace titled '{cmx.SESSION}'")
 
     # Always clear the stamp so a later `cmcp up` isn't held back by
     # an orphan file pointing at a version/multiplexer that's gone.
@@ -428,6 +467,58 @@ def cmd_zellij(args: argparse.Namespace) -> int:
         ["zellij", "--session", zellij.SESSION,
          "--new-session-with-layout", str(layout_path)],
     )
+
+
+def cmd_cmux(args: argparse.Namespace) -> int:
+    """Open the central-mcp workspace in the cmux macOS GUI app.
+
+    Parallels `cmd_zellij` but targets manaflow-ai/cmux, a native
+    macOS terminal (Ghostty-based) whose CLI talks to the running
+    GUI over a Unix socket at `~/.cmux/cmux.sock`. Because cmux is
+    GUI-bound and macOS-only, this subcommand refuses to run on
+    other platforms and never auto-installs or launches the app —
+    if the socket isn't answering, we exit with a message pointing
+    the user at the install instructions.
+    """
+    from central_mcp import cmux, session_info
+
+    if platform.system() != "Darwin":
+        print(
+            "error: cmux backend is macOS-only "
+            f"(current platform: {platform.system()})",
+            file=sys.stderr,
+        )
+        return 1
+    if not shutil.which("cmux"):
+        print(
+            "error: cmux CLI is not installed or not on PATH. "
+            "Install cmux.app and its CLI: https://github.com/manaflow-ai/cmux",
+            file=sys.stderr,
+        )
+        return 1
+    if not cmux.ping():
+        print(
+            "error: cmux GUI is not running (socket at ~/.cmux/cmux.sock "
+            "did not answer). Launch cmux.app and try again.",
+            file=sys.stderr,
+        )
+        return 1
+
+    orchestrator = _orchestrator_pane_for_up(args)
+
+    # 0.6.8+ convention: always teardown + rebuild so the layout
+    # reflects the current registry. cmux is fully declarative so we
+    # can't live-swap a workspace — the rebuild is a close + new.
+    if cmux.has_workspace(cmux.SESSION):
+        _teardown_observation_session()
+
+    created, messages = cmux.ensure_workspace(orchestrator=orchestrator)
+    for m in messages:
+        print(m)
+    if not created:
+        return 1
+    session_info.write(multiplexer="cmux")
+    return 0
 
 
 # ---------- registry mutation ----------
