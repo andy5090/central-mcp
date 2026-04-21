@@ -3,7 +3,7 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## Unreleased
+## [0.8.0] — 2026-04-21
 
 ### Added
 - **`central-mcp cmux` — macOS-only observation backend (agent-driven bootstrap).** Opens a workspace titled `central` in cmux (manaflow-ai/cmux), an AppKit / Ghostty-based GUI terminal, hosting a single orchestrator pane. On first user turn, the orchestrator receives a seed prompt that enumerates the registered projects and tells it to call `cmux new-split` / `cmux send-text` to create one `central-mcp watch <project>` pane per project — no user trigger required, because cmux injects `CMUX_WORKSPACE_ID` into the agent's env so the CLI calls target the right workspace automatically.
