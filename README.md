@@ -389,25 +389,27 @@ Trade-off: if two terminals are simultaneously attached to the same session and 
 
 ### Running with cmux
 
-[cmux.app](https://github.com/manaflow-ai/cmux) is a macOS-native GUI terminal (AppKit + Ghostty) that exposes a CLI over `~/.cmux/cmux.sock`. `central-mcp cmux` opens a workspace titled `central`, boots the orchestrator agent inside it with a seed prompt, and the agent itself builds out the per-project observation panes — cmux is designed to let agents manage their own panes (they inherit `CMUX_WORKSPACE_ID` from the pane env), so we delegate layout assembly to whichever of claude / codex / gemini is your orchestrator.
+macOS only. [cmux.app](https://github.com/manaflow-ai/cmux) is a native GUI terminal where the orchestrator agent builds the observation layout itself, so central-mcp just opens the workspace and hands off.
 
-**Requirements**
-- macOS.
-- **Launch cmux.app first, then run `central-mcp cmux` from a terminal pane opened inside cmux.** The CLI needs socket access to the running app (`~/.cmux/cmux.sock`); panes cmux opens inherit that access automatically, so running from inside cmux is the no-config path. Running from a regular terminal outside cmux works too if the app is up, but edge cases around socket auth go away when you launch from a cmux pane.
-- `cmux` binary on `PATH` (typically `/Applications/cmux.app/Contents/Resources/bin/cmux`).
+**Three steps:**
+
+1. Launch cmux.app.
+2. Open a terminal pane inside cmux.
+3. Run `central-mcp cmux` from that pane.
+
+That's it — claude / codex / gemini sets up one `central-mcp watch <project>` pane per registered project on its first turn.
 
 ```bash
-central-mcp cmux                          # bypass mode (default) — recommended
-central-mcp cmux --permission-mode auto   # claude-only, classifier-reviewed bootstrap
-central-mcp cmux --no-orchestrator        # blank workspace; you set up panes yourself
+central-mcp cmux                          # default (bypass)
+central-mcp cmux --permission-mode auto   # claude-only, classifier-reviewed
+central-mcp cmux --no-orchestrator        # blank workspace, DIY panes
 central-mcp down                          # close the workspace
 ```
 
-**Caveats (please read before using)**
-- **Orchestrator compatibility.** Only claude / codex / gemini are supported — those three CLIs accept an interactive session with a seed prompt, which is how we hand the bootstrap off to the agent. `opencode` and `droid` projects can't use this backend; use `central-mcp tmux` / `central-mcp zellij` for those.
-- **`--permission-mode restricted` stalls the bootstrap.** The seed tells the agent to call `cmux new-split` / `cmux send-text` on your behalf, and under `restricted` each of those shells through as a separate approval prompt — the bootstrap halts on the first one. The default (`bypass`) and `auto` (claude only) don't have this issue; `cmd_cmux` prints a warning when you pick `restricted`.
-- **No `--max-panes`.** cmux resizes panes responsively in the GUI, so there's no char-cell readability floor to tune for. The agent decides how many panes to split, one per registered project.
-- **Layout is agent-driven, not declarative.** central-mcp makes exactly one CLI call per session (`cmux new-workspace`); everything else happens in the agent's Bash tool calls. If the agent fails mid-bootstrap, the resulting layout may be partial — just rerun `central-mcp cmux` to tear down and retry.
+**Caveats:**
+- **Orchestrator:** claude / codex / gemini only. For opencode / droid projects, use `central-mcp tmux` or `central-mcp zellij`.
+- **`--permission-mode restricted` stalls the bootstrap** on the first `cmux new-split` approval prompt — stick with the default (`bypass`) or `auto` (claude only).
+- **No `--max-panes`:** cmux resizes responsively in the GUI — one pane per registered project, always.
 
 ## Registry resolution
 

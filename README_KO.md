@@ -381,25 +381,27 @@ zellij watch pane이 dispatch 이벤트를 스트리밍하지 않고 `<ENTER> to
 
 ### cmux 관찰모드
 
-[cmux.app](https://github.com/manaflow-ai/cmux) 은 macOS 네이티브 GUI 터미널 (AppKit + Ghostty) 로, `~/.cmux/cmux.sock` 을 통해 CLI 를 노출합니다. `central-mcp cmux` 는 `central` 이라는 워크스페이스를 열어 오케스트레이터 에이전트를 시드 프롬프트와 함께 기동시키고, 에이전트가 직접 프로젝트별 관찰 pane 을 구성합니다 — cmux 는 자식 pane 에 `CMUX_WORKSPACE_ID` 환경변수를 주입하도록 설계돼 있어, claude / codex / gemini 오케스트레이터가 자신의 Bash 도구로 cmux CLI 를 호출해 레이아웃을 짤 수 있습니다.
+macOS 전용. [cmux.app](https://github.com/manaflow-ai/cmux) 은 네이티브 GUI 터미널로, 오케스트레이터 에이전트가 관찰 레이아웃을 직접 구성하는 방식을 따릅니다. central-mcp 는 워크스페이스만 열고 나머지는 에이전트에게 맡깁니다.
 
-**요구사항**
-- macOS.
-- **cmux.app 을 먼저 띄운 뒤, `central-mcp cmux` 는 cmux 에서 연 터미널 pane 안에서 실행하세요.** CLI 가 실행 중인 앱의 소켓(`~/.cmux/cmux.sock`)과 통신해야 하는데, cmux 가 직접 연 pane 은 소켓 접근이 이미 풀려있어 별도 설정이 필요 없습니다. 앱이 떠있는 동안에는 일반 터미널에서 실행해도 동작하지만, cmux pane 에서 실행하면 소켓 인증 관련 edge case 들이 전부 사라집니다.
-- `cmux` 바이너리가 `PATH` 에 — 보통 `/Applications/cmux.app/Contents/Resources/bin/cmux`.
+**3단계:**
+
+1. cmux.app 을 실행합니다.
+2. cmux 안에서 터미널 pane 을 엽니다.
+3. 그 pane 에서 `central-mcp cmux` 를 실행합니다.
+
+끝. claude / codex / gemini 가 첫 턴에 등록된 각 프로젝트마다 `central-mcp watch <project>` pane 을 하나씩 구성합니다.
 
 ```bash
-central-mcp cmux                          # bypass 모드 (기본값) — 권장
-central-mcp cmux --permission-mode auto   # claude 전용, 분류기 검토 부트스트랩
-central-mcp cmux --no-orchestrator        # 빈 워크스페이스; pane 은 직접 구성
+central-mcp cmux                          # 기본값 (bypass)
+central-mcp cmux --permission-mode auto   # claude 전용, 분류기 검토
+central-mcp cmux --no-orchestrator        # 빈 워크스페이스, pane 은 직접 구성
 central-mcp down                          # 워크스페이스 종료
 ```
 
-**주의사항 (사용 전 반드시 읽어주세요)**
-- **오케스트레이터 호환성.** claude / codex / gemini 만 지원합니다 — 이 세 CLI 만 interactive 세션에 시드 프롬프트를 주입할 수 있고, 그게 부트스트랩을 에이전트에 넘기는 수단이기 때문입니다. `opencode` / `droid` 프로젝트는 이 백엔드로 실행할 수 없습니다; 해당 에이전트는 `central-mcp tmux` / `central-mcp zellij` 를 쓰세요.
-- **`--permission-mode restricted` 는 부트스트랩을 멈춥니다.** 시드는 에이전트에게 `cmux new-split` / `cmux send-text` 를 호출하도록 지시하는데, restricted 모드에서는 각 쉘 명령이 별도 승인 프롬프트로 뜨면서 첫 승인 대기에서 셋업이 멈춥니다. 기본값 `bypass` 나 `auto` (claude 전용) 를 쓰시면 됩니다; `restricted` 를 고르면 `cmd_cmux` 가 경고를 출력합니다.
-- **`--max-panes` 없음.** cmux 는 GUI 에서 responsive 하게 pane 을 resize 하므로 char-cell readability floor 튜닝이 불필요합니다. 에이전트가 레지스트리 크기(프로젝트당 1 pane)만큼 알아서 split 합니다.
-- **레이아웃은 agent-driven 이지 declarative 가 아닙니다.** central-mcp 는 세션당 CLI 호출 딱 1 번 (`cmux new-workspace`) 만 합니다; 그 이후는 전부 에이전트의 Bash 도구 호출로 일어납니다. 부트스트랩 중 에이전트가 실패하면 레이아웃이 부분적으로만 뜰 수 있고, 그럴 땐 `central-mcp cmux` 를 다시 실행해서 teardown + 재시도 하시면 됩니다.
+**주의사항:**
+- **오케스트레이터:** claude / codex / gemini 만 지원. opencode / droid 프로젝트는 `central-mcp tmux` 또는 `central-mcp zellij` 쓰세요.
+- **`--permission-mode restricted` 는 부트스트랩을 멈춥니다** — 첫 `cmux new-split` 승인 프롬프트에서 셋업이 중단됩니다. 기본값(`bypass`) 또는 `auto` (claude 전용) 쓰시면 됩니다.
+- **`--max-panes` 없음:** cmux 가 GUI 에서 responsive 하게 resize — 등록된 프로젝트당 1 pane.
 
 ## 레지스트리 경로 해결
 
