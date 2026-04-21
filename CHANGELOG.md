@@ -3,6 +3,13 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## Unreleased
+
+### Added
+- **`central-mcp cmux` — macOS-only observation backend.** New declarative backend that opens the `central` workspace in cmux (manaflow-ai/cmux), an AppKit / Ghostty-based GUI terminal. Uses only `cmux new-workspace --layout <json>`; imperative RPC (`send-text`, `new-pane`, live layout mutation) is explicitly out of scope. Project panes reuse the zellij read-only wrap (`stty -echo -icanon; central-mcp watch <project> </dev/null; sleep infinity`) so stdin is inert and panes don't drop to a shell. Tiling reduces to ≤2 panes → single split, 3 panes → T-shape, ≥4 → 2-row grid — no terminal-size heuristics since cmux handles responsive sizing in the GUI.
+- **Backend detection gates cmux to darwin.** `_detect_multiplexers()` includes cmux only when `platform.system() == "Darwin"`, so Linux / Windows users never see it offered by `central-mcp up`. `cmd_cmux` additionally checks the CLI is on PATH and that the socket at `~/.cmux/cmux.sock` answers a ping before attempting to open a workspace.
+- **`cmcp down` closes cmux workspaces too.** The teardown routine resolves the workspace by title → `ref` → `id` via `list-workspaces` and calls `close-workspace --workspace <handle>`. Missing binary / non-darwin hosts skip silently.
+
 ## [0.7.0] — 2026-04-21
 
 ### Added

@@ -53,6 +53,25 @@ Status legend: ✅ done · 🚧 in progress · 📋 planned · 💭 idea
 
 ---
 
+## Phase 2b — cmux backend (macOS-only, shipped unreleased)
+
+**Goal**: give macOS users a native-GUI option for the observation layer alongside the terminal-resident tmux / zellij backends. cmux (manaflow-ai/cmux) is an AppKit / Ghostty-based terminal with vertical tabs, notifications, and a CLI that talks to the running app over `~/.cmux/cmux.sock`.
+
+✅ **Declarative-only surface**
+- `central_mcp/cmux.py` builds a layout JSON tree and calls `cmux new-workspace --layout <json>` to open the workspace. `has_workspace` / `kill_workspace` drive the same teardown-and-rebuild contract the tmux / zellij backends already follow.
+- Project panes reuse the zellij read-only wrap (`stty` off, `central-mcp watch <project>` with stdin piped from `/dev/null`, `sleep infinity` on exit) so stdin is inert and panes don't drop to a shell.
+- Exposed as `central-mcp cmux` — backend-named subcommand, matching `tmux` and `zellij`. No `--max-panes` since cmux is GUI-sized; tiling reduces to ≤2 panes → single split, 3 panes → T-shape, ≥4 → 2-row grid.
+
+✅ **Platform gating**
+- `_detect_multiplexers()` includes `cmux` only when `platform.system() == "Darwin"`, so Linux / Windows users never see it offered.
+- `cmd_cmux` refuses to run on non-darwin, checks the binary is on PATH, and pings the socket before attempting to open a workspace — each failure gets its own actionable error.
+
+💭 **Explicit out-of-scope**
+- Imperative RPC (`cmux send-text`, `cmux new-pane`, live layout mutation). The declarative workspace is the contract; orchestrator agents that want dynamic behavior can call `cmux` directly.
+- Responsive pane-count tuning (`grid.pick_rows` / char-cell floors). cmux resizes in the GUI on its own — we don't read terminal dimensions for this backend.
+
+---
+
 ## Phase 3 — Worker mode (interactive approval)
 
 **Goal**: let `bypass=false` dispatches succeed when they need interactive permission prompts, by routing them through a pane-resident worker.
