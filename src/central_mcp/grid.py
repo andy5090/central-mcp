@@ -73,6 +73,56 @@ _MIN_PANE_COLS = 70
 _MIN_PANE_ROWS = 15
 
 
+def _pow2_floor(n: int) -> int:
+    """Largest power of two <= ``n`` (with a floor of 1)."""
+    if n <= 1:
+        return 1
+    return 1 << (n.bit_length() - 1)
+
+
+def pick_cmux_workspace_grid(
+    *,
+    term_size: tuple[int, int] | None = None,
+    min_pane_cols: int = _MIN_PANE_COLS,
+    min_pane_rows: int = _MIN_PANE_ROWS,
+) -> tuple[int, int]:
+    """Return a halving-safe ``(rows, cols)`` grid for one cmux workspace.
+
+    The cmux observation recipe only has 50/50 split primitives
+    (`new-split down/right`), so truly balanced layouts are only
+    available when each axis is 1 or a power of two. A raw terminal
+    budget like ``max_rows=3`` or ``max_cols=3`` would force visibly
+    uneven thirds. To keep the resulting grid clean, we first snap each
+    readable axis budget down to the nearest power of two, then clamp it
+    to the window orientation:
+
+    - landscape: rows <= cols
+    - portrait: cols <= rows
+
+    Examples:
+    - 200x50  -> 2x2
+    - 300x50  -> 2x4 (not 3x4)
+    - 50x200  -> 8x1 (not 13x1)
+    """
+    if term_size is None:
+        cols, rows = shutil.get_terminal_size(fallback=(200, 50))
+    else:
+        cols, rows = term_size
+
+    raw_cols = max(1, cols // max(min_pane_cols, 1))
+    raw_rows = max(1, rows // max(min_pane_rows, 1))
+    pow2_cols = _pow2_floor(raw_cols)
+    pow2_rows = _pow2_floor(raw_rows)
+
+    if cols >= rows:
+        rows_per_ws = min(pow2_rows, pow2_cols)
+        cols_per_row = pow2_cols
+    else:
+        cols_per_row = min(pow2_cols, pow2_rows)
+        rows_per_ws = pow2_rows
+    return max(1, rows_per_ws), max(1, cols_per_row)
+
+
 def pick_panes_per_window(
     *,
     term_size: tuple[int, int] | None = None,

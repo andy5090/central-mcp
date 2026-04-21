@@ -3,6 +3,21 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.8.18] — 2026-04-22
+
+### Added
+- **`list_project_sessions` now returns a bounded `preview` field** alongside `id` / `title` / timestamps so users can recognize a thread without manually resuming each candidate session. JSONL-backed adapters (claude, codex, droid) pull a short best-effort snippet from early session content; CLI-backed adapters (gemini, opencode) fall back to their title-like output when deeper inspection is not cheaply available.
+
+### Fixed
+- **cmux observation-mode grids now snap to halving-safe dimensions before the orchestrator builds them.** The shipped `src/central_mcp/data/{CLAUDE,AGENTS}.md` recipe previously allowed 3-way row/column counts from raw terminal budgets (for example `300×50 -> 3×4`), but cmux only exposes repeated 50/50 splits, so those layouts could never become a clean balanced grid. The recipe now snaps each axis down to a power of two first, yielding clean shapes like `2×2`, `2×4`, and `8×1`.
+- **One-shot `dispatch(language=...)` overrides now use the same sanitization as saved project language pins.** This keeps the prompt-preface mechanism backward-compatible while rejecting control characters/newlines instead of pasting them straight into the dispatch prompt.
+
+### Changed
+- README / README_KO / shipped orchestrator guidance now document both the new session `preview` field and the per-project language preference flow more clearly, including the fact that language defaults remain unchanged unless explicitly pinned or overridden.
+
+### Upgrade note
+- Because the shipped runtime router instructions changed again, existing installs may need `rm ~/.central-mcp/{CLAUDE,AGENTS}.md` before the next orchestrator launch to pick up the new bundle.
+
 ## [0.8.17] — 2026-04-21
 
 ### Fixed

@@ -58,6 +58,7 @@ class SessionInfo:
     """
     id: str
     title: str | None = None
+    preview: str | None = None
     created: str | None = None   # ISO 8601, when known
     modified: str | None = None  # ISO 8601, when known (mtime fallback)
     turns: int | None = None
@@ -66,6 +67,7 @@ class SessionInfo:
         return {
             "id": self.id,
             "title": self.title,
+            "preview": self.preview,
             "created": self.created,
             "modified": self.modified,
             "turns": self.turns,
@@ -131,8 +133,9 @@ def _list_jsonl_directory(dir_path: Path, limit: int) -> list[SessionInfo]:
 
     Shared by claude (`~/.claude/projects/<slug>/`) and droid
     (`~/.factory/sessions/<slug>/`). The session id is the filename
-    stem; the title (when present) is pulled best-effort from the first
-    JSON line's common metadata fields.
+    stem; `title` and `preview` are pulled best-effort from the first
+    handful of JSONL records so callers get some recognizable topic
+    hint without reading whole transcripts.
     """
     if not dir_path.is_dir():
         return []
@@ -147,24 +150,26 @@ def _list_jsonl_directory(dir_path: Path, limit: int) -> list[SessionInfo]:
 
     results: list[SessionInfo] = []
     for mtime, path in entries[:limit]:
-        title: str | None = None
-        try:
-            with path.open() as fh:
-                first_line = fh.readline().strip()
-        except OSError:
-            first_line = ""
-        if first_line:
-            try:
-                record = json.loads(first_line)
-            except json.JSONDecodeError:
-                record = {}
-            title = _extract_title(record)
+        title, preview = _scan_jsonl_session(path)
         results.append(SessionInfo(
             id=path.stem,
             title=title,
+            preview=preview,
             modified=datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat(),
         ))
     return results
+
+
+def _preview_text(text: str, limit: int = 160) -> str | None:
+    """Collapse whitespace and bound a preview-sized snippet."""
+    if not isinstance(text, str):
+        return None
+    compact = " ".join(text.split())
+    if not compact:
+        return None
+    if len(compact) <= limit:
+        return compact
+    return compact[: limit - 1].rstrip() + "…"
 
 
 def _extract_title(record: dict) -> str | None:
@@ -203,6 +208,92 @@ def _extract_title(record: dict) -> str | None:
         elif isinstance(content, str) and content.strip():
             return content.strip().split("\n", 1)[0][:120]
     return None
+
+
+def _extract_preview(record: dict) -> str | None:
+    """Best-effort session preview from a single record dict."""
+    if not isinstance(record, dict):
+        return None
+
+    def _from_message(msg: object) -> str | None:
+        if isinstance(msg, str):
+            return _preview_text(msg)
+        if not isinstance(msg, dict):
+            return None
+        content = msg.get("content")
+        if isinstance(content, list):
+            for item in content:
+                if isinstance(item, dict):
+                    text = item.get("text") or item.get("content")
+                    preview = _preview_text(text) if isinstance(text, str) else None
+                    if preview:
+                        return preview
+        elif isinstance(content, str):
+            return _preview_text(content)
+        text = msg.get("text")
+        if isinstance(text, str):
+            return _preview_text(text)
+        return None
+
+    for key in ("message", "input", "prompt"):
+        preview = _from_message(record.get(key))
+        if preview:
+            return preview
+
+    payload = record.get("payload") if isinstance(record.get("payload"), dict) else None
+    if payload:
+        preview = _from_message(payload.get("message"))
+        if preview:
+            return preview
+        preview = _from_message(payload)
+        if preview:
+            return preview
+
+    meta = record.get("meta") if isinstance(record.get("meta"), dict) else None
+    if meta:
+        preview = _from_message(meta)
+        if preview:
+            return preview
+
+    return _preview_text(_extract_title(record) or "")
+
+
+def _scan_jsonl_session(
+    path: Path,
+    *,
+    max_lines: int = 32,
+) -> tuple[str | None, str | None]:
+    """Extract bounded title/preview hints from the start of a JSONL session.
+
+    Keeps the scan cheap by limiting itself to the first `max_lines`
+    records, which is enough for the common "session metadata + first
+    user turn" layouts used by Claude, Codex, and Droid.
+    """
+    title: str | None = None
+    preview: str | None = None
+    try:
+        with path.open() as fh:
+            for idx, raw in enumerate(fh):
+                if idx >= max_lines:
+                    break
+                line = raw.strip()
+                if not line:
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if title is None:
+                    title = _extract_title(record)
+                if preview is None:
+                    preview = _extract_preview(record)
+                if title and preview:
+                    break
+    except OSError:
+        return None, None
+    if preview is None:
+        preview = title
+    return title, preview
 
 
 # ---------- per-agent adapters ----------
@@ -300,15 +391,18 @@ class _Codex(Adapter):
             created = payload.get("timestamp")
             # Title from the first user message (second line, best-effort).
             title = None
+            preview = None
             if second_line:
                 try:
                     rec2 = json.loads(second_line)
                 except json.JSONDecodeError:
                     rec2 = {}
                 title = _extract_title(rec2)
+                preview = _extract_preview(rec2)
             results.append(SessionInfo(
                 id=sid,
                 title=title,
+                preview=preview or title,
                 created=created if isinstance(created, str) else None,
                 modified=datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat(),
             ))
@@ -365,7 +459,7 @@ class _Gemini(Adapter):
                 continue
             sid = parts[0]
             title = parts[1].strip() if len(parts) > 1 else None
-            sessions.append(SessionInfo(id=sid, title=title))
+            sessions.append(SessionInfo(id=sid, title=title, preview=_preview_text(title or "")))
             if len(sessions) >= limit:
                 break
         return sessions
@@ -463,7 +557,12 @@ class _OpenCode(Adapter):
                     title = tokens[0].strip() if tokens else None
                 else:
                     title = rest
-            sessions.append(SessionInfo(id=sid, title=title[:120] if title else None))
+            bounded_title = title[:120] if title else None
+            sessions.append(SessionInfo(
+                id=sid,
+                title=bounded_title,
+                preview=_preview_text(title or ""),
+            ))
             if len(sessions) >= limit:
                 break
         return sessions

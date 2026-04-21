@@ -109,6 +109,12 @@ Everything below is spoken to the orchestrator in plain language. The orchestrat
 - *"Switch api-server to session abc123 for the next dispatch."*
 - *"Back to the default / latest session for api-server."*
 
+**Language preferences:**
+- *"For my-app, answer me in Korean from now on."*
+- *"Use French for api-server unless I say otherwise."*
+- *"Just this one dispatch in Japanese for my-app."*
+- *"Clear the saved language for my-app and go back to English."*
+
 **Shape the fleet:**
 - *"Put my-app and api-server at the top of the list."*
 - *"Remove the old legacy-tool project."*
@@ -129,9 +135,9 @@ Everything below is spoken to the orchestrator in plain language. The orchestrat
 | `cancel_dispatch` | sync | Abort a running dispatch. |
 | `dispatch_history` | sync | Last N dispatches for **one project** (reads its jsonl log). |
 | `orchestration_history` | sync | Portfolio-wide snapshot: in-flight + recent cross-project milestones + per-project counts. Call this for "how is everything going?" |
-| `list_project_sessions` | sync | Enumerate the agent's resumable conversation sessions for one project. Use the returned `id` with `dispatch(session_id=...)` to switch threads. |
+| `list_project_sessions` | sync | Enumerate the agent's resumable conversation sessions for one project, including a short best-effort `preview` snippet when available. Use the returned `id` with `dispatch(session_id=...)` to switch threads. |
 | `add_project` | sync | Register a new project. Validates agent name. Auto-trusts codex dirs. |
-| `update_project` | sync | Change an existing project's agent, description, tags, permission_mode, fallback, or `session_id` pin. |
+| `update_project` | sync | Change an existing project's agent, description, tags, permission_mode, fallback, `session_id` pin, or preferred response `language`. |
 | `reorder_projects` | sync | Reorder the registry. Lenient: names listed move to the front, others keep their relative order. Strict mode requires listing every project. |
 | `remove_project` | sync | Unregister a project. |
 
@@ -268,13 +274,15 @@ When the user wants to switch to a specific session (or recover from ambient dri
 
 ```
 list_project_sessions("my-app")
-  → [{id: "a1b2...", title: "auth refactor", modified: "..."}, ...]
+  → [{id: "a1b2...", title: "auth refactor", preview: "Investigate login timeout after refresh", modified: "..."}, ...]
 
 dispatch("my-app", "continue from there", session_id="a1b2...")
   # → claude -p "..." -r a1b2...
 ```
 
 After that dispatch, the resumed session is now the most-recently-modified — so the **next** default `dispatch("my-app", "...")` picks it up via `--continue` automatically. You only restate the id when you want to switch threads.
+
+`preview` is intentionally bounded and best-effort, not a transcript dump. For filesystem-backed agents it usually comes from an early recognizable message in the session file; for CLI-only backends it may fall back to the backend's own title-like output.
 
 For drift-proof behavior (or for droid, which needs a persistent pin to keep continuity), pin the session:
 
@@ -295,6 +303,41 @@ Resolution precedence when dispatching: explicit `session_id` arg > project's sa
 | `gemini` | `--resume <index>` | `gemini --list-sessions` (numeric indexes, not UUIDs) |
 | `droid` | `-s <uuid>` | `~/.factory/sessions/<slug(cwd)>/*.jsonl` |
 | `opencode` | `-s <uuid>` | `opencode session list` (global, not cwd-scoped) |
+
+### Preferred response language (per project)
+
+Dispatch defaults stay unchanged: if no language is pinned or overridden, agents receive the original prompt and answer in their own default language (English for the agents central-mcp targets today).
+
+When a project needs a different language consistently, save it in the registry:
+
+```
+update_project("my-app", language="Korean")
+```
+
+Every future default dispatch to `my-app` now gets a preface like:
+
+```
+Respond to the user in Korean.
+
+<original prompt>
+```
+
+You can also set it at registration time:
+
+```
+add_project("my-app", "~/Projects/my-app", language="Korean")
+```
+
+Per-dispatch behavior:
+
+```
+dispatch("my-app", "summarize the current status")                     # uses saved project language
+dispatch("my-app", "summarize the current status", language="Japanese")  # one-shot override
+dispatch("my-app", "summarize the current status", language="")          # suppress saved language once
+update_project("my-app", language="")                                    # clear saved language pin
+```
+
+The saved preference lives in `registry.yaml` as project metadata, so it is practical, explicit, and backward-compatible with older registries that simply omit the field.
 
 ### Dispatch history (per project)
 
@@ -426,7 +469,7 @@ macOS only. [cmux.app](https://github.com/manaflow-ai/cmux) is a native GUI term
 2. In a cmux pane, run `cmcp` — the orchestrator (claude / codex / gemini) starts inside cmux and inherits `CMUX_WORKSPACE_ID`.
 3. Ask the orchestrator to turn on observation mode, e.g. *"turn on observation mode"* or in Korean *"관찰 모드 켜줘"*.
 
-The orchestrator reads `~/.central-mcp/AGENTS.md` on launch — which includes a terminal-size-aware recipe for this workflow — and uses its Bash tool to chain `cmux new-split`, `cmux send`, and `cmux send-key` per project. Workspace naming mirrors tmux / zellij's window convention: the orchestrator's own workspace is renamed to `cmcp-hub`, and observation panes go into dedicated workspaces named `cmcp-watch-1`, `cmcp-watch-2`, … (one per terminal-size-derived grid chunk). cmux lets you tab between them from its sidebar.
+The orchestrator reads `~/.central-mcp/AGENTS.md` on launch — which includes a terminal-size-aware recipe for this workflow — and uses its Bash tool to chain `cmux new-split`, `cmux send`, and `cmux send-key` per project. That recipe deliberately snaps each workspace to halving-safe balanced grids (`2×2`, `2×4`, `4×4`, etc.) rather than asking cmux to fake clean thirds from repeated 50/50 splits. Workspace naming mirrors tmux / zellij's window convention: the orchestrator's own workspace is renamed to `cmcp-hub`, and observation panes go into dedicated workspaces named `cmcp-watch-1`, `cmcp-watch-2`, … (one per terminal-size-derived grid chunk). cmux lets you tab between them from its sidebar.
 
 No `central-mcp cmux` subcommand exists: central-mcp itself stays out of the cmux socket, the agent does the work. If pane setup fails partway, the orchestrator reports which projects succeeded and you can ask it to retry the missing ones.
 

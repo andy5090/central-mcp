@@ -248,6 +248,7 @@ class TestListSessionsFS:
         assert [s.id for s in sessions] == ["bbb-uuid", "aaa-uuid"]
         assert sessions[0].title == "Newer work"
         assert sessions[1].title == "Older work"
+        assert sessions[0].preview == "Newer work"
 
     def test_claude_empty_when_no_project_dir(
         self, tmp_path, monkeypatch,
@@ -274,6 +275,7 @@ class TestListSessionsFS:
         assert len(sessions) == 1
         assert sessions[0].id == "droid-session-1"
         assert sessions[0].title == "Droid work"
+        assert sessions[0].preview == "Droid work"
 
     def test_codex_filters_by_cwd(self, tmp_path, monkeypatch) -> None:
         import json
@@ -314,6 +316,34 @@ class TestListSessionsFS:
         sessions = get_adapter("codex").list_sessions(cwd_a, limit=20)
         ids = [s.id for s in sessions]
         assert ids == ["sess-a"]
+        assert sessions[0].preview == "A task"
+
+    def test_claude_preview_uses_message_when_title_missing(
+        self, tmp_path, monkeypatch,
+    ) -> None:
+        import json
+        fake_home = tmp_path / "home"
+        monkeypatch.setenv("HOME", str(fake_home))
+        cwd = tmp_path / "proj"
+        cwd.mkdir()
+        slug = str(cwd.resolve()).replace("/", "-")
+        proj_dir = fake_home / ".claude" / "projects" / slug
+        proj_dir.mkdir(parents=True)
+        (proj_dir / "preview-uuid.jsonl").write_text(
+            json.dumps({"type": "session_meta"}) + "\n" +
+            json.dumps({
+                "message": {
+                    "content": [
+                        {"type": "text", "text": "Investigate agent arena session drift"},
+                    ],
+                },
+            }) + "\n"
+        )
+
+        sessions = get_adapter("claude").list_sessions(cwd, limit=20)
+        assert len(sessions) == 1
+        assert sessions[0].title == "Investigate agent arena session drift"
+        assert sessions[0].preview == "Investigate agent arena session drift"
 
 
 class TestFallbackAdapter:

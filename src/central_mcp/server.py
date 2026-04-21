@@ -31,6 +31,7 @@ from central_mcp.adapters import get_adapter
 from central_mcp.adapters.base import VALID_AGENTS, VALID_PERMISSION_MODES
 from central_mcp.registry import (
     Project,
+    _sanitize_language,
     add_project as _registry_add,
     find_project,
     load_registry,
@@ -420,7 +421,10 @@ def dispatch(
     elif language == "":
         effective_language = None
     else:
-        effective_language = language.strip() or None
+        try:
+            effective_language = _sanitize_language(language)
+        except ValueError as e:
+            return {"ok": False, "error": str(e)}
     prompt = _apply_language(prompt, effective_language)
 
     # Validate every agent in the chain produces valid argv with the
@@ -1021,12 +1025,16 @@ def list_project_sessions(
     subprocess call for gemini/opencode). Returns at most `limit`
     sessions sorted by most-recently-modified.
 
-    Each session dict carries `id`, optional `title`, optional
-    `created` / `modified` (ISO 8601), and optional `turns`. Use the
-    returned `id` with `dispatch(session_id=...)` to resume a specific
-    thread as a one-shot — the agent's own resume-latest mechanism
-    picks the just-used session up for subsequent default dispatches,
-    so the id rarely needs to be restated.
+    Each session dict carries `id`, optional `title`, optional bounded
+    `preview`, optional `created` / `modified` (ISO 8601), and optional
+    `turns`. `preview` is a short best-effort snippet from the session
+    contents (often the first recognizable user message, or a backend's
+    own title-like summary) so callers can distinguish threads without
+    resuming them. Use the returned `id` with `dispatch(session_id=...)`
+    to resume a specific thread as a one-shot — the agent's own
+    resume-latest mechanism picks the just-used session up for
+    subsequent default dispatches, so the id rarely needs to be
+    restated.
 
     `pinned` echoes the project's currently saved `session_id` (if any)
     so the orchestrator can mark it in UI.

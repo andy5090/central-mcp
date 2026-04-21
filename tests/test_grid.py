@@ -11,7 +11,7 @@ row_sizes covers the top-row-heavy split used by the grid builders.
 
 from __future__ import annotations
 
-from central_mcp.grid import pick_rows, row_sizes
+from central_mcp.grid import pick_cmux_workspace_grid, pick_rows, row_sizes
 
 
 class TestPickRows:
@@ -108,6 +108,23 @@ class TestPickPanesPerWindow:
         loose = pick_panes_per_window(term_size=(200, 50), min_pane_cols=20)
         strict = pick_panes_per_window(term_size=(200, 50), min_pane_cols=60)
         assert loose > strict
+
+
+class TestPickCmuxWorkspaceGrid:
+    def test_landscape_200x50_becomes_clean_2x2(self) -> None:
+        assert pick_cmux_workspace_grid(term_size=(200, 50)) == (2, 2)
+
+    def test_ultrawide_300x50_snaps_to_2x4_not_3x4(self) -> None:
+        assert pick_cmux_workspace_grid(term_size=(300, 50)) == (2, 4)
+
+    def test_portrait_50x200_snaps_to_8x1_not_13x1(self) -> None:
+        assert pick_cmux_workspace_grid(term_size=(50, 200)) == (8, 1)
+
+    def test_axes_are_always_halving_safe(self) -> None:
+        for term_size in ((120, 40), (200, 50), (250, 60), (300, 50), (50, 200)):
+            rows, cols = pick_cmux_workspace_grid(term_size=term_size)
+            assert rows & (rows - 1) == 0, f"rows not power-of-two: {term_size} -> {rows}"
+            assert cols & (cols - 1) == 0, f"cols not power-of-two: {term_size} -> {cols}"
 
 
 class TestRowSizes:
