@@ -402,17 +402,13 @@ Hub 윈도우(`cmcp-1-hub`)는 tmux의 `main-vertical` 레이아웃을 사용합
 
 #### zellij watch pane에 "<ENTER> to run, <Ctrl-c> to exit" 이 뜰 때
 
-zellij watch pane이 dispatch 이벤트를 스트리밍하지 않고 `<ENTER> to run, <Ctrl-c> to exit` 메시지를 보여주면, 내부 `central-mcp watch <project>` 자식 프로세스가 죽었거나 시작하지 못한 상태입니다. zellij의 기본 안전장치 — pane을 계속 열어 scroll back을 보존하고, 자동 재실행이나 쉘로 떨어지지 않고 사용자의 명시적 행동을 기다립니다. **ENTER를 누르지 마세요**: 그 시점의 pane은 이미 central-mcp 파이프라인과 분리된 상태라, 여기서 수동으로 재실행해도 central-mcp 로 흘러들어오지 않습니다. 해결은 세션 재빌드: `cmcp zellij` (0.6.8+ 부터 자동 teardown + rebuild) 한 번 실행하면 모든 pane이 새 watch 자식을 가진 채 respawn됩니다.
+zellij watch pane이 dispatch 이벤트를 스트리밍하지 않고 `<ENTER> to run, <Ctrl-c> to exit` 메시지를 보여주면, 내부 `central-mcp watch <project>` 자식 프로세스가 죽었거나 시작하지 못한 상태입니다. zellij의 기본 안전장치 — pane을 계속 열어 scroll back을 보존하고, 자동 재실행이나 쉘로 떨어지지 않고 사용자의 명시적 행동을 기다립니다. **ENTER를 누르지 마세요**: 그 시점의 pane은 이미 central-mcp 파이프라인과 분리된 상태라, 여기서 수동으로 재실행해도 central-mcp 로 흘러들어오지 않습니다. 해결은 세션 재빌드: `cmcp zellij` (자동 teardown + rebuild — 한 번의 명령) 한 번 실행하면 모든 pane이 새 watch 자식을 가진 채 respawn됩니다.
 
 #### 관찰 세션이 attach된 상태에서 central-mcp 업그레이드했다면
 
-관찰 레이어를 쓰지 않는다면 (dispatch 전용 워크플로우) 이 소절은 건너뛰어도 됩니다.
+관찰 레이어를 쓰는 경우에만 해당. `cmcp tmux` / `cmcp zellij` 를 호출할 때마다 기존 관찰 세션이 있으면 자동으로 내리고 현재 터미널 크기 기준으로 새로 생성한 뒤 attach 합니다. 결과적으로 항상 최신 바이너리로 돌아가는 fresh pane 들이 현재 터미널 비율에 맞춰 배치됩니다. `central-mcp upgrade` 도 바이너리 교체 전에 관찰 세션을 자동으로 내려주므로 "업그레이드 중 세션 attach" 케이스도 커버됩니다.
 
-`cmcp up` 세션이 살아 있는 상태에서 `central-mcp upgrade` (또는 `pip install -U central-mcp`) 를 실행하면, 각 pane은 **이전 버전의** orchestrator CLI와 `central-mcp watch` 자식 프로세스를 그대로 붙들고 있습니다. 이 프로세스들은 실행 도중 바이너리 변경을 반영하지 않아서, 새로 추가된 이벤트 타입, 변경된 argv 플래그, `~/.central-mcp/` 내 인스트럭션 파일 갱신 등이 pane에 도달하지 못합니다. 재접속 시 오래된 에이전트 출력이 보이거나, watch pane에서 자식이 죽은 채 zellij의 `Exit: 0 — Enter로 재실행` 메시지가 떠 있을 수 있습니다.
-
-**0.6.8+**: 신경 쓸 필요 없습니다. `cmcp tmux` / `cmcp zellij` 를 호출할 때마다 기존 관찰 세션이 있으면 자동으로 내리고 현재 터미널 크기 기준으로 새로 생성한 뒤 attach 합니다. 결과적으로 항상 최신 바이너리로 돌아가는 fresh pane 들이 현재 터미널 비율에 맞춰 배치됩니다. `central-mcp upgrade` 도 바이너리 교체 전에 관찰 세션을 자동으로 내려주므로 "업그레이드 중 세션 attach" 케이스도 커버됩니다.
-
-트레이드오프: 두 터미널이 같은 세션에 동시에 attach 되어 있을 때 한 쪽에서 `cmcp tmux` 를 실행하면 나머지 한 쪽은 disconnect 됩니다. 대신 "세션에 남아있는 옛 바이너리" 를 신경 쓸 일이 영구적으로 사라집니다.
+트레이드오프: 두 터미널이 같은 세션에 동시에 attach 되어 있을 때 한 쪽에서 `cmcp tmux` 를 실행하면 나머지 한 쪽은 disconnect 됩니다. 대신 "세션에 남아있는 옛 바이너리" 를 신경 쓸 일이 없어집니다.
 
 ### cmux 관찰모드
 

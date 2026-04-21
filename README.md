@@ -410,17 +410,13 @@ Kill with `central-mcp down` — the MCP dispatch path never depends on this lay
 
 #### "<ENTER> to run, <Ctrl-c> to exit" in a watch pane
 
-If a zellij watch pane shows `<ENTER> to run, <Ctrl-c> to exit` instead of streaming dispatch events, the underlying `central-mcp watch <project>` child has died or never started. This is zellij's built-in safety net — it holds the pane open (preserving scrollback) and waits for explicit user action instead of respawning or dropping to a shell. Don't press ENTER: the pane is disconnected from its original command at this point, so a manual re-run here won't pipe back into central-mcp. Instead, rebuild the session: `cmcp zellij` (0.6.8+ automatically tears down and rebuilds, so this is a single command). Every pane respawns with a fresh watch child.
+If a zellij watch pane shows `<ENTER> to run, <Ctrl-c> to exit` instead of streaming dispatch events, the underlying `central-mcp watch <project>` child has died or never started. This is zellij's built-in safety net — it holds the pane open (preserving scrollback) and waits for explicit user action instead of respawning or dropping to a shell. Don't press ENTER: the pane is disconnected from its original command at this point, so a manual re-run here won't pipe back into central-mcp. Instead, rebuild the session: `cmcp zellij` (automatic teardown + rebuild — one command). Every pane respawns with a fresh watch child.
 
 #### Upgrading while an observation session is attached
 
-Only matters if you use the observation layer. If you don't (dispatch-only workflow), skip this subsection.
+Only matters if you use the observation layer. Every `cmcp tmux` / `cmcp zellij` invocation unconditionally tears down the prior observation session (if any) and rebuilds at the current terminal's size before attaching, so you always end up with fresh panes carrying the newly-installed binary. `central-mcp upgrade` additionally tears down the observation session before replacing the binary, so upgrading while already attached is covered too.
 
-When you `central-mcp upgrade` (or `pip install -U central-mcp`) with a `cmcp up` session already running, the panes keep holding the **previous version's** orchestrator CLI and `central-mcp watch` child processes. Those processes don't pick up binary changes mid-flight — added event types, updated argv flags, new instruction files in `~/.central-mcp/`, etc, won't reach them until they restart. On attach you may see stale agent output or zellij's "Exit: 0 — Enter to re-run" message on a watch pane whose old child has died.
-
-**0.6.8+**: there's nothing to worry about. Every `cmcp tmux` / `cmcp zellij` invocation unconditionally tears down the prior observation session (if any) and rebuilds at the current terminal's size before attaching. You always end up with fresh panes carrying the newly-installed binary, laid out for the terminal you're actually in. `central-mcp upgrade` additionally tears down the observation session before replacing the binary, so even the upgrade-while-attached case is handled.
-
-Trade-off: if two terminals are simultaneously attached to the same session and one runs `cmcp tmux`, the other disconnects. In exchange, you never have to think about "stale session vs new binary" ever again.
+Trade-off: if two terminals are simultaneously attached to the same session and one runs `cmcp tmux`, the other disconnects. In exchange, "stale session vs new binary" isn't something you ever have to think about.
 
 ### Running inside cmux
 
