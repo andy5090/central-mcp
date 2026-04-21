@@ -3,6 +3,18 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.8.2] — 2026-04-21
+
+### Fixed
+- **cmux CLI syntax in `src/central_mcp/data/AGENTS.md` + `CLAUDE.md` corrected.** The 0.8.1 "Running inside cmux" section gave the orchestrator flags that don't match the shipped cmux (0.63.2+) CLI — running them failed immediately and the observation layer never came up. Three concrete fixes:
+  - `cmux new-split` takes direction as a positional arg (`cmux new-split right --workspace X`), not `--direction right`.
+  - `new-split` stdout already carries the surface id on its `OK <surface-ref> <workspace-ref>` line — no follow-up `list-pane-surfaces` call is needed.
+  - `cmux send-text` doesn't exist; the correct verbs are `cmux send ... "<text>"` followed by `cmux send-key ... enter` to submit.
+- Added a **layout note**: `new-split right` halves the currently-focused surface each time, so successive splits produce exponentially narrow tail panes. For 4+ projects, open a dedicated workspace (`cmux new-workspace --name "central-mcp watch"`) and build a balanced grid (e.g., `new-split down` then `new-split right` per row) instead of a flat chain.
+
+### Upgrade note
+- `~/.central-mcp/AGENTS.md` + `CLAUDE.md` are copied in on first launch only (copy-on-miss). Existing installs keep their old file unless you `rm ~/.central-mcp/AGENTS.md ~/.central-mcp/CLAUDE.md` before the next orchestrator launch, which will regenerate them from the updated bundle.
+
 ## [0.8.1] — 2026-04-21
 
 ### Removed
