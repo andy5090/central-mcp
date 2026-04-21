@@ -3,6 +3,11 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.8.5] — 2026-04-21
+
+### Added
+- **README / README_KO "Suggested onboarding" subsection**, between "Why it's optional" and "Backends". Frames the observation layer as a trust-building phase for first-time users — run `central-mcp tmux` / `zellij` / cmux at the start to watch how the orchestrator picks projects and how dispatches actually progress, then graduate to orchestrator-only once the pipeline is internalized. Explicitly keeps the observation layer "one command away" so dropping it is a default change, not a hard abandonment.
+
 ## [0.8.4] — 2026-04-21
 
 ### Changed

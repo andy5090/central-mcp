@@ -340,6 +340,12 @@ central-mcp upgrade [--check]      # self-update from PyPI (uv → pip fallback)
 - **Work should be possible from anywhere.** central-mcp is designed so a phone/tablet over SSH is enough to keep moving. The hub can't require a multi-pane desktop to function.
 - **Turn observation on only when the live view actually helps** — debugging a stuck agent, tailing a long migration, or screen-sharing the fleet. For normal operation it adds noise, not signal.
 
+### Suggested onboarding — start observed, graduate to orchestrator-only
+
+On your first few sessions you almost certainly *want* the live view. Watching each project's dispatch events stream past builds a felt sense of how the orchestrator picks projects, how long dispatches actually take, which prompts produce useful output, and where things tend to stall. Treat observation as a trust-building phase: `central-mcp tmux` (or `zellij`, or cmux — see below) gives you panes side-by-side with the orchestrator, so you can eyeball its decisions against the raw agent output in real time.
+
+Once the orchestrator's summaries start matching what you would have checked in the panes anyway, drop the observation layer. At that point you've internalized the pipeline, and working from the orchestrator alone — from any terminal, on any device, including a phone over SSH — is the mode central-mcp was designed for. The observation layer stays one command away (`central-mcp tmux` / `central-mcp zellij` / ask the orchestrator in cmux) for the specific moments that still benefit from it.
+
 ### Backends
 
 Two multiplexer backends are supported as CLI commands:
