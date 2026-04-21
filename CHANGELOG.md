@@ -3,6 +3,17 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.8.17] — 2026-04-21
+
+### Fixed
+- **cmux observation-mode misses were NOT a timing race — they're an input-discard during shell init.** 0.8.16 evidence (real pane contents): text like `ntral-mcp watch andineering` appearing on the same line as `Last login:` — multiple characters silently eaten, not a single-byte jitter. zsh + heavy oh-my-zsh themes flush pending stdin at an unpredictable moment in their rc processing, so any fixed `sleep` is always guessing.
+- **Recipe swapped from fixed sleep to per-surface readiness polling.** The shipped `src/central_mcp/data/{CLAUDE,AGENTS}.md` now tells the orchestrator to poll `cmux tree --json` per surface, waiting for either `tty` to become non-null or `title` to become non-empty (shell attached + first prompt rendered), then send. Works on slow shell setups that `sleep 2.0` didn't cover.
+- Leading `\n` in the send is retained as a cheap defense against any residual single-byte race; the primary guarantee is now the readiness poll.
+- Retry-just-the-misses guidance kept in the recipe since polling isn't 100% (genuinely broken surfaces can still fail).
+
+### Upgrade note
+- Same copy-on-miss caveat: `rm ~/.central-mcp/{CLAUDE,AGENTS}.md` before the next orchestrator launch.
+
 ## [0.8.16] — 2026-04-21
 
 ### Fixed

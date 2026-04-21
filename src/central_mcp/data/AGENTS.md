@@ -94,17 +94,38 @@ To fit more panes per workspace, enlarge the cmux window — at `W=300, H=50` th
 2. `new-split right --surface A` → `[A(25) | C(25) | B(50)]`
 3. `new-split right --surface B` → `[A(25) | C(25) | B(25) | D(25)]` ✓ even
 
-**Project → surface mapping + seeding.** `new-split` returns OK as soon as cmux queues the creation, but the spawned shell can take up to a second or two to finish wiring its stdin — sending too quickly means the opening bytes get dropped and the pane ends up at a bare prompt with no `central-mcp watch` running. Two-line defense:
+**Project → surface mapping + seeding.** `new-split` returns OK as soon as cmux queues the pane, but the spawned shell's init phase can *discard* pending stdin while it runs rc files. Observed in practice: zsh + heavy oh-my-zsh themes eat entire chunks of typed input — multiple characters, not just a single-byte race. Fixed sleeps don't rescue this because the discard happens at an arbitrary moment inside the shell's startup sequence.
 
-1. **Wait before seeding:** `sleep 1.0` after grid construction (bump to `sleep 2.0` if any watch pane still comes out empty in testing).
-2. **Leading `\n` in every send** so a dropped first byte is a harmless newline, not the leading `c` of `central-mcp`. One shared sleep is enough across all projects — the per-pane cost is still two cmux calls.
+Reliable fix: **poll `cmux tree --json` for per-surface readiness** before sending. The `tty` field is populated once the pty is wired up to a shell process; `title` becomes non-empty once the shell renders its first prompt. Either signal works as a "safe to send" indicator.
 
-Fill `cmcp-watch-1` first, then `cmcp-watch-2`, etc., in project order. For each `<workspace_ref, surface_ref, project_name>`:
+**Polling + seed recipe per pane** — for each `<workspace_ref, surface_ref, project_name>` in project order:
 
-- `cmux send --workspace <ws> --surface <surface_ref> "\ncentral-mcp watch <project_name>"`
-- `cmux send-key --workspace <ws> --surface <surface_ref> enter`
+```bash
+# Wait for the surface's shell to be alive (up to ~9s).
+for _ in $(seq 1 30); do
+  ready=$(cmux --json tree --workspace <ws> | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+for w in d.get('windows', []):
+  for ws in w.get('workspaces', []):
+    for p in ws.get('panes', []):
+      for s in p.get('surfaces', []):
+        if s.get('ref') == '<surface_ref>':
+          print('y' if (s.get('tty') or (s.get('title') or '').strip()) else '')
+          sys.exit(0)
+")
+  [ -n "$ready" ] && break
+  sleep 0.3
+done
 
-**If any pane still shows a bare prompt** after the bootstrap, it's fine to retry just the failed ones — re-send the two lines above for that specific surface. Report which projects landed vs. which needed retry.
+# Seed. Leading \n is belt-and-suspenders for any residual 1-byte race.
+cmux send --workspace <ws> --surface <surface_ref> "\ncentral-mcp watch <project_name>"
+cmux send-key --workspace <ws> --surface <surface_ref> enter
+```
+
+Fill `cmcp-watch-1` first, then `cmcp-watch-2`, etc., in project order.
+
+**If any pane still shows a bare prompt** after the bootstrap (rare now — possible on genuinely broken surfaces), retry only the failed ones with the same three-step sequence above. No teardown needed. Report which projects landed vs. which needed retry.
 
 Outside this workflow, the no-Bash rule still applies — dispatch to project agents instead. Only applies inside cmux; tmux / zellij observation is handled by `central-mcp tmux` / `central-mcp zellij`.
 
