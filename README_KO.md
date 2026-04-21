@@ -40,7 +40,7 @@
 
 - **macOS** — 주 개발·테스트 환경.
 - **Linux** — 동작할 것으로 예상 (순수 Python, tmux/zellij 모두 크로스-플랫폼)이지만 정기적으로 검증하지는 않음. 이상 동작이 있으면 이슈로 알려주세요.
-- **Windows** — 공식 지원 / 정기 검증 대상 아님. 코어(Python + MCP 도구 + Windows 에서 가능한 tmux / zellij 백엔드)는 이론상 동작해야 하지만, cmux 백엔드는 macOS 전용이라 관찰 레이어 옵션은 tmux / zellij 중 설치 가능한 것으로 좁혀집니다. 공식 지원 대상은 아니지만 best-effort 로 다뤄지며, 문제 발견 시 이슈 올려주세요.
+- **Windows** — 공식 지원 / 정기 검증 대상 아님. 코어(Python + MCP 도구 + Windows 에서 가능한 tmux / zellij 백엔드)는 이론상 동작해야 하지만, cmux 백엔드는 macOS 전용이라 관찰 레이어 옵션은 tmux / zellij 중 설치 가능한 것으로 좁혀집니다. 문제 발견 시 이슈 올려주세요.
 
 ## 빠른 시작
 
