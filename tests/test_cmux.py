@@ -1,184 +1,30 @@
-"""Tests for the cmux observation backend.
+"""Tests for the cmux observation backend (agent-driven layout).
 
-Unit tests exercise `build_layout_json` (pure function, no subprocess)
-plus `has_workspace` / `ensure_workspace` / `kill_workspace` with a
-monkey-patched `_run` so we don't need a live cmux.app. A small test
-also verifies that `_detect_multiplexers()` only offers `cmux` on
-darwin — on Linux / Windows the backend should stay invisible.
+The shipped cmux CLI (0.63.2) doesn't have a declarative `--layout`
+flag, so central-mcp delegates pane construction to the orchestrator:
+`cmd_cmux` opens a single-pane workspace seeded with a prompt that
+instructs the agent to call `cmux new-split` / `cmux send-text` for
+each registered project.
+
+These tests cover the thin surface central-mcp owns: the
+subprocess-mocked workspace helpers (`has_workspace`,
+`ensure_workspace`, `kill_workspace`) and the seed-prompt builder.
+Agent-side behavior (does claude really run the bootstrap?) is out
+of scope — those are live integration tests against the real CLIs.
 """
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
 
 import pytest
 
-from central_mcp import cmux, registry
-from central_mcp.layout import OrchestratorPane
+from central_mcp import cmux
+from central_mcp.registry import Project
 
 
-def _make_projects(fake_home: Path, tmp_path: Path, n: int) -> None:
-    for i in range(n):
-        d = tmp_path / f"p{i}"
-        d.mkdir()
-        registry.add_project(f"p{i}", str(d), agent="shell")
-
-
-def _collect_surfaces(node: dict[str, Any]) -> list[dict[str, Any]]:
-    """Walk a CmuxLayoutNode subtree, return every terminal surface leaf.
-
-    Mirrors the schema: pane leaves live at `node["pane"]["surfaces"]`,
-    split nodes have exactly two entries in `node["children"]`.
-    """
-    if "pane" in node:
-        return list(node["pane"]["surfaces"])
-    out: list[dict[str, Any]] = []
-    for child in node.get("children", []):
-        if isinstance(child, dict):
-            out.extend(_collect_surfaces(child))
-    return out
-
-
-class TestBuildLayoutJson:
-    """Asserts the layout subtree matches cmux's `CmuxLayoutNode`
-    schema (see Sources/CmuxConfig.swift in manaflow-ai/cmux):
-
-      - Pane leaf: `{"pane": {"surfaces": [...]}}`
-      - Split node: `{"direction": "...", "split": 0.1-0.9,
-        "children": [left, right]}` — exactly two children, no
-        `first`/`second` keys.
-
-    `build_layout_json` returns just the subtree (not the full
-    `CmuxWorkspaceDefinition`) — the CLI forwards it as
-    `params["layout"]` on `workspace.create`; title / cwd are passed
-    on separate `--name` / `--cwd` flags.
-    """
-
-    def test_empty_registry_no_orchestrator_single_placeholder(
-        self, fake_home: Path
-    ) -> None:
-        out = cmux.build_layout_json(None, registry.load_registry())
-        assert out == {"pane": {"surfaces": [{"type": "terminal", "focus": True}]}}
-
-    def test_result_is_bare_layout_subtree_no_workspace_wrapper(
-        self, fake_home: Path, tmp_path: Path
-    ) -> None:
-        """The returned dict must decode as `CmuxLayoutNode` directly —
-        no enclosing `{name, cwd, layout}` wrapper (that would be a
-        `CmuxWorkspaceDefinition`, which the v2 decoder rejects)."""
-        orch = OrchestratorPane(command="claude", cwd=str(tmp_path), label="stub")
-        out = cmux.build_layout_json(orch, [])
-        assert "name" not in out
-        assert "cwd" not in out
-        assert "layout" not in out
-        # Must have either `pane` (leaf) or `direction` (split) at root.
-        assert ("pane" in out) ^ ("direction" in out)
-
-    def test_orchestrator_only_is_single_pane_leaf(
-        self, fake_home: Path, tmp_path: Path
-    ) -> None:
-        orch = OrchestratorPane(command="claude", cwd=str(tmp_path), label="stub")
-        out = cmux.build_layout_json(orch, [])
-        # Leaf: pane key present, direction absent.
-        assert "pane" in out
-        assert "direction" not in out
-        surfaces = out["pane"]["surfaces"]
-        assert len(surfaces) == 1
-        s = surfaces[0]
-        assert s["type"] == "terminal"
-        assert s["name"] == "Central MCP Orchestrator"
-        assert s["cwd"] == str(tmp_path)
-        assert s["focus"] is True
-        # Orchestrator command is wrapped so the pane survives exit.
-        assert s["command"] == "claude; exec $SHELL"
-
-    def test_orchestrator_plus_one_project_splits_horizontally(
-        self, fake_home: Path, tmp_path: Path
-    ) -> None:
-        _make_projects(fake_home, tmp_path, 1)
-        orch = OrchestratorPane(command="claude", cwd=str(tmp_path), label="stub")
-        layout = cmux.build_layout_json(orch, registry.load_registry())
-        assert layout["direction"] == "horizontal"
-        assert layout["split"] == 0.5
-        # Split node has exactly two entries under `children`.
-        assert "children" in layout
-        assert "first" not in layout
-        assert "second" not in layout
-        assert len(layout["children"]) == 2
-        # Left: orchestrator pane.
-        left_surfaces = _collect_surfaces(layout["children"][0])
-        assert len(left_surfaces) == 1
-        assert left_surfaces[0]["name"] == "Central MCP Orchestrator"
-        assert left_surfaces[0]["focus"] is True
-        # Right: the single project pane (one surface, readonly-wrapped).
-        right_surfaces = _collect_surfaces(layout["children"][1])
-        assert len(right_surfaces) == 1
-        proj = right_surfaces[0]
-        assert proj["name"] == "p0"
-        assert "central-mcp watch p0" in proj["command"]
-        assert "</dev/null" in proj["command"]
-        assert "sleep infinity" in proj["command"]
-        # Project panes are not focused — orchestrator is.
-        assert proj.get("focus") is not True
-
-    def test_orchestrator_plus_four_projects_uses_two_row_grid(
-        self, fake_home: Path, tmp_path: Path
-    ) -> None:
-        _make_projects(fake_home, tmp_path, 4)
-        orch = OrchestratorPane(command="claude", cwd=str(tmp_path), label="stub")
-        layout = cmux.build_layout_json(orch, registry.load_registry())
-        # Outer split: orchestrator on left, projects subtree on right.
-        assert layout["direction"] == "horizontal"
-        right = layout["children"][1]
-        # Project subtree for n=4 is a 2-row grid: outer vertical split
-        # (row1 / row2), each row is a horizontal cascade.
-        assert right["direction"] == "vertical"
-        assert len(right["children"]) == 2
-        # Leaves on the right side should cover all four projects.
-        right_surfaces = _collect_surfaces(right)
-        names = sorted(s["name"] for s in right_surfaces)
-        assert names == ["p0", "p1", "p2", "p3"]
-        # Every project pane carries the readonly wrap.
-        for s in right_surfaces:
-            assert "central-mcp watch" in s["command"]
-            assert "sleep infinity" in s["command"]
-
-    def test_every_split_has_exactly_two_children(self, tmp_path: Path) -> None:
-        """cmux's `CmuxSplitDefinition` decoder explicitly rejects
-        anything other than 2 children — verify the tiler never emits
-        a degenerate split, for any project count 1..8."""
-        from central_mcp.registry import Project as P
-
-        for n in range(1, 9):
-            projects = [P(name=f"p{i}", path=str(tmp_path)) for i in range(n)]
-            orch = OrchestratorPane(command="claude", cwd=str(tmp_path), label="stub")
-            layout = cmux.build_layout_json(orch, projects)
-
-            def walk(node: dict[str, Any]) -> None:
-                if "direction" in node:
-                    assert len(node["children"]) == 2, (
-                        f"n={n}: split has {len(node['children'])} children"
-                    )
-                    for c in node["children"]:
-                        walk(c)
-
-            walk(layout)
-
-    def test_projects_only_first_surface_gets_focus(
-        self, fake_home: Path, tmp_path: Path
-    ) -> None:
-        _make_projects(fake_home, tmp_path, 3)
-        layout = cmux.build_layout_json(None, registry.load_registry())
-        surfaces = _collect_surfaces(layout)
-        focused = [s for s in surfaces if s.get("focus") is True]
-        assert len(focused) == 1
-        # The first project pane (p0) lands the user on project 0.
-        assert focused[0]["name"] == "p0"
-
-
-# ---------- subprocess-mocked behavioral tests ----------
+# ---------- subprocess fake ----------
 
 class _FakeRun:
     """Records calls and returns canned CmuxResult-like objects."""
@@ -238,63 +84,6 @@ class TestHasWorkspace:
         assert cmux.has_workspace(cmux.SESSION) is False
 
 
-class TestEnsureWorkspace:
-    def test_no_op_when_workspace_already_open(
-        self, fake_home: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        payload = json.dumps(
-            {"workspaces": [{"id": "w1", "title": cmux.SESSION}]}
-        )
-        fake = _FakeRun([cmux.CmuxResult(ok=True, stdout=payload, stderr="")])
-        monkeypatch.setattr(cmux, "_run", fake)
-        created, messages = cmux.ensure_workspace()
-        assert created is False
-        assert any("already exists" in m for m in messages)
-        # Only the probe call — no new-workspace was issued.
-        assert fake.calls == [["--json", "list-workspaces"]]
-
-    def test_creates_workspace_when_missing(
-        self, fake_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        _make_projects(fake_home, tmp_path, 2)
-        # Sequence: list-workspaces (empty) → new-workspace (ok).
-        empty = json.dumps({"workspaces": []})
-        fake = _FakeRun([
-            cmux.CmuxResult(ok=True, stdout=empty, stderr=""),
-            cmux.CmuxResult(ok=True, stdout="", stderr=""),
-        ])
-        monkeypatch.setattr(cmux, "_run", fake)
-        orch = OrchestratorPane(command="claude", cwd=str(tmp_path), label="stub")
-        created, messages = cmux.ensure_workspace(orchestrator=orch)
-        assert created is True
-        assert any("opened via cmux" in m for m in messages)
-        # Second call is `new-workspace --name central --layout <json>`.
-        assert len(fake.calls) == 2
-        new_call = fake.calls[1]
-        # Title goes on --name, so the CLI forwards it as a separate
-        # `title` param; the --layout value is the bare CmuxLayoutNode
-        # subtree the server will decode directly.
-        assert new_call[:4] == ["new-workspace", "--name", cmux.SESSION, "--layout"]
-        layout = json.loads(new_call[4])
-        assert "name" not in layout  # not a CmuxWorkspaceDefinition
-        assert "layout" not in layout  # bare subtree, not nested
-        assert layout["direction"] == "horizontal"
-        assert "children" in layout and len(layout["children"]) == 2
-
-    def test_surfaces_stderr_on_new_workspace_failure(
-        self, fake_home: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        empty = json.dumps({"workspaces": []})
-        fake = _FakeRun([
-            cmux.CmuxResult(ok=True, stdout=empty, stderr=""),
-            cmux.CmuxResult(ok=False, stdout="", stderr="socket refused"),
-        ])
-        monkeypatch.setattr(cmux, "_run", fake)
-        created, messages = cmux.ensure_workspace()
-        assert created is False
-        assert any("socket refused" in m for m in messages)
-
-
 class TestKillWorkspace:
     def test_noop_when_nothing_to_kill(
         self, monkeypatch: pytest.MonkeyPatch
@@ -339,6 +128,125 @@ class TestKillWorkspace:
         monkeypatch.setattr(cmux, "_run", fake)
         cmux.kill_workspace(cmux.SESSION)
         assert fake.calls[1] == ["close-workspace", "--workspace", "uuid-1"]
+
+
+class TestEnsureWorkspace:
+    """`ensure_workspace` accepts an optional orchestrator cwd + shell
+    command. No declarative layout builder is involved — cmux 0.63.2
+    only accepts `--name / --cwd / --command` on `new-workspace`."""
+
+    def test_no_op_when_workspace_already_open(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        payload = json.dumps(
+            {"workspaces": [{"id": "w1", "title": cmux.SESSION}]}
+        )
+        fake = _FakeRun([cmux.CmuxResult(ok=True, stdout=payload, stderr="")])
+        monkeypatch.setattr(cmux, "_run", fake)
+        created, messages = cmux.ensure_workspace(
+            orchestrator_cwd="/tmp/ignored",
+            shell_command="claude 'ignored'",
+        )
+        assert created is False
+        assert any("already exists" in m for m in messages)
+        # Only the probe call — no new-workspace was issued.
+        assert fake.calls == [["--json", "list-workspaces"]]
+
+    def test_creates_workspace_with_cwd_and_command(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        empty = json.dumps({"workspaces": []})
+        fake = _FakeRun([
+            cmux.CmuxResult(ok=True, stdout=empty, stderr=""),
+            cmux.CmuxResult(ok=True, stdout="OK wsid", stderr=""),
+        ])
+        monkeypatch.setattr(cmux, "_run", fake)
+        created, messages = cmux.ensure_workspace(
+            orchestrator_cwd="/Users/me/.central-mcp",
+            shell_command="claude --dangerously-skip-permissions 'seed'",
+        )
+        assert created is True
+        assert any("opened via cmux" in m for m in messages)
+        assert fake.calls[1] == [
+            "new-workspace",
+            "--name", cmux.SESSION,
+            "--cwd", "/Users/me/.central-mcp",
+            "--command", "claude --dangerously-skip-permissions 'seed'",
+        ]
+
+    def test_creates_bare_workspace_when_no_orchestrator(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`--no-orchestrator` path: ensure_workspace is called with no
+        args, should emit just `new-workspace --name central`."""
+        empty = json.dumps({"workspaces": []})
+        fake = _FakeRun([
+            cmux.CmuxResult(ok=True, stdout=empty, stderr=""),
+            cmux.CmuxResult(ok=True, stdout="", stderr=""),
+        ])
+        monkeypatch.setattr(cmux, "_run", fake)
+        created, _ = cmux.ensure_workspace()
+        assert created is True
+        assert fake.calls[1] == ["new-workspace", "--name", cmux.SESSION]
+
+    def test_surfaces_stderr_on_new_workspace_failure(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        empty = json.dumps({"workspaces": []})
+        fake = _FakeRun([
+            cmux.CmuxResult(ok=True, stdout=empty, stderr=""),
+            cmux.CmuxResult(ok=False, stdout="", stderr="socket refused"),
+        ])
+        monkeypatch.setattr(cmux, "_run", fake)
+        created, messages = cmux.ensure_workspace()
+        assert created is False
+        assert any("socket refused" in m for m in messages)
+
+
+class TestSeedPrompt:
+    """`build_cmux_seed_prompt` produces a self-contained bootstrap
+    prompt: the agent reads it, iterates the embedded project list,
+    and calls the cmux CLI from its Bash tool. No MCP calls needed,
+    so the prompt survives even a cold cmux workspace where MCP
+    tools haven't warmed up."""
+
+    def test_empty_registry_returns_empty_string(self) -> None:
+        assert cmux.build_cmux_seed_prompt([]) == ""
+
+    def test_includes_every_project_name(self) -> None:
+        projects = [
+            Project(name="alpha", path="/tmp/alpha"),
+            Project(name="beta", path="/tmp/beta"),
+            Project(name="gamma", path="/tmp/gamma"),
+        ]
+        prompt = cmux.build_cmux_seed_prompt(projects)
+        for p in projects:
+            assert p.name in prompt
+        # Count appearance is exact — project names should each show
+        # up in the bullet list and once as the watch-command target.
+        assert prompt.count("  - alpha\n") == 1
+        assert prompt.count("  - beta\n") == 1
+
+    def test_mentions_cmux_env_var_and_bootstrap_commands(self) -> None:
+        prompt = cmux.build_cmux_seed_prompt(
+            [Project(name="solo", path="/tmp/solo")]
+        )
+        # The env var cmux injects into its panes — the agent keys
+        # all its CLI calls off of this.
+        assert "CMUX_WORKSPACE_ID" in prompt
+        # Exact cmux verbs the agent is expected to call.
+        for verb in ("cmux new-split", "cmux --json list-pane-surfaces", "cmux send-text"):
+            assert verb in prompt
+        # Must tell the agent to run central-mcp watch inside each pane.
+        assert "central-mcp watch" in prompt
+
+    def test_self_contained_completion_signal(self) -> None:
+        projects = [
+            Project(name="a", path="/x"),
+            Project(name="b", path="/y"),
+        ]
+        prompt = cmux.build_cmux_seed_prompt(projects)
+        assert f"observation layer ready: {len(projects)} project(s)" in prompt
 
 
 # ---------- platform gating ----------

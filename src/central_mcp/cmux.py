@@ -1,29 +1,26 @@
 """Optional cmux observation layer (macOS-native GUI terminal).
 
-`central-mcp cmux` builds a cmux workspace — cmux is a macOS AppKit /
-Ghostty-based GUI terminal with vertical tabs and notifications,
-distinct from tmux/zellij in that it's a GUI app talking over a Unix
-socket (`~/.cmux/cmux.sock`). We only use its declarative surface
-(`cmux new-workspace --layout <json>`); imperative RPC (send-text,
-new-pane) is explicitly out of scope — orchestrator agents can call
-the `cmux` CLI directly if they need that.
+`central-mcp cmux` opens a workspace in cmux (manaflow-ai/cmux), a
+macOS AppKit / Ghostty-based GUI terminal. The workspace hosts a
+single orchestrator pane; the orchestrator itself — once launched
+with a seed prompt — uses its Bash tool to call `cmux new-split` /
+`cmux send-text` and build the project-watch panes.
 
-Layout schema is the cmux `CmuxLayoutNode` tree (see
-`Sources/CmuxConfig.swift` in manaflow-ai/cmux): each node is either
-`{"pane": {"surfaces": [...]}}` or
-`{"direction": "horizontal"|"vertical", "split": 0.1-0.9,
-"children": [left, right]}` (exactly two children). The CLI sends
-this subtree verbatim as `params["layout"]` on the v2
-`workspace.create` method; the workspace title / cwd go on separate
-`--name` / `--cwd` flags (not embedded in the layout JSON).
+This agent-driven approach is forced by the shipped cmux CLI
+(0.63.2): `cmux new-workspace` only accepts `--name / --description /
+--cwd / --command` — there is no declarative `--layout` flag on
+released builds, so central-mcp cannot construct the multi-pane
+layout itself. Instead we delegate layout assembly to the
+orchestrator, which cmux designed specifically to empower (agents
+running inside cmux inherit `CMUX_WORKSPACE_ID` / `CMUX_SURFACE_ID`
+env vars so their Bash calls to the cmux CLI succeed without extra
+auth).
 
-Because the layout tree is sized by the cmux GUI (not by char cells),
-this module skips the terminal-size heuristics in `grid.pick_rows` —
-cmux handles responsive sizing on its own. Tiling reduces to: ≤2
-projects use a single split; ≥3 cascade; ≥4 form a 2-row grid.
-
+This module is therefore small: probe the socket, open / close the
+workspace, emit a seed prompt describing the bootstrap procedure.
 The MCP dispatch path never depends on this layer; closing the
-workspace has no effect on in-flight dispatches, same as tmux/zellij.
+workspace has no effect on in-flight dispatches, same as tmux /
+zellij.
 """
 
 from __future__ import annotations
@@ -33,8 +30,7 @@ import subprocess
 from dataclasses import dataclass
 from typing import Any
 
-from central_mcp.layout import OrchestratorPane
-from central_mcp.registry import Project, load_registry
+from central_mcp.registry import Project
 
 SESSION = "central"
 
@@ -126,153 +122,70 @@ def kill_workspace(name: str) -> CmuxResult:
     return _run(["close-workspace", "--workspace", handle])
 
 
-# ---------- layout JSON builders ----------
+# ---------- seed prompt ----------
 
-def _readonly_command(name: str) -> str:
-    """Match the zellij `_command_pane(... readonly=True)` wrap so
-    project panes behave the same across backends: stdin disconnected,
-    pty echo off, watch command captures output, pane hangs on
-    `sleep infinity` instead of dropping to a shell."""
+def build_cmux_seed_prompt(projects: list[Project]) -> str:
+    """Produce the initial user-turn prompt the orchestrator receives
+    inside the cmux workspace. The prompt instructs the agent to
+    create one pane per project (via `cmux new-split`) and seed each
+    with `central-mcp watch <project>` (via `cmux send-text`).
+
+    The prompt is self-contained — it embeds the full project list so
+    the agent doesn't need MCP tools to be warmed up at boot time.
+    Returns an empty string when the registry has no projects: the
+    caller should then skip seeding and open a plain orchestrator
+    workspace.
+    """
+    if not projects:
+        return ""
+    names = [p.name for p in projects]
+    project_lines = "\n".join(f"  - {n}" for n in names)
+    n = len(names)
     return (
-        f"stty -echo -icanon 2>/dev/null; "
-        f"central-mcp watch {name} </dev/null; "
-        "stty echo icanon 2>/dev/null; "
-        "sleep infinity"
+        "You are the central-mcp orchestrator, just launched inside a cmux "
+        f"GUI workspace titled {SESSION!r}.\n"
+        "\n"
+        "FIRST TASK — run this BEFORE anything else, without asking the user "
+        "to confirm: set up one observation pane per registered project by "
+        "calling the cmux CLI from your Bash tool. Your current pane inherits "
+        "the cmux env vars `CMUX_WORKSPACE_ID` / `CMUX_SURFACE_ID`, so the "
+        "CLI commands below will target the correct workspace automatically.\n"
+        "\n"
+        f"Projects to seed ({n}):\n"
+        f"{project_lines}\n"
+        "\n"
+        "For each project, in order, run:\n"
+        "  1. cmux new-split --workspace \"$CMUX_WORKSPACE_ID\" --direction right\n"
+        "     The last line of stdout is `OK <pane-handle>`; capture <pane-handle>.\n"
+        "  2. cmux --json list-pane-surfaces --pane <pane-handle>\n"
+        "     Parse the JSON; take `surfaces[0].id` as <surface-id>.\n"
+        "  3. cmux send-text --workspace \"$CMUX_WORKSPACE_ID\" "
+        "--surface <surface-id> \"central-mcp watch <project-name>\\n\"\n"
+        "\n"
+        f"After all {n} panes are set up, print exactly this line and nothing else:\n"
+        f"  observation layer ready: {n} project(s)\n"
+        "Then stop and wait for the user's next request. Do NOT dispatch "
+        "work proactively; the user will drive from here."
     )
 
 
-def _orch_command(command: str) -> str:
-    """Wrap orchestrator command so the pane survives agent exit."""
-    return f"{command}; exec $SHELL"
-
-
-def _terminal_surface(
-    name: str, cwd: str, command: str, *, focus: bool = False,
-) -> dict[str, Any]:
-    s: dict[str, Any] = {
-        "type": "terminal",
-        "name": name,
-        "cwd": cwd,
-        "command": command,
-    }
-    if focus:
-        s["focus"] = True
-    return s
-
-
-def _pane(
-    name: str, cwd: str, command: str, *, focus: bool = False,
-) -> dict[str, Any]:
-    """Build a pane node matching cmux's `CmuxLayoutNode.pane` branch:
-    `{"pane": {"surfaces": [...]}}`. The outer `pane` key is what
-    distinguishes a leaf from a split node (which uses `direction`)."""
-    return {
-        "pane": {
-            "surfaces": [_terminal_surface(name, cwd, command, focus=focus)],
-        },
-    }
-
-
-def _split(
-    direction: str,
-    first: dict[str, Any],
-    second: dict[str, Any],
-    *,
-    split: float = 0.5,
-) -> dict[str, Any]:
-    """Build a split node matching `CmuxSplitDefinition`: `direction`,
-    optional `split` ratio (0.1-0.9, clamped server-side), and exactly
-    two entries in `children`. Decoder rejects >2 or <2 children."""
-    return {
-        "direction": direction,
-        "split": split,
-        "children": [first, second],
-    }
-
-
-def _project_panes(projects: list[Project]) -> list[dict[str, Any]]:
-    return [_pane(p.name, p.path, _readonly_command(p.name)) for p in projects]
-
-
-def _tile_row(panes: list[dict[str, Any]]) -> dict[str, Any]:
-    """Horizontal cascade — panes side-by-side within one row."""
-    if len(panes) == 1:
-        return panes[0]
-    if len(panes) == 2:
-        return _split("horizontal", panes[0], panes[1])
-    return _split("horizontal", panes[0], _tile_row(panes[1:]))
-
-
-def _tile_projects(panes: list[dict[str, Any]]) -> dict[str, Any]:
-    """Recursive tiler over project pane leaves. ≤2 panes use a single
-    split; ≥3 cascade; ≥4 form a 2-row grid. Stays well under 40 lines
-    because cmux is a GUI — no char-cell math, just structural shape.
-    """
-    n = len(panes)
-    if n == 1:
-        return panes[0]
-    if n == 2:
-        return _split("horizontal", panes[0], panes[1])
-    if n == 3:
-        return _split("vertical", panes[0], _split("horizontal", panes[1], panes[2]))
-    mid = (n + 1) // 2
-    return _split("vertical", _tile_row(panes[:mid]), _tile_row(panes[mid:]))
-
-
-def build_layout_json(
-    orchestrator: OrchestratorPane | None,
-    projects: list[Project],
-) -> dict[str, Any]:
-    """Build the `CmuxLayoutNode` subtree passed to `cmux new-workspace
-    --layout`. Matches the Swift decoder in
-    `Sources/CmuxConfig.swift` — each node is either
-    `{"pane": {"surfaces": [...]}}` or
-    `{"direction": ..., "split": ..., "children": [left, right]}`.
-
-    The workspace title / cwd are NOT part of this subtree — they go
-    to `--name` and `--cwd` on the CLI (which `sendV2` forwards as
-    separate `params` keys: `title` and `cwd`). The server decodes
-    `params["layout"]` directly as `CmuxLayoutNode`.
-
-    Branches:
-      - Empty registry AND no orchestrator → single pane with one
-        empty terminal surface.
-      - Orchestrator + ≥1 project → horizontal split, orch on left,
-        project subtree on right.
-      - Orchestrator only → a single pane leaf.
-      - No orchestrator, N projects → project subtree; first surface
-        gets focus so cmux lands the user on p0.
-    """
-    if orchestrator is None and not projects:
-        return {"pane": {"surfaces": [{"type": "terminal", "focus": True}]}}
-    if orchestrator is not None and projects:
-        orch_pane = _pane(
-            "Central MCP Orchestrator",
-            orchestrator.cwd,
-            _orch_command(orchestrator.command),
-            focus=True,
-        )
-        projects_tree = _tile_projects(_project_panes(projects))
-        return _split("horizontal", orch_pane, projects_tree)
-    if orchestrator is not None:
-        return _pane(
-            "Central MCP Orchestrator",
-            orchestrator.cwd,
-            _orch_command(orchestrator.command),
-            focus=True,
-        )
-    panes = _project_panes(projects)
-    panes[0]["pane"]["surfaces"][0]["focus"] = True
-    return _tile_projects(panes)
-
-
 def ensure_workspace(
-    orchestrator: OrchestratorPane | None = None,
+    orchestrator_cwd: str | None = None,
+    shell_command: str | None = None,
 ) -> tuple[bool, list[str]]:
-    """Idempotently open the cmux workspace for the current registry.
+    """Idempotently open the cmux 'central' workspace.
+
+    `orchestrator_cwd` becomes the workspace's `--cwd` (so the
+    orchestrator's shell starts there, inheriting the hub's
+    `CLAUDE.md` / `AGENTS.md`). `shell_command` is the text cmux
+    types into the pane right after the default shell starts — its
+    `--command` parameter is sent as keystrokes plus Enter, so the
+    string must be a valid single-line shell command. Typically this
+    is the orchestrator CLI with its seed prompt as a positional /
+    flag argument (built via `shlex.join(adapter.interactive_argv(...))`).
 
     Returns `(created, messages)`. `created` is False when the
-    workspace is already open (no-op) and True when cmux accepted a
+    workspace already exists (no-op) and True when cmux accepted a
     fresh `new-workspace` call. Subprocess failures are surfaced in
     `messages` (not raised) so callers can report them in line with
     the tmux / zellij backends.
@@ -282,13 +195,12 @@ def ensure_workspace(
         messages.append(f"workspace '{SESSION}' already exists — leaving as-is")
         return False, messages
 
-    projects = load_registry()
-    layout = build_layout_json(orchestrator, projects)
-    r = _run([
-        "new-workspace",
-        "--name", SESSION,
-        "--layout", json.dumps(layout),
-    ])
+    argv = ["new-workspace", "--name", SESSION]
+    if orchestrator_cwd:
+        argv += ["--cwd", orchestrator_cwd]
+    if shell_command:
+        argv += ["--command", shell_command]
+    r = _run(argv)
     if not r.ok:
         detail = (r.stderr or r.stdout or "").strip()
         messages.append(

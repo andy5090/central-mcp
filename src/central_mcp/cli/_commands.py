@@ -469,18 +469,63 @@ def cmd_zellij(args: argparse.Namespace) -> int:
     )
 
 
+def _resolve_cmux_orchestrator(
+    args: argparse.Namespace,
+) -> tuple[str, str] | None:
+    """Pick (agent_key, cwd) for cmux's seed-based bootstrap.
+
+    Mirrors `_orchestrator_pane_for_up` but returns the agent KEY
+    (needed for adapter lookup) rather than a pre-built launch
+    command. Returns None when `--no-orchestrator` was passed or no
+    orchestrator CLI is installed — caller then opens a bare
+    workspace with no seed.
+    """
+    if args.no_orchestrator:
+        return None
+    installed = _detect_installed()
+    if not installed:
+        print(
+            "warning: no orchestrator CLI on PATH — opening an empty cmux workspace",
+            file=sys.stderr,
+        )
+        return None
+    choice: tuple[str, str, str] | None = None
+    pref = _load_preference()
+    if pref:
+        for entry in installed:
+            if entry[0] == pref:
+                choice = entry
+                break
+    if choice is None:
+        choice = installed[0]
+    key, _binary, _label = choice
+    launch_dir = paths.central_mcp_home()
+    _ensure_launch_dir(launch_dir)
+    return key, str(launch_dir)
+
+
 def cmd_cmux(args: argparse.Namespace) -> int:
     """Open the central-mcp workspace in the cmux macOS GUI app.
 
-    Parallels `cmd_zellij` but targets manaflow-ai/cmux, a native
-    macOS terminal (Ghostty-based) whose CLI talks to the running
-    GUI over a Unix socket at `~/.cmux/cmux.sock`. Because cmux is
-    GUI-bound and macOS-only, this subcommand refuses to run on
-    other platforms and never auto-installs or launches the app —
-    if the socket isn't answering, we exit with a message pointing
-    the user at the install instructions.
+    cmux's shipped CLI (0.63.2) doesn't have a declarative `--layout`
+    flag, so central-mcp can't construct the multi-pane observation
+    layout itself. Instead we open a single orchestrator pane with a
+    seed prompt telling the agent to call `cmux new-split` / `cmux
+    send-text` for each registered project. The orchestrator
+    (claude / codex / gemini) handles layout setup on first turn
+    without user confirmation — it inherits `CMUX_WORKSPACE_ID` from
+    the pane env, so the cmux CLI calls target the right workspace.
+
+    Agents without an interactive-seed entry point (opencode, droid)
+    are incompatible: for those projects, use tmux or zellij instead.
+    `--permission-mode restricted` will stall mid-bootstrap on the
+    first approval prompt; bypass or auto are recommended.
     """
+    import shlex
+
     from central_mcp import cmux, session_info
+    from central_mcp.adapters.base import get_adapter
+    from central_mcp.registry import load_registry
 
     if platform.system() != "Darwin":
         print(
@@ -504,15 +549,56 @@ def cmd_cmux(args: argparse.Namespace) -> int:
         )
         return 1
 
-    orchestrator = _orchestrator_pane_for_up(args)
-
-    # 0.6.8+ convention: always teardown + rebuild so the layout
-    # reflects the current registry. cmux is fully declarative so we
-    # can't live-swap a workspace — the rebuild is a close + new.
+    # 0.6.8+ convention: always teardown + rebuild so the workspace
+    # reflects the current registry. cmux workspaces are fully
+    # declarative once created — no live swap — so the rebuild is
+    # close + new.
     if cmux.has_workspace(cmux.SESSION):
         _teardown_observation_session()
 
-    created, messages = cmux.ensure_workspace(orchestrator=orchestrator)
+    if args.permission_mode == "restricted":
+        print(
+            "warning: --permission-mode restricted — the orchestrator will "
+            "stall on the first approval prompt during bootstrap, so pane "
+            "setup may be incomplete. Use bypass or auto for an unattended "
+            "layout.",
+            file=sys.stderr,
+        )
+
+    resolved = _resolve_cmux_orchestrator(args)
+    if resolved is None:
+        # --no-orchestrator or no CLI: open a bare workspace.
+        created, messages = cmux.ensure_workspace()
+        for m in messages:
+            print(m)
+        if not created:
+            return 1
+        session_info.write(multiplexer="cmux")
+        return 0
+
+    agent_name, cwd = resolved
+    adapter = get_adapter(agent_name)
+    projects = load_registry()
+    seed = cmux.build_cmux_seed_prompt(projects)
+    argv = adapter.interactive_argv(
+        seed_prompt=seed or None,
+        permission_mode=args.permission_mode,
+    )
+    if argv is None:
+        print(
+            f"error: cmux backend needs an orchestrator with interactive-seed "
+            f"support; {agent_name!r} has none. Use `central-mcp tmux` or "
+            "`central-mcp zellij` with this orchestrator, or switch the "
+            "preference to claude / codex / gemini.",
+            file=sys.stderr,
+        )
+        return 1
+    shell_command = shlex.join(argv)
+
+    created, messages = cmux.ensure_workspace(
+        orchestrator_cwd=cwd,
+        shell_command=shell_command,
+    )
     for m in messages:
         print(m)
     if not created:
