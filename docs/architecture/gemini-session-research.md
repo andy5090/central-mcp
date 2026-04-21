@@ -24,7 +24,7 @@ Each project slug also contains:
 Slug ↔ cwd resolution lives in `~/.gemini/projects.json`:
 
 ```json
-{ "projects": { "/Users/andy/Projects/5whys-xyz": "5whys-xyz", ... } }
+{ "projects": { "/Users/<user>/Projects/my-app": "my-app", ... } }
 ```
 
 Sessions *also* carry a `projectHash` (sha256 hex) inside each session
@@ -109,10 +109,10 @@ must go direct to the JSON on disk.
 
 - **Auto-pruning**. Running `--list-sessions` from a cwd whose
   `projectHash` no longer matches existing files appears to trigger
-  cleanup — observed during this research: `~/.gemini/tmp/andineering/
-  chats/` went from 4 populated files to empty mid-session after a
-  single `--list-sessions` probe from the real cwd. Harvest
-  opportunistically; assume files may vanish.
+  cleanup — observed during this research: one slug's
+  `~/.gemini/tmp/<slug>/chats/` went from 4 populated files to empty
+  mid-session after a single `--list-sessions` probe from the real
+  cwd. Harvest opportunistically; assume files may vanish.
 - **`logs.json` is NOT a transcript.** It's a per-project array of
   user-only entries `{sessionId, messageId, type:"user", message,
   timestamp}`. Useful as an index-of-user-intent, useless as a
@@ -121,9 +121,10 @@ must go direct to the JSON on disk.
   filesystem-friendly dir name; the CLI only surfaces sessions whose
   `projectHash` matches the current cwd's hash. So `--list-sessions`
   underreports reality.
-- **`.project_root` can carry a doubled path** (observed:
-  `/Users/andy/Projects/andineering/Users/andy/Projects/andineering`
-  in one slug). Treat as informational, don't parse-and-trust.
+- **`.project_root` can carry a doubled path** (observed: the absolute
+  cwd appearing twice in a row inside a single slug's `.project_root`
+  file — i.e., `/Users/<user>/Projects/<name>/Users/<user>/Projects/<name>`).
+  Treat as informational, don't parse-and-trust.
 - **`kind: "main"`** is the only value seen; subagent / alternate
   kinds may appear and should be filtered if present.
 - No encryption, no binary blobs, no rotation — files just grow

@@ -84,30 +84,30 @@ central-mcp
 
 **최초 설정 (한 번):**
 - *"~/Projects/my-app 을 허브에 추가해줘. 에이전트는 claude."*
-- *"~/Projects/gluecut-dawg 등록해줘 — 기본 에이전트면 돼."*
+- *"~/Projects/api-server 등록해줘 — 기본 에이전트면 돼."*
 - *"내 프로젝트 목록 보여줘."*
 
 **작업 보내기:**
 - *"my-app 에 설정에 다크 모드 토글 추가해달라고 해."*
-- *"gluecut-dawg 와 retro-hog 에 같은 프롬프트 보내줘: README 좀 다듬어줘."*
+- *"my-app 와 api-server 에 같은 프롬프트 보내줘: README 좀 다듬어줘."*
 - *"my-app 한 번만 claude 대신 codex 로 dispatch 해줘."*
 
 **진행상황 체크:**
 - *"지금 뭐 돌고 있어?"*
 - *"업데이트 있어?"* / *"status?"* / *"결과는?"*
 - *"my-app 에 아까 dispatch 한 거 어떻게 됐어?"*
-- *"gluecut-dawg 최근 dispatch 3개 보여줘."*
+- *"my-app 최근 dispatch 3개 보여줘."*
 - *"전체적으로 어떻게 진행되고 있어?"* (portfolio 요약 트리거)
 
 **복구 / 세션 전환:**
 - *"my-app dispatch 취소해 — 프롬프트 틀렸어."*
-- *"retro-hog 에 어떤 세션들 있어?"*
-- *"retro-hog 다음 dispatch 때 abc123 세션으로 전환."*
-- *"retro-hog 은 다시 default / latest 세션으로."*
+- *"api-server 에 어떤 세션들 있어?"*
+- *"api-server 다음 dispatch 때 abc123 세션으로 전환."*
+- *"api-server 은 다시 default / latest 세션으로."*
 
 **프로젝트 목록 관리:**
-- *"gluecut-dawg 와 rink-service 를 리스트 맨 위로 올려줘."*
-- *"오래된 programming-history 프로젝트 제거."*
+- *"my-app 와 api-server 를 리스트 맨 위로 올려줘."*
+- *"오래된 legacy-tool 프로젝트 제거."*
 
 **처음이라면 관찰 레이어 켜두는 걸 추천.** 다른 터미널에서 `central-mcp tmux` (또는 `zellij`, macOS 면 cmux.app 안에서 `cmcp` 실행) 한 번 돌려두면 오케스트레이터와 대화하는 동안 프로젝트별 dispatch 이벤트 스트림을 실시간으로 볼 수 있습니다. dispatch 가 실제로 얼마나 빠른지, 어떤 프롬프트가 쓸만한 출력을 내는지 감을 쌓는 데 도움이 됩니다. 오케스트레이터의 요약이 pane 에서 봤을 내용과 어긋나지 않기 시작하면 관찰 레이어를 내리고 오케스트레이터만으로 작업하면 됩니다 — 자세한 내용은 아래 [선택적 관찰 레이어](#선택적-관찰-레이어) 참조.
 

@@ -88,30 +88,30 @@ Everything below is spoken to the orchestrator in plain language. The orchestrat
 
 **Set up (once):**
 - *"Add ~/Projects/my-app to the hub. Use claude as its agent."*
-- *"Register ~/Projects/gluecut-dawg — default agent is fine."*
+- *"Register ~/Projects/api-server — default agent is fine."*
 - *"What projects do I have?"*
 
 **Send work:**
 - *"Ask my-app to add a dark mode toggle in settings."*
-- *"Send gluecut-dawg and retro-hog the same prompt: tighten up the README."*
+- *"Send my-app and api-server the same prompt: tighten up the README."*
 - *"Dispatch to my-app with codex instead of claude this time."*
 
 **Check progress:**
 - *"What's running right now?"*
 - *"Any updates?"* / *"status?"*
 - *"How did that last dispatch to my-app go?"*
-- *"Show the last 3 dispatches for gluecut-dawg."*
+- *"Show the last 3 dispatches for my-app."*
 - *"Overall status across all projects?"* (triggers a portfolio-wide summary)
 
 **Recover / switch threads:**
 - *"Cancel the my-app dispatch — the prompt was wrong."*
-- *"What conversation sessions do I have for retro-hog?"*
-- *"Switch retro-hog to session abc123 for the next dispatch."*
-- *"Back to the default / latest session for retro-hog."*
+- *"What conversation sessions do I have for api-server?"*
+- *"Switch api-server to session abc123 for the next dispatch."*
+- *"Back to the default / latest session for api-server."*
 
 **Shape the fleet:**
-- *"Put gluecut-dawg and rink-service at the top of the list."*
-- *"Remove the old programming-history project."*
+- *"Put my-app and api-server at the top of the list."*
+- *"Remove the old legacy-tool project."*
 
 **Observation tip for first-time users.** Starting out, it's worth running `central-mcp tmux` (or `zellij` — or `cmcp` inside cmux.app on macOS) in a second terminal so you can see the per-project dispatch streams live while you chat with the orchestrator. It builds intuition for how fast dispatches really are and what kinds of prompts produce useful output. Once the orchestrator's summaries match what you'd have checked in the panes anyway, drop observation and work from the orchestrator alone — see [Optional observation layer](#optional-observation-layer) below for the full story.
 
