@@ -109,7 +109,7 @@ To fit more panes per workspace, enlarge the cmux window — at `W=300, H=50` th
 2. `new-split right --surface A` → `[A(25) | C(25) | B(50)]`
 3. `new-split right --surface B` → `[A(25) | C(25) | B(25) | D(25)]` ✓ even
 
-**Project → surface mapping + seeding.** Fill `cmcp-watch-1` first, then `cmcp-watch-2`, etc., in project order. For each `<workspace_ref, surface_ref, project_name>`:
+**Project → surface mapping + seeding.** Before sending any commands, pause briefly — `sleep 0.5` (bump up to 1s if you still see bare prompts) — to let every freshly-split pane's shell finish spawning. Without the wait, fast keystrokes race the shell's stdin read and some watch commands silently go missing, leaving the pane at a bare prompt with no `central-mcp watch` running. Then fill `cmcp-watch-1` first, then `cmcp-watch-2`, etc., in project order. For each `<workspace_ref, surface_ref, project_name>`:
 
 - `cmux send --workspace <ws> --surface <surface_ref> "central-mcp watch <project_name>"`
 - `cmux send-key --workspace <ws> --surface <surface_ref> enter`

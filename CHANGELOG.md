@@ -3,6 +3,14 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.8.15] — 2026-04-21
+
+### Fixed
+- **cmux observation-mode race between `new-split` and `send`.** Some watch panes came out empty after the bootstrap — the split succeeded but `central-mcp watch <project>` never actually ran, leaving a bare prompt. Cause: the pane's shell hadn't finished spawning before the orchestrator's `cmux send` arrived, so the opening keystrokes got dropped. Recipe in `src/central_mcp/data/{CLAUDE,AGENTS}.md` now tells the orchestrator to insert a short delay (`sleep 0.5`, tunable up to 1s) between finishing the grid construction and sending watch commands. Cheap across 8+ projects since the sleep happens once after all splits, not per-pane.
+
+### Upgrade note
+- Same copy-on-miss caveat: `rm ~/.central-mcp/{CLAUDE,AGENTS}.md` before the next orchestrator launch to pick up the revised recipe.
+
 ## [0.8.14] — 2026-04-21
 
 ### Changed
