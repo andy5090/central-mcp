@@ -3,6 +3,18 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.8.19] — 2026-04-22
+
+### Added
+- **Same-project concurrent dispatch conflict mitigation.** When a `dispatch()` call arrives for a project that already has one or more running dispatches, the new dispatch receives a concise conflict-awareness preface prepended to its prompt listing each sibling's `dispatch_id`, elapsed time, and prompt preview. The agent can then avoid editing the same files. The `dispatch()` return value gains an optional `conflict_warning` field (`sibling_count`, `dispatch_ids`) so orchestrators can surface the situation without parsing the prompt.
+- `_running_siblings()` / `_build_conflict_preface()` helpers in `server.py` (internal).
+- 5 new tests in `tests/test_dispatch.py` covering: solo dispatch (no warning), sibling warning present, preface reaches the subprocess, preface stays out of `dispatch_history`, and cross-project isolation.
+
+### Changed
+- `dispatch_history` and the event log always store the clean, pre-conflict-preface prompt so history stays readable even when the agent received an augmented version.
+
+---
+
 ## [0.8.18] — 2026-04-22
 
 ### Added

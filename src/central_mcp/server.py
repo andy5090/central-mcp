@@ -80,6 +80,50 @@ def _apply_language(prompt: str, language: str | None) -> str:
     return f"Respond to the user in {language}.\n\n{prompt}"
 
 
+def _running_siblings(project_name: str) -> list[dict[str, Any]]:
+    """Return summary dicts for dispatches currently running for project_name.
+
+    Must be called WITHOUT holding _dispatch_lock (acquires it internally).
+    Called BEFORE the new dispatch entry is inserted so the new id is
+    never in the result set.
+    """
+    with _dispatch_lock:
+        return [
+            {
+                "dispatch_id": e["id"],
+                "elapsed_sec": round(time.time() - e["started"], 1),
+                "prompt_preview": (e.get("prompt") or "")[:80],
+            }
+            for e in _dispatches.values()
+            if e["status"] == "running" and e["project"] == project_name
+        ]
+
+
+def _build_conflict_preface(siblings: list[dict[str, Any]]) -> str:
+    """Compose a conflict-awareness block to prepend to a dispatch prompt.
+
+    The agent sees this before the actual task so it can coordinate file
+    ownership with its concurrently-running siblings. Kept intentionally
+    brief — long prefaces erode context budget.
+    """
+    n = len(siblings)
+    header = f"⚠️  CONCURRENT DISPATCH — {n} other dispatch(es) for this project are already running:"
+    lines = [header]
+    for s in siblings:
+        preview = s["prompt_preview"].strip().replace("\n", " ")
+        if len(preview) > 70:
+            preview = preview[:70] + "…"
+        lines.append(f'  • {s["dispatch_id"]} ({s["elapsed_sec"]}s): "{preview}"')
+    lines += [
+        "",
+        "Before editing files: check whether your task overlaps with the above.",
+        "Prefer files/modules not likely being touched by those dispatches.",
+        "If scopes overlap, proceed — but note which files you are modifying.",
+        "---",
+    ]
+    return "\n".join(lines)
+
+
 _MCP_INSTRUCTIONS = """\
 You are connected to central-mcp, a multi-project orchestration hub for
 coding agents. Each registered project has a coding-agent CLI
@@ -427,6 +471,20 @@ def dispatch(
             return {"ok": False, "error": str(e)}
     prompt = _apply_language(prompt, effective_language)
 
+    # Collect siblings BEFORE inserting our entry so the new dispatch
+    # never appears in its own sibling list. `stored_prompt` is the
+    # clean version (language-applied, no conflict preface) that goes
+    # into the event log / history so prompt_preview stays readable.
+    stored_prompt = prompt
+    siblings = _running_siblings(project.name)
+    conflict_warning: dict[str, Any] | None = None
+    if siblings:
+        prompt = _build_conflict_preface(siblings) + "\n\n" + stored_prompt
+        conflict_warning = {
+            "sibling_count": len(siblings),
+            "dispatch_ids": [s["dispatch_id"] for s in siblings],
+        }
+
     # Validate every agent in the chain produces valid argv with the
     # real prompt + resolved mode, so adapters that conditionally
     # return None based on those inputs fail synchronously rather than
@@ -473,7 +531,7 @@ def dispatch(
         "project": project.name,
         "agent": primary_agent,
         "chain": chain,
-        "prompt": prompt,
+        "prompt": stored_prompt,
         "command": " ".join(initial_argv),
         "status": "running",
         "started": time.time(),
@@ -705,18 +763,18 @@ def dispatch(
     events.log_event(
         project.name, dispatch_id, "start",
         agent=primary_agent, chain=chain,
-        prompt=prompt, command=" ".join(initial_argv), cwd=str(cwd),
+        prompt=stored_prompt, command=" ".join(initial_argv), cwd=str(cwd),
     )
     events.log_timeline(
         dispatch_id, project.name, "dispatched",
         agent=primary_agent, chain=chain,
-        prompt_preview=prompt[:120],
+        prompt_preview=stored_prompt[:120],
     )
 
     t = threading.Thread(target=_run_bg, daemon=True, name=f"dispatch-{dispatch_id}")
     t.start()
 
-    return {
+    result: dict[str, Any] = {
         "ok": True,
         "dispatch_id": dispatch_id,
         "project": project.name,
@@ -725,6 +783,9 @@ def dispatch(
         "command": " ".join(initial_argv),
         "note": "running in background — poll with check_dispatch(dispatch_id)",
     }
+    if conflict_warning:
+        result["conflict_warning"] = conflict_warning
+    return result
 
 
 @mcp.tool()

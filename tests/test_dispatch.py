@@ -781,3 +781,128 @@ def test_dispatch_rejects_invalid_one_shot_language(
     )
     assert r["ok"] is False
     assert "newlines or control characters" in r["error"]
+
+
+# ---------- same-project dispatch conflict mitigation ----------
+
+
+def test_no_conflict_warning_when_solo(
+    stub_project: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A single dispatch with no concurrent siblings must NOT include conflict_warning."""
+    _install_stub(monkeypatch, lambda p: [sys.executable, "-c", "print('done')"])
+    r = server.dispatch("stubproj", "solo task", permission_mode="bypass")
+    assert r["ok"] is True
+    assert "conflict_warning" not in r
+    server.cancel_dispatch(r["dispatch_id"])
+
+
+def test_conflict_warning_present_when_sibling_running(
+    stub_project: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Second dispatch to the same project while first is still running must include conflict_warning."""
+    _install_stub(
+        monkeypatch,
+        lambda p: [sys.executable, "-c", "import time; time.sleep(10)"],
+    )
+    first = server.dispatch("stubproj", "first task", permission_mode="bypass")
+    assert first["ok"] is True
+    time.sleep(0.1)  # let the first dispatch's thread register as running
+
+    _install_stub(
+        monkeypatch,
+        lambda p: [sys.executable, "-c", "print('done')"],
+    )
+    second = server.dispatch("stubproj", "second task", permission_mode="bypass")
+    assert second["ok"] is True
+    assert "conflict_warning" in second
+    cw = second["conflict_warning"]
+    assert cw["sibling_count"] == 1
+    assert first["dispatch_id"] in cw["dispatch_ids"]
+
+    server.cancel_dispatch(first["dispatch_id"])
+    server.cancel_dispatch(second["dispatch_id"])
+
+
+def test_conflict_preface_reaches_agent(
+    stub_project: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The conflict preface must appear in the prompt the agent subprocess receives."""
+    _install_stub(
+        monkeypatch,
+        lambda p: [sys.executable, "-c", "import time; time.sleep(10)"],
+    )
+    first = server.dispatch("stubproj", "long running task", permission_mode="bypass")
+    time.sleep(0.1)
+
+    received: list[str] = []
+    _install_stub(
+        monkeypatch,
+        lambda p: (received.append(p), [sys.executable, "-c", f"print({p!r})"])[1],
+    )
+    second = server.dispatch("stubproj", "second task", permission_mode="bypass")
+    assert second["ok"] is True
+
+    _wait_for_complete(second["dispatch_id"])
+    assert received, "stub was not called"
+    assert "CONCURRENT DISPATCH" in received[0]
+    assert first["dispatch_id"] in received[0]
+
+    server.cancel_dispatch(first["dispatch_id"])
+
+
+def test_conflict_preface_not_in_dispatch_history(
+    stub_project: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """dispatch_history prompt field must use the clean stored_prompt, not the
+    conflict-injected version, so history stays readable."""
+    _install_stub(
+        monkeypatch,
+        lambda p: [sys.executable, "-c", "import time; time.sleep(10)"],
+    )
+    first = server.dispatch("stubproj", "long running task", permission_mode="bypass")
+    time.sleep(0.1)
+
+    _install_stub(
+        monkeypatch,
+        lambda p: [sys.executable, "-c", "print('ok')"],
+    )
+    second = server.dispatch("stubproj", "clean prompt", permission_mode="bypass")
+    _wait_for_complete(second["dispatch_id"])
+
+    hist = server.dispatch_history("stubproj")
+    prompts = [r["prompt"] for r in hist["records"]]
+    assert any("clean prompt" in p for p in prompts), "stored prompt missing from history"
+    assert all("CONCURRENT DISPATCH" not in p for p in prompts), (
+        "conflict preface leaked into dispatch history"
+    )
+
+    server.cancel_dispatch(first["dispatch_id"])
+
+
+def test_no_conflict_warning_for_different_project(
+    fake_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Concurrent dispatches to DIFFERENT projects must not warn each other."""
+    for proj in ("proj-a", "proj-b"):
+        d = tmp_path / proj
+        d.mkdir()
+        registry.add_project(proj, str(d), agent="stub")
+
+    _install_stub(
+        monkeypatch,
+        lambda p: [sys.executable, "-c", "import time; time.sleep(10)"],
+    )
+    first = server.dispatch("proj-a", "task for a", permission_mode="bypass")
+    time.sleep(0.1)
+
+    _install_stub(
+        monkeypatch,
+        lambda p: [sys.executable, "-c", "print('ok')"],
+    )
+    second = server.dispatch("proj-b", "task for b", permission_mode="bypass")
+    assert second["ok"] is True
+    assert "conflict_warning" not in second
+
+    server.cancel_dispatch(first["dispatch_id"])
+    server.cancel_dispatch(second["dispatch_id"])
