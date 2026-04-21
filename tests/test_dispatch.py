@@ -638,3 +638,70 @@ def test_dispatch_event_log_records_error_on_failure(
     last = terminal[-1]
     assert last["ok"] is False
     assert last.get("exit_code") == 2
+
+
+def test_apply_language_helper() -> None:
+    assert server._apply_language("do the thing", None) == "do the thing"
+    assert server._apply_language("do the thing", "") == "do the thing"
+    assert server._apply_language("do the thing", "Korean") == (
+        "Respond to the user in Korean.\n\ndo the thing"
+    )
+
+
+def test_dispatch_injects_project_language_into_prompt(
+    stub_project: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    registry.update_project("stubproj", language="Korean")
+    _install_stub(
+        monkeypatch,
+        lambda p: [sys.executable, "-c", f"print({p!r})"],
+    )
+    r = server.dispatch("stubproj", "do the thing", permission_mode="bypass")
+    res = _wait_for_complete(r["dispatch_id"])
+    out = res.get("output", "")
+    assert "Respond to the user in Korean." in out
+    assert "do the thing" in out
+
+
+def test_dispatch_language_empty_string_suppresses_project_pin(
+    stub_project: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    registry.update_project("stubproj", language="Korean")
+    _install_stub(
+        monkeypatch,
+        lambda p: [sys.executable, "-c", f"print({p!r})"],
+    )
+    r = server.dispatch(
+        "stubproj", "do the thing", permission_mode="bypass", language="",
+    )
+    res = _wait_for_complete(r["dispatch_id"])
+    assert "Respond to the user in" not in res.get("output", "")
+    assert registry.find_project("stubproj").language == "Korean"
+
+
+def test_dispatch_language_one_shot_override(
+    stub_project: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    registry.update_project("stubproj", language="Korean")
+    _install_stub(
+        monkeypatch,
+        lambda p: [sys.executable, "-c", f"print({p!r})"],
+    )
+    r = server.dispatch(
+        "stubproj", "do the thing", permission_mode="bypass", language="Japanese",
+    )
+    res = _wait_for_complete(r["dispatch_id"])
+    assert "Respond to the user in Japanese." in res.get("output", "")
+    assert registry.find_project("stubproj").language == "Korean"  # pin unchanged
+
+
+def test_dispatch_no_directive_when_project_has_no_language(
+    stub_project: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _install_stub(
+        monkeypatch,
+        lambda p: [sys.executable, "-c", f"print({p!r})"],
+    )
+    r = server.dispatch("stubproj", "plain prompt", permission_mode="bypass")
+    res = _wait_for_complete(r["dispatch_id"])
+    assert "Respond to the user in" not in res.get("output", "")

@@ -66,6 +66,19 @@ def _output_preview(output: str, limit: int = _OUTPUT_PREVIEW_LIMIT) -> str:
     return "…" + stripped[-limit:]
 
 
+def _apply_language(prompt: str, language: str | None) -> str:
+    """Prepend a language-preference directive to the prompt when set.
+
+    `language` is the resolved effective value (one-shot override if
+    given, else project's saved preference, else None). Empty / None
+    means "leave the prompt untouched" — agents then reply in whatever
+    language they default to (English for the providers we target).
+    """
+    if not language:
+        return prompt
+    return f"Respond to the user in {language}.\n\n{prompt}"
+
+
 _MCP_INSTRUCTIONS = """\
 You are connected to central-mcp, a multi-project orchestration hub for
 coding agents. Each registered project has a coding-agent CLI
@@ -298,6 +311,7 @@ def dispatch(
     agent: str | None = None,
     fallback: list[str] | None = None,
     session_id: str | None = None,
+    language: str | None = None,
 ) -> dict[str, Any]:
     """Dispatch a prompt to the project's agent. NON-BLOCKING.
 
@@ -331,6 +345,15 @@ def dispatch(
         (persistent pin), otherwise fall back to the agent's "resume
         latest" flag. Droid has no headless "resume latest", so absence
         of a session_id means a fresh session on every droid dispatch.
+
+    **language** (optional): one-shot override for the response language.
+      - A non-empty string (e.g. "Korean", "한국어", "ko") → prepend a
+        "Respond to the user in <language>." directive to the prompt.
+      - "" (empty string) → suppress the project's saved language for
+        this call (fall back to agent default, usually English) without
+        mutating the registry.
+      - None (default) → use the project's saved `language`, set via
+        `update_project(language=...)`. If unset, no directive is added.
     """
     project, err = _require_project(name)
     if err:
@@ -383,6 +406,22 @@ def dispatch(
     # back to the project's pinned session. None means "let the agent's
     # resume-latest mechanism handle it" (droid: fresh session).
     effective_session = session_id if session_id else project.session_id
+
+    # Resolve language preference:
+    # - `language` arg `None` → use the project's saved language (or nothing)
+    # - `language=""`         → explicit opt-out for this dispatch only
+    # - `language="Korean"`   → one-shot override
+    # Registry is never mutated; use `update_project(language=...)` for
+    # persistent changes. `_apply_language` is a no-op when the effective
+    # value is falsy, so default behavior (no pin, no override) leaves
+    # the prompt unchanged and the agent answers in its own default.
+    if language is None:
+        effective_language: str | None = project.language
+    elif language == "":
+        effective_language = None
+    else:
+        effective_language = language.strip() or None
+    prompt = _apply_language(prompt, effective_language)
 
     # Validate every agent in the chain produces valid argv with the
     # real prompt + resolved mode, so adapters that conditionally
@@ -764,6 +803,7 @@ def add_project(
     agent: str = "claude",
     description: str = "",
     tags: list[str] | None = None,
+    language: str | None = None,
 ) -> dict[str, Any]:
     """Append a project to registry.yaml.
 
@@ -771,6 +811,11 @@ def add_project(
     `dispatch` call. If the agent is `codex`, also adds a trusted-
     directory entry to `~/.codex/config.toml` so `codex exec` doesn't
     refuse to run in that path.
+
+    **language** (optional): preferred response language for dispatches
+    (e.g. "Korean", "한국어", "ko"). When set, every future dispatch
+    prepends "Respond to the user in <language>." to the prompt. Omit
+    or leave empty for the agent's own default (English).
     """
     # Validate agent name at registration time so users don't hit
     # "no exec mode" errors only when they first try to dispatch.
@@ -796,6 +841,7 @@ def add_project(
             agent=agent,
             description=description,
             tags=tags,
+            language=language,
         )
     except ValueError as e:
         return {"ok": False, "error": str(e)}
@@ -864,13 +910,23 @@ def update_project(
     permission_mode: str | None = None,
     fallback: list[str] | None = None,
     session_id: str | None = None,
+    language: str | None = None,
 ) -> dict[str, Any]:
     """Update an existing project's fields. Omitted args stay unchanged.
 
     Use this to permanently change a project's primary agent, edit its
     description/tags, flip its permission_mode preference, set a
     fallback chain of agents to try when the primary fails (e.g. token
-    limits hit), or pin a specific `session_id` for dispatches.
+    limits hit), pin a specific `session_id`, or set a preferred
+    response `language` for dispatches.
+
+    `language` behavior:
+      - A non-empty string (e.g. "Korean", "한국어", "ko") → every future
+        dispatch prepends "Respond to the user in <language>." to the
+        prompt. One-shot `dispatch(language="...")` still overrides.
+      - `""` (empty string) → clear the saved language; dispatches fall
+        back to the agent's own default (English).
+      - `None` (omitted) → leave the saved language untouched.
 
     `session_id` behavior:
       - A non-empty string → all future dispatches without an explicit
@@ -925,15 +981,19 @@ def update_project(
             ),
         }
 
-    updated = _registry_update(
-        name,
-        agent=agent,
-        description=description,
-        tags=tags,
-        permission_mode=permission_mode,
-        fallback=fallback,
-        session_id=session_id,
-    )
+    try:
+        updated = _registry_update(
+            name,
+            agent=agent,
+            description=description,
+            tags=tags,
+            permission_mode=permission_mode,
+            fallback=fallback,
+            session_id=session_id,
+            language=language,
+        )
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
     if updated is None:
         return {"ok": False, "error": f"project {name!r} not found in registry"}
 

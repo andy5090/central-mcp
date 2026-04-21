@@ -21,6 +21,22 @@ _yaml.preserve_quotes = True
 _yaml.indent(mapping=2, sequence=4, offset=2)
 
 
+def _sanitize_language(value: str | None) -> str | None:
+    """Normalize a language preference. Strips whitespace, rejects control chars,
+    collapses empty values to None so callers can treat "no preference" uniformly.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"language must be a string, got {type(value).__name__}")
+    stripped = value.strip()
+    if not stripped:
+        return None
+    if any(c in stripped for c in "\n\r\t\x00"):
+        raise ValueError("language must not contain newlines or control characters")
+    return stripped
+
+
 @dataclass
 class Project:
     name: str
@@ -31,6 +47,7 @@ class Project:
     permission_mode: str | None = None  # None = not yet decided; defaults to "bypass" at dispatch time
     fallback: list[str] | None = None   # agents to try if primary fails
     session_id: str | None = None       # optional pin; empty/None = use agent's resume-latest
+    language: str | None = None         # preferred response language; None = agent default (English)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -42,6 +59,7 @@ class Project:
             "permission_mode": self.permission_mode,
             "fallback": self.fallback or [],
             "session_id": self.session_id,
+            "language": self.language,
         }
 
 
@@ -69,6 +87,11 @@ def _project_from_raw(p: dict[str, Any]) -> Project:
     raw_fallback = p.get("fallback")
     raw_session = p.get("session_id")
     session_id = raw_session if isinstance(raw_session, str) and raw_session else None
+    raw_language = p.get("language")
+    try:
+        language = _sanitize_language(raw_language if isinstance(raw_language, str) else None)
+    except ValueError:
+        language = None
     return Project(
         name=p["name"],
         path=p["path"],
@@ -78,6 +101,7 @@ def _project_from_raw(p: dict[str, Any]) -> Project:
         permission_mode=raw_mode,
         fallback=list(raw_fallback) if raw_fallback else None,
         session_id=session_id,
+        language=language,
     )
 
 
@@ -99,6 +123,7 @@ def add_project(
     agent: str = "claude",
     description: str = "",
     tags: list[str] | None = None,
+    language: str | None = None,
     registry_path: Path | None = None,
 ) -> Project:
     """Append a project to registry.yaml. Raises ValueError on duplicate."""
@@ -108,6 +133,8 @@ def add_project(
     if any((p.get("name") == name) for p in projects):
         raise ValueError(f"project {name!r} already exists")
 
+    lang = _sanitize_language(language)
+
     entry: dict[str, Any] = {
         "name": name,
         "path": path_,
@@ -115,6 +142,8 @@ def add_project(
         "description": description,
         "tags": list(tags or []),
     }
+    if lang is not None:
+        entry["language"] = lang
     projects.append(entry)
     data["projects"] = projects
     _write_raw(data, registry_path)
@@ -130,13 +159,15 @@ def update_project(
     permission_mode: str | None = None,
     fallback: list[str] | None = None,
     session_id: str | None = None,
+    language: str | None = None,
     registry_path: Path | None = None,
 ) -> Project | None:
     """Update fields of an existing project. Omitted args stay unchanged.
 
     `session_id=""` (empty string) clears the pin, returning the project
-    to the agent's default resume-latest behavior. Any non-empty string
-    is stored verbatim.
+    to the agent's default resume-latest behavior. `language=""` clears
+    the preferred-language pin, reverting dispatches to the agent's
+    default (English). Any non-empty string is stored verbatim.
 
     Returns the updated Project, or None if no project with `name` exists.
     """
@@ -166,6 +197,12 @@ def update_project(
                     p.pop("session_id", None)
                 else:
                     p["session_id"] = session_id
+            if language is not None:
+                lang = _sanitize_language(language)
+                if lang is None:
+                    p.pop("language", None)
+                else:
+                    p["language"] = lang
             _write_raw(data, registry_path)
             return _project_from_raw(p)
     return None

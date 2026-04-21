@@ -55,6 +55,15 @@ Signals + appropriate moves:
 - **"back to default / latest" / pin 해제** → `update_project(name, session_id="")` (empty string clears the pin).
 - **droid pinning** → For droid projects, because there's no headless resume-latest, the orchestrator should suggest pinning a `session_id` after the first dispatch if the user expects continuity across dispatches. Otherwise each droid dispatch is a new thread (which is sometimes exactly what the user wants, so don't force it).
 
+## Language preference
+
+Default is English. When a user asks for replies in a different language on a specific project ("앞으로 한국어로 답해줘", "répondez en français pour ce projet", etc.), persist it per project so every future dispatch carries the directive automatically:
+
+- Persistent pin → `update_project(name, language="Korean")` (accepts "한국어", "ko", "Français", "fr", whatever the user phrased it as — the value is pasted into a "Respond to the user in <value>." preface on every dispatch, so keep it human-readable).
+- Clear → `update_project(name, language="")` — dispatches revert to agent default (English).
+- One-shot override → `dispatch(name, prompt, language="Japanese")` applies to that single call only and does not mutate the registry; `language=""` suppresses the saved pin for that call.
+- Fleet-wide preference → loop `update_project(name, language=...)` across each project in `list_projects`. There's no global language switch by design — each project may belong to a different user context.
+
 ## Reordering projects
 
 When the user asks to reorder projects (put one at the front, group related ones, etc), call `reorder_projects(order=[...])`. Lenient by default — only the names you pass have to move; anything unmentioned keeps its relative order. The update persists to `registry.yaml` immediately.
@@ -177,14 +186,16 @@ Total 7 splits = 2 × 4 − 1. ✓
 
 **Project → surface mapping + seeding.** `new-split` returns OK as soon as cmux queues the pane, but the spawned shell may not yet be at a prompt. If you send before the first prompt renders, the text lands on the pre-prompt screen (e.g. visibly concatenated with `Last login:`) and never reaches the shell's command line. Fixed sleeps are unreliable because zsh + oh-my-zsh rc timing varies pane-to-pane.
 
-Reliable fix: **poll `cmux tree --json` for per-surface readiness** before sending. The `tty` field is populated once the pty is wired up to a shell process; `title` becomes non-empty once the shell renders its first prompt. Either signal works as a "safe to send" indicator.
+Reliable fix: **poll `cmux tree --json` for per-surface readiness** before sending. In practice the safe gate is not merely "shell process exists", but "the shell prompt has rendered and the pane title has stabilized". `tty` is helpful when populated, but the stronger signal is a non-empty `title` that stays the same across consecutive polls. That avoids sending during transient startup states where the shell exists but is still printing login / rc output.
 
 **Polling + seed recipe per pane** — for each `<workspace_ref, surface_ref, project_name>` in project order:
 
 ```bash
-# Wait for the surface's shell to be alive (up to ~9s).
+# Wait for the surface's shell prompt to stabilize (up to ~12s).
+last_title=""
+stable=0
 for _ in $(seq 1 30); do
-  ready=$(cmux --json tree --workspace <ws> | python3 -c "
+  state=$(cmux --json tree --workspace <ws> | python3 -c "
 import json, sys
 d = json.load(sys.stdin)
 for w in d.get('windows', []):
@@ -192,10 +203,22 @@ for w in d.get('windows', []):
     for p in ws.get('panes', []):
       for s in p.get('surfaces', []):
         if s.get('ref') == '<surface_ref>':
-          print('y' if (s.get('tty') or (s.get('title') or '').strip()) else '')
+          title = (s.get('title') or '').strip()
+          tty = '1' if s.get('tty') else '0'
+          print(f'{tty}\t{title}')
           sys.exit(0)
 ")
-  [ -n "$ready" ] && break
+  title=${state#*$'\t'}
+  tty=${state%%$'\t'*}
+  if [ -n "$title" ] && [ "$title" = "$last_title" ]; then
+    stable=$((stable + 1))
+  else
+    stable=0
+    last_title="$title"
+  fi
+  if [ -n "$title" ] && [ "$stable" -ge 1 ]; then
+    break
+  fi
   sleep 0.3
 done
 
