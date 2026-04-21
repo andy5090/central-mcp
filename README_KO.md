@@ -384,7 +384,7 @@ zellij watch pane이 dispatch 이벤트를 스트리밍하지 않고 `<ENTER> to
 [cmux.app](https://github.com/manaflow-ai/cmux) 은 macOS 네이티브 GUI 터미널 (AppKit + Ghostty) 로, `~/.cmux/cmux.sock` 을 통해 CLI 를 노출합니다. `central-mcp cmux` 는 `central` 이라는 워크스페이스를 열어 오케스트레이터 에이전트를 시드 프롬프트와 함께 기동시키고, 에이전트가 직접 프로젝트별 관찰 pane 을 구성합니다 — cmux 는 자식 pane 에 `CMUX_WORKSPACE_ID` 환경변수를 주입하도록 설계돼 있어, claude / codex / gemini 오케스트레이터가 자신의 Bash 도구로 cmux CLI 를 호출해 레이아웃을 짤 수 있습니다.
 
 **요구사항**
-- macOS (Linux / Windows 에서는 백엔드 자체가 비활성).
+- macOS.
 - cmux.app 설치 + 실행 중 (CLI 는 실행 중인 앱과 통신; 앱이 안 떠 있으면 ping-failed 에러).
 - cmux CLI 가 `PATH` 에 — 보통 `/Applications/cmux.app/Contents/Resources/bin/cmux`.
 

@@ -392,7 +392,7 @@ Trade-off: if two terminals are simultaneously attached to the same session and 
 [cmux.app](https://github.com/manaflow-ai/cmux) is a macOS-native GUI terminal (AppKit + Ghostty) that exposes a CLI over `~/.cmux/cmux.sock`. `central-mcp cmux` opens a workspace titled `central`, boots the orchestrator agent inside it with a seed prompt, and the agent itself builds out the per-project observation panes — cmux is designed to let agents manage their own panes (they inherit `CMUX_WORKSPACE_ID` from the pane env), so we delegate layout assembly to whichever of claude / codex / gemini is your orchestrator.
 
 **Requirements**
-- macOS (the backend is skipped on Linux / Windows).
+- macOS.
 - cmux.app installed and running (the CLI talks to the running app; if the app isn't up, you'll get a ping-failed error).
 - The cmux CLI on `PATH` — typically at `/Applications/cmux.app/Contents/Resources/bin/cmux`.
 
