@@ -3,6 +3,14 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.8.14] — 2026-04-21
+
+### Changed
+- **cmux observation-mode trigger phrasing made more user-friendly** in the shipped orchestrator guidelines (`src/central_mcp/data/{CLAUDE,AGENTS}.md`). The primary example the orchestrator keys off of used to be "관찰 pane 구성해줘" / "set up watch panes" — implementation-centric wording. The new primary examples are "관찰 모드 켜줘" / "turn on observation mode" (feature-centric, matches how users naturally think about it); older phrasings still work since the LLM generalizes from the listed examples. READMEs updated to match.
+
+### Upgrade note
+- Same copy-on-miss caveat as prior 0.8.x runtime-file releases: `rm ~/.central-mcp/{CLAUDE,AGENTS}.md` before the next orchestrator launch to pick up the new phrasings. Old phrasings keep working regardless.
+
 ## [0.8.13] — 2026-04-21
 
 ### Changed

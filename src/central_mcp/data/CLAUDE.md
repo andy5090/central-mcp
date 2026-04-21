@@ -69,7 +69,7 @@ If the user mentions a path not in the registry ("add ~/Projects/foo"), call `ad
 
 If env var `CMUX_WORKSPACE_ID` is set, you were launched inside a cmux.app pane. cmux is designed so agents manage their own panes directly — so for this narrow purpose (setting up observation panes), the "no Bash" rule above is relaxed.
 
-When the user asks you to build observation panes (e.g., "cmux 관찰 pane 구성해줘" / "set up watch panes"):
+When the user asks you to turn on observation mode (e.g., "관찰 모드 켜줘" / "turn on observation mode" / "set up watch panes"):
 
 1. Call `list_projects` to get the target set.
 2. **Read the pane size from env vars**: `W=${CMCP_OBS_W:-200}`, `H=${CMCP_OBS_H:-50}`. `cmcp` captured these from the real TTY at launch time (Python's `shutil.get_terminal_size()`), so they reflect the actual cmux pane dimensions — unlike `tput cols` / `stty size` from your Bash tool, which lose to the subprocess-without-PTY fallback (terminfo default 80×24). The defaults (200×50) only fire if `cmcp` was launched outside a TTY.
