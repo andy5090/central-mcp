@@ -342,12 +342,13 @@ central-mcp upgrade [--check]      # self-update from PyPI (uv → pip fallback)
 
 ### Backends
 
-Two multiplexer backends are supported:
+Three backends are supported (the third is macOS-only):
 
 - **tmux** — `central-mcp tmux` (creates the session if missing, then attaches)
 - **zellij** — `central-mcp zellij` (generates a KDL layout, launches a zellij session named `central` or attaches to an existing one)
+- **cmux** — `central-mcp cmux` (macOS only; opens a workspace in the [cmux.app](https://github.com/manaflow-ai/cmux) GUI terminal. Layout is built by the orchestrator agent from a seed prompt — see [Running with cmux](#running-with-cmux) below.)
 
-Both produce the same logical layout (hub tab + overflow tabs, project panes running `central-mcp watch <project>`). Pick the one you already have installed; you can use both from different terminals as long as they don't share a session name at the same time.
+tmux / zellij produce the same logical layout (hub tab + overflow tabs, project panes running `central-mcp watch <project>`). Pick the one you already have installed; you can use both from different terminals as long as they don't share a session name at the same time. cmux takes a different shape — agent-driven — so it's documented separately.
 
 `central-mcp up` creates a tmux session `central` with:
 
@@ -385,6 +386,28 @@ When you `central-mcp upgrade` (or `pip install -U central-mcp`) with a `cmcp up
 **0.6.8+**: there's nothing to worry about. Every `cmcp tmux` / `cmcp zellij` invocation unconditionally tears down the prior observation session (if any) and rebuilds at the current terminal's size before attaching. You always end up with fresh panes carrying the newly-installed binary, laid out for the terminal you're actually in. `central-mcp upgrade` additionally tears down the observation session before replacing the binary, so even the upgrade-while-attached case is handled.
 
 Trade-off: if two terminals are simultaneously attached to the same session and one runs `cmcp tmux`, the other disconnects. In exchange, you never have to think about "stale session vs new binary" ever again.
+
+### Running with cmux
+
+[cmux.app](https://github.com/manaflow-ai/cmux) is a macOS-native GUI terminal (AppKit + Ghostty) that exposes a CLI over `~/.cmux/cmux.sock`. `central-mcp cmux` opens a workspace titled `central`, boots the orchestrator agent inside it with a seed prompt, and the agent itself builds out the per-project observation panes — cmux is designed to let agents manage their own panes (they inherit `CMUX_WORKSPACE_ID` from the pane env), so we delegate layout assembly to whichever of claude / codex / gemini is your orchestrator.
+
+**Requirements**
+- macOS (the backend is skipped on Linux / Windows).
+- cmux.app installed and running (the CLI talks to the running app; if the app isn't up, you'll get a ping-failed error).
+- The cmux CLI on `PATH` — typically at `/Applications/cmux.app/Contents/Resources/bin/cmux`.
+
+```bash
+central-mcp cmux                          # bypass mode (default) — recommended
+central-mcp cmux --permission-mode auto   # claude-only, classifier-reviewed bootstrap
+central-mcp cmux --no-orchestrator        # blank workspace; you set up panes yourself
+central-mcp down                          # close the workspace
+```
+
+**Caveats (please read before using)**
+- **Orchestrator compatibility.** Only claude / codex / gemini are supported — those three CLIs accept an interactive session with a seed prompt, which is how we hand the bootstrap off to the agent. `opencode` and `droid` projects can't use this backend; use `central-mcp tmux` / `central-mcp zellij` for those.
+- **`--permission-mode restricted` stalls the bootstrap.** The seed tells the agent to call `cmux new-split` / `cmux send-text` on your behalf, and under `restricted` each of those shells through as a separate approval prompt — the bootstrap halts on the first one. The default (`bypass`) and `auto` (claude only) don't have this issue; `cmd_cmux` prints a warning when you pick `restricted`.
+- **No `--max-panes`.** cmux resizes panes responsively in the GUI, so there's no char-cell readability floor to tune for. The agent decides how many panes to split, one per registered project.
+- **Layout is agent-driven, not declarative.** central-mcp makes exactly one CLI call per session (`cmux new-workspace`); everything else happens in the agent's Bash tool calls. If the agent fails mid-bootstrap, the resulting layout may be partial — just rerun `central-mcp cmux` to tear down and retry.
 
 ## Registry resolution
 

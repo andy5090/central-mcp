@@ -6,9 +6,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## Unreleased
 
 ### Added
-- **`central-mcp cmux` — macOS-only observation backend.** New declarative backend that opens the `central` workspace in cmux (manaflow-ai/cmux), an AppKit / Ghostty-based GUI terminal. Uses only `cmux new-workspace --layout <json>`; imperative RPC (`send-text`, `new-pane`, live layout mutation) is explicitly out of scope. Project panes reuse the zellij read-only wrap (`stty -echo -icanon; central-mcp watch <project> </dev/null; sleep infinity`) so stdin is inert and panes don't drop to a shell. Tiling reduces to ≤2 panes → single split, 3 panes → T-shape, ≥4 → 2-row grid — no terminal-size heuristics since cmux handles responsive sizing in the GUI.
+- **`central-mcp cmux` — macOS-only observation backend (agent-driven bootstrap).** Opens a workspace titled `central` in cmux (manaflow-ai/cmux), an AppKit / Ghostty-based GUI terminal, hosting a single orchestrator pane. On first user turn, the orchestrator receives a seed prompt that enumerates the registered projects and tells it to call `cmux new-split` / `cmux send-text` to create one `central-mcp watch <project>` pane per project — no user trigger required, because cmux injects `CMUX_WORKSPACE_ID` into the agent's env so the CLI calls target the right workspace automatically.
+- **`Adapter.interactive_argv(seed_prompt, permission_mode)` on the adapter base.** Builds argv for an interactive session whose first user turn is the seed prompt. Implemented on claude (positional arg), codex (positional arg), gemini (`-i`). opencode / droid return `None`; `cmd_cmux` refuses those agents with a clear error pointing users at tmux / zellij.
 - **Backend detection gates cmux to darwin.** `_detect_multiplexers()` includes cmux only when `platform.system() == "Darwin"`, so Linux / Windows users never see it offered by `central-mcp up`. `cmd_cmux` additionally checks the CLI is on PATH and that the socket at `~/.cmux/cmux.sock` answers a ping before attempting to open a workspace.
 - **`cmcp down` closes cmux workspaces too.** The teardown routine resolves the workspace by title → `ref` → `id` via `list-workspaces` and calls `close-workspace --workspace <handle>`. Missing binary / non-darwin hosts skip silently.
+
+### Notes
+- **cmux 0.63.2 has no declarative `--layout` flag on `new-workspace`**, only `--name/--description/--cwd/--command`. An earlier draft of this backend assembled a `{pane, split, children}` JSON tree from the cmux source (which already wires `--layout` up) — that code was dead against every shipped release. The agent-driven bootstrap replaces it: central-mcp owns one `new-workspace` call, the orchestrator owns the layout.
+- **`--permission-mode restricted` halts the bootstrap** on the first `cmux new-split` approval prompt, leaving the layout incomplete. Use `bypass` (default) or `auto` for unattended setup; a runtime warning is printed when `restricted` is selected.
 
 ## [0.7.0] — 2026-04-21
 

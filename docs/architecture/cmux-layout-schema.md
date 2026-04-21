@@ -1,9 +1,20 @@
 # cmux layout schema
 
+> **Status (2026-04-21): reference only.** The shipped cmux CLI (0.63.2,
+> build 79) rejects `cmux new-workspace --layout`:
+> `Error: new-workspace: unknown flag '--layout'`. The flag is wired up
+> in the cmux source tree (`CLI/cmux.swift:2175`) but has not landed in
+> a release binary. Until it does, central-mcp uses an agent-driven
+> bootstrap instead (see `Phase 2b` in `docs/ROADMAP.md`) — the
+> `build_layout_json` builder that used to produce JSON for this schema
+> has been removed. This doc is retained so that when a release does
+> ship `--layout`, the wire format is already documented and the
+> declarative path can be rewired cleanly.
+
 Authoritative source: `manaflow-ai/cmux/Sources/CmuxConfig.swift` in
-the cmux repo. When changing `central_mcp/cmux.py::build_layout_json`,
-cross-check the Swift decoder first — the GUI validates the JSON
-server-side and will reject anything that doesn't match.
+the cmux repo. When (re-)wiring the declarative path, cross-check the
+Swift decoder first — the GUI validates the JSON server-side and will
+reject anything that doesn't match.
 
 ## Wire path (from `cmcp cmux` → cmux.app)
 

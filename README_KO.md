@@ -334,12 +334,13 @@ central-mcp upgrade [--check]      # PyPI에서 최신 버전 확인 후 자동 
 
 ### 백엔드
 
-두 가지 터미널 멀티플렉서 백엔드를 지원합니다:
+세 가지 백엔드를 지원합니다 (세 번째는 macOS 전용):
 
 - **tmux** — `central-mcp tmux` (세션 없으면 생성 후 attach)
 - **zellij** — `central-mcp zellij` (KDL 레이아웃 생성 후 `central` 세션 실행 / attach)
+- **cmux** — `central-mcp cmux` (macOS 전용; [cmux.app](https://github.com/manaflow-ai/cmux) GUI 터미널에 워크스페이스를 엶. 레이아웃은 오케스트레이터 에이전트가 시드 프롬프트로 직접 구성 — 아래 [cmux 관찰모드](#cmux-관찰모드) 참조.)
 
-두 백엔드 모두 동일한 레이아웃(허브 탭 + 오버플로우 탭, 각 프로젝트 pane이 `central-mcp watch <project>` 실행)을 만들어냅니다. 설치되어 있는 쪽을 고르면 됩니다.
+tmux / zellij 는 동일한 레이아웃(허브 탭 + 오버플로우 탭, 각 프로젝트 pane 이 `central-mcp watch <project>` 실행)을 만듭니다. 설치되어 있는 쪽을 고르면 됩니다. cmux 는 agent-driven 방식이라 별도 섹션에서 설명합니다.
 
 `central-mcp up`은 tmux 세션 `central`을 만듭니다:
 
@@ -377,6 +378,28 @@ zellij watch pane이 dispatch 이벤트를 스트리밍하지 않고 `<ENTER> to
 **0.6.8+**: 신경 쓸 필요 없습니다. `cmcp tmux` / `cmcp zellij` 를 호출할 때마다 기존 관찰 세션이 있으면 자동으로 내리고 현재 터미널 크기 기준으로 새로 생성한 뒤 attach 합니다. 결과적으로 항상 최신 바이너리로 돌아가는 fresh pane 들이 현재 터미널 비율에 맞춰 배치됩니다. `central-mcp upgrade` 도 바이너리 교체 전에 관찰 세션을 자동으로 내려주므로 "업그레이드 중 세션 attach" 케이스도 커버됩니다.
 
 트레이드오프: 두 터미널이 같은 세션에 동시에 attach 되어 있을 때 한 쪽에서 `cmcp tmux` 를 실행하면 나머지 한 쪽은 disconnect 됩니다. 대신 "세션에 남아있는 옛 바이너리" 를 신경 쓸 일이 영구적으로 사라집니다.
+
+### cmux 관찰모드
+
+[cmux.app](https://github.com/manaflow-ai/cmux) 은 macOS 네이티브 GUI 터미널 (AppKit + Ghostty) 로, `~/.cmux/cmux.sock` 을 통해 CLI 를 노출합니다. `central-mcp cmux` 는 `central` 이라는 워크스페이스를 열어 오케스트레이터 에이전트를 시드 프롬프트와 함께 기동시키고, 에이전트가 직접 프로젝트별 관찰 pane 을 구성합니다 — cmux 는 자식 pane 에 `CMUX_WORKSPACE_ID` 환경변수를 주입하도록 설계돼 있어, claude / codex / gemini 오케스트레이터가 자신의 Bash 도구로 cmux CLI 를 호출해 레이아웃을 짤 수 있습니다.
+
+**요구사항**
+- macOS (Linux / Windows 에서는 백엔드 자체가 비활성).
+- cmux.app 설치 + 실행 중 (CLI 는 실행 중인 앱과 통신; 앱이 안 떠 있으면 ping-failed 에러).
+- cmux CLI 가 `PATH` 에 — 보통 `/Applications/cmux.app/Contents/Resources/bin/cmux`.
+
+```bash
+central-mcp cmux                          # bypass 모드 (기본값) — 권장
+central-mcp cmux --permission-mode auto   # claude 전용, 분류기 검토 부트스트랩
+central-mcp cmux --no-orchestrator        # 빈 워크스페이스; pane 은 직접 구성
+central-mcp down                          # 워크스페이스 종료
+```
+
+**주의사항 (사용 전 반드시 읽어주세요)**
+- **오케스트레이터 호환성.** claude / codex / gemini 만 지원합니다 — 이 세 CLI 만 interactive 세션에 시드 프롬프트를 주입할 수 있고, 그게 부트스트랩을 에이전트에 넘기는 수단이기 때문입니다. `opencode` / `droid` 프로젝트는 이 백엔드로 실행할 수 없습니다; 해당 에이전트는 `central-mcp tmux` / `central-mcp zellij` 를 쓰세요.
+- **`--permission-mode restricted` 는 부트스트랩을 멈춥니다.** 시드는 에이전트에게 `cmux new-split` / `cmux send-text` 를 호출하도록 지시하는데, restricted 모드에서는 각 쉘 명령이 별도 승인 프롬프트로 뜨면서 첫 승인 대기에서 셋업이 멈춥니다. 기본값 `bypass` 나 `auto` (claude 전용) 를 쓰시면 됩니다; `restricted` 를 고르면 `cmd_cmux` 가 경고를 출력합니다.
+- **`--max-panes` 없음.** cmux 는 GUI 에서 responsive 하게 pane 을 resize 하므로 char-cell readability floor 튜닝이 불필요합니다. 에이전트가 레지스트리 크기(프로젝트당 1 pane)만큼 알아서 split 합니다.
+- **레이아웃은 agent-driven 이지 declarative 가 아닙니다.** central-mcp 는 세션당 CLI 호출 딱 1 번 (`cmux new-workspace`) 만 합니다; 그 이후는 전부 에이전트의 Bash 도구 호출로 일어납니다. 부트스트랩 중 에이전트가 실패하면 레이아웃이 부분적으로만 뜰 수 있고, 그럴 땐 `central-mcp cmux` 를 다시 실행해서 teardown + 재시도 하시면 됩니다.
 
 ## 레지스트리 경로 해결
 
