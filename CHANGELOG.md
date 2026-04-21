@@ -3,6 +3,14 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.8.10] — 2026-04-21
+
+### Changed
+- **`cmcp` now exports `CMCP_OBS_W` / `CMCP_OBS_H` env vars on orchestrator launch.** `cmcp` itself runs in a real TTY (it's the process the user types in a cmux pane), so `shutil.get_terminal_size()` reports the actual pane dimensions there. Those values are stashed in env before `os.execvp` to the agent CLI, so the orchestrator inherits them and its Bash tool can read the pre-captured size without needing a PTY of its own. This replaces the 0.8.9 "ask the user" step — the orchestrator now reads `${CMCP_OBS_W:-200}` / `${CMCP_OBS_H:-50}` directly, no conversation needed. Defaults to 200×50 only when `cmcp` itself was launched outside a TTY (rare).
+
+### Upgrade note
+- Same copy-on-miss caveat: `rm ~/.central-mcp/{CLAUDE,AGENTS}.md` before the next orchestrator launch to pick up the env-var-based recipe. Re-running `cmcp` after the upgrade also re-seeds the env vars at startup.
+
 ## [0.8.9] — 2026-04-21
 
 ### Fixed

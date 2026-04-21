@@ -57,7 +57,7 @@ If env var `CMUX_WORKSPACE_ID` is set, you were launched inside a cmux.app pane.
 When the user asks you to build observation panes (e.g., "cmux 관찰 pane 구성해줘" / "set up watch panes"):
 
 1. Call `list_projects` to get the target set.
-2. **Ask the user for the cmux window size in cols × rows** before splitting. Do NOT trust `tput cols` / `tput lines` from your Bash tool — Claude Code / most agent runtimes spawn subprocesses without a controlling TTY, so those commands fall back to the terminfo default of 80×24 regardless of the real pane size. Quick prompt: *"Before I set up the observation layout, what's your cmux window size? You can run `stty size` directly in a cmux pane shell (not through my tool), or give me a rough `cols × rows`."* If the user skips or answers vaguely, default to 200×50 (typical laptop half-screen).
+2. **Read the pane size from env vars**: `W=${CMCP_OBS_W:-200}`, `H=${CMCP_OBS_H:-50}`. `cmcp` captured these from the real TTY at launch time (Python's `shutil.get_terminal_size()`), so they reflect the actual cmux pane dimensions — unlike `tput cols` / `stty size` from your Bash tool, which lose to the subprocess-without-PTY fallback (terminfo default 80×24). The defaults (200×50) only fire if `cmcp` was launched outside a TTY.
 3. Rename the orchestrator's own workspace (once): `cmux rename-workspace --workspace "$CMUX_WORKSPACE_ID" cmcp-hub`. This mirrors tmux / zellij's `cmcp-1-hub` convention.
 4. Create one or more dedicated observation workspaces named `cmcp-watch-1`, `cmcp-watch-2`, …, build the grid in each, and seed with `central-mcp watch <project-name>`.
 5. Report per-project success/failure and which workspace each pane landed in.

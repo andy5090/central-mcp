@@ -853,6 +853,25 @@ def cmd_run(args: argparse.Namespace) -> int:
         print("(dry-run: not executing)")
         return 0
 
+    # Expose the launching terminal's dimensions to the orchestrator
+    # as env vars. Rationale: agent CLIs (claude, codex, gemini, ...)
+    # spawn their Bash tool subprocesses without a controlling TTY,
+    # so `tput cols` / `stty size` from inside those tools falls back
+    # to the terminfo default of 80x24. `cmcp` itself IS running in
+    # a real TTY, so `shutil.get_terminal_size()` here reflects the
+    # actual cmux pane / tmux pane / plain terminal size. The cmux
+    # bootstrap recipe in data/AGENTS.md reads CMCP_OBS_W / CMCP_OBS_H
+    # to decide grid density without needing to probe from inside the
+    # agent's Bash tool.
+    try:
+        _term_size = shutil.get_terminal_size((200, 50))
+        os.environ["CMCP_OBS_W"] = str(_term_size.columns)
+        os.environ["CMCP_OBS_H"] = str(_term_size.lines)
+    except OSError:
+        # get_terminal_size has defaults; no reason to reach here, but
+        # bail silently if somehow it does.
+        pass
+
     os.chdir(launch_dir)
     try:
         os.execvp(binary, argv)
