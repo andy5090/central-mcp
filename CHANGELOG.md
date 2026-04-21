@@ -3,6 +3,14 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.8.9] — 2026-04-21
+
+### Fixed
+- **Orchestrator no longer trusts `tput cols` / `tput lines` from its Bash tool** during cmux bootstrap. 0.8.8 testing revealed that Claude Code (and likely every agent CLI whose Bash tool pipes stdout instead of allocating a PTY) falls back to the terminfo default of 80×24 regardless of the real pane size — so even in a 300×80 cmux window the orchestrator would see 80×24 and spawn one observation workspace per project. cmux's own CLI exposes no pane geometry either (checked `tree --json`, `identify`, `list-pane-surfaces`; no size fields). Fix: the recipe now explicitly asks the user for the cmux window size as a one-line prompt (suggesting `stty size` in a real pane shell as a reference), defaulting to 200×50 when the user skips.
+
+### Upgrade note
+- Same copy-on-miss caveat: `rm ~/.central-mcp/{CLAUDE,AGENTS}.md` before the next orchestrator launch to pick up the new "ask the user" step.
+
 ## [0.8.8] — 2026-04-21
 
 ### Changed
