@@ -3,6 +3,11 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.8.11] — 2026-04-21
+
+### Fixed
+- **`cmcp upgrade` no longer lies about the target version.** The version check used PyPI's legacy `/pypi/<name>/json` endpoint (`info.version` field), which is aggressively CDN-cached and typically trails reality by several minutes. Meanwhile `uv tool install --refresh` hits the simple index, which updates within seconds of upload. The disagreement produced confusing output — e.g., "0.8.8 → 0.8.9 available" followed by the actual install landing on 0.8.10. 0.8.11 swaps the check to the simple index (PEP 691 JSON variant at `/simple/<name>/`), parses file-level version stamps, and returns the max — matches the freshness the installer uses.
+
 ## [0.8.10] — 2026-04-21
 
 ### Changed
