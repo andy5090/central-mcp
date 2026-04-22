@@ -71,36 +71,38 @@ Status legend: ✅ done · 🚧 in progress · 📋 planned · 💭 idea
 
 ---
 
-## Phase 3 — Workspaces 🚧 next
+## Phase 3 — Workspaces ✅ shipped in 0.9.x
 
-**Goal**: let users group projects into named workspaces so orchestrators can address a group with one dispatch, and swap between different project sets (work / personal / client-X) without editing `registry.yaml`.
+**Goal**: let users group projects into named workspaces so orchestrators can address a group with one dispatch, and swap between different project sets without editing `registry.yaml`.
 
 Design spec: [`docs/architecture/workspaces.md`](architecture/workspaces.md)
 
-📋 **Sub-feature 1 — Project grouping inside a registry**
-- Top-level `workspaces: {name: [project, …]}` map in `registry.yaml`.
-- `dispatch("frontend", prompt)` when `frontend` is a workspace name → fan out to every project in that workspace; results aggregated or streamed per project.
-- `list_projects --workspace frontend` / `orchestration_history --workspace frontend` for filtered views.
-- `central-mcp up` / `cmcp zellij` / `cmcp tmux` can take `--workspace frontend` to bring up only that group's panes.
+✅ **Sub-feature 1 — Project grouping inside a registry (0.9.0)**
+- Top-level `workspaces: {name: [project, …]}` map in `registry.yaml`; `current_workspace` field tracks the active workspace. Auto-migrated on first use.
+- `dispatch("@workspace", prompt)` fans out to every project in the workspace; returns a list of `dispatch_id`s.
+- `list_projects(workspace=...)` / `orchestration_history(workspace=...)` for filtered views.
+- `add_project(…, workspace=...)` registers a project and assigns it in one call.
+- `cmcp tmux` / `cmcp zellij` accept `--workspace NAME`, `--all`, and `switch NAME`; sessions named `cmcp-<workspace>`.
 
-📋 **Sub-feature 2 — Registry profiles (switchable workspaces)**
-- Multiple registry trees side-by-side: `~/.central-mcp/workspaces/<name>/registry.yaml`.
-- `central-mcp --workspace client-x` selects which registry + config + logs directory tree is active for the whole invocation.
-- Saved default in `config.toml` under `[workspace] default = "..."`.
-- Env var override: `CENTRAL_MCP_WORKSPACE=<name>`.
+✅ **Sub-feature 2 — Active workspace switching (0.9.0)**
+- `cmcp workspace list / current / new / use / add / remove` CLI subcommand tree.
+- Active workspace stored in `registry.yaml` as `current_workspace`. Simpler than the originally-planned separate registry trees per workspace; separate-tree model deferred.
 
-💭 **Sub-feature 3 — Shared context** (later, after 1+2 land)
-- Prompts/system-instructions applied to every dispatch inside a workspace (e.g. "all these are TypeScript projects with shared style rules").
+✅ **Migration fix (0.9.2)**
+- On first migration of a pre-workspace registry, `default` is now seeded with all existing project names so the YAML reflects reality. `add_to_workspace` to a named workspace removes the project from `default` to avoid duplicate membership.
+
+💭 **Sub-feature 3 — Shared context** (deferred until 1+2 usage reveals actual needs)
+- Prompts/system-instructions applied to every dispatch inside a workspace.
 - Per-workspace `CLAUDE.md` / `AGENTS.md` templates auto-applied when launching the orchestrator for that workspace.
 
-💭 **Open questions**
-- Resolution order when a name is both a project and a workspace — prefix rule (`@frontend` for workspace) or type disambiguation?
-- Concurrent dispatch limits when fan-out grows large.
-- How does `orchestration_history` present fan-out runs — one parent + N children, or flat list with a shared `group_id`?
+💭 **Open questions remaining**
+- Concurrent dispatch cap when fan-out grows large (API rate limit exposure).
+- `orchestration_history` fan-out grouping: currently flat list; `group_id` not yet implemented.
+- Separate registry trees per workspace (original Sub-feature 2 design) — still useful for fully isolated client engagements.
 
 ---
 
-## Phase 3b — User-specific instruction overlays 📋 planned
+## Phase 3b — User-specific instruction overlays 🚧 next
 
 **Goal**: let central-mcp load stable user-specific operating preferences without baking personal workflow rules into the shared router contract.
 
@@ -126,6 +128,38 @@ Design spec: [`docs/architecture/workspaces.md`](architecture/workspaces.md)
 - Should the first version be plain Markdown only, or structured config plus Markdown notes?
 - What is the minimal precedence model that stays predictable across orchestrators?
 - How should central-mcp expose the active overlay for debugging and auditability?
+
+---
+
+## Phase 3c — curl-based quickstart installer 📋 planned
+
+**Goal**: let new users go from zero to a running hub in one terminal command without assuming `uv` or `pip` is already installed.
+
+📋 **Installer script**
+- Single `curl | sh` command bootstraps `uv` if missing, then runs `uv tool install central-mcp`.
+- Runs `central-mcp init` to scaffold `~/.central-mcp/` and the `cmcp` alias.
+- Prints a next-steps summary pointing to `central-mcp install <client>`.
+
+📋 **Hosted at a stable URL** — short redirect (e.g. `get.central-mcp.dev`) so the quickstart stays linkable as the implementation evolves.
+
+💭 **Open questions**
+- macOS + Linux only, or attempt Windows/PowerShell parity?
+- Should the script verify the installed binary version before printing success?
+
+---
+
+## Phase 3d — Static documentation site 📋 planned
+
+**Goal**: provide a browsable, searchable reference beyond the README so users can find command syntax, configuration options, and examples without reading raw Markdown.
+
+📋 **Scope**
+- Generated from existing docs (`README.md`, `CHANGELOG.md`, CLI reference, MCP tool signatures).
+- Covers: quickstart, CLI reference, MCP tool API, workspace guide, observation layer guide, adapter configuration.
+- Hosted on GitHub Pages or equivalent; auto-deployed on each release tag.
+
+💭 **Open questions**
+- Static generator choice (VitePress, Starlight, mkdocs-material)?
+- How much of the tool-signature documentation can be auto-generated from source?
 
 ---
 
