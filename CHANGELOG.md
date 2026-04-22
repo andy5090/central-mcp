@@ -3,6 +3,17 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.9.1] — 2026-04-22
+
+### Added
+- **Workspace-aware MCP tools** — all four primary tools now understand workspaces:
+  - `list_projects(workspace=...)` — filter results to a named workspace.
+  - `dispatch("@workspace", prompt)` — fan-out: dispatches the prompt to every project in the workspace simultaneously; returns `{workspace, dispatches: [{project, dispatch_id, …}, …]}`.
+  - `orchestration_history(workspace=...)` — filter in-flight, recent milestones, and per-project stats to a single workspace.
+  - `add_project(…, workspace=...)` — register a project and add it to a workspace in one call.
+
+---
+
 ## [0.9.0] — 2026-04-22
 
 ### Added

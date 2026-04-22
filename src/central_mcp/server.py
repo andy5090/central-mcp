@@ -33,8 +33,11 @@ from central_mcp.registry import (
     Project,
     _sanitize_language,
     add_project as _registry_add,
+    add_to_workspace as _registry_add_to_workspace,
     find_project,
     load_registry,
+    load_workspaces,
+    projects_in_workspace,
     remove_project as _registry_remove,
     reorder as _registry_reorder,
     update_project as _registry_update,
@@ -133,10 +136,13 @@ When the user asks anything about "my projects", status, or dispatching
 work, call these MCP tools — do not read files or run shell commands
 instead:
 
-  - list_projects          — enumerate the registry
+  - list_projects          — enumerate the registry; pass workspace= to
+                             filter to a specific workspace.
   - project_status         — registry info for one project
   - dispatch               — run a one-shot agent in the project's cwd.
                              NON-BLOCKING: returns a dispatch_id immediately.
+                             Pass name="@workspace" to fan-out the prompt
+                             to all projects in that workspace at once.
   - check_dispatch         — poll a dispatch (running / complete / error)
   - list_dispatches        — show all active + recently completed dispatches
   - cancel_dispatch        — abort a running dispatch
@@ -153,7 +159,8 @@ instead:
                              orchestrator can group by project and show
                              *what was done + what came out of it* without
                              opening per-project logs.
-  - add_project            — register a new project
+  - add_project            — register a new project; pass workspace= to
+                             also add it to a workspace on creation.
   - remove_project         — unregister a project
   - update_project         — change a project's agent / fallback /
                              permission_mode / session_id / etc.
@@ -328,9 +335,17 @@ def _require_project(name: str) -> tuple[Project | None, dict[str, Any] | None]:
 
 
 @mcp.tool()
-def list_projects() -> list[dict[str, Any]] | dict[str, Any]:
-    """List every project registered in registry.yaml."""
-    return _with_completed([p.to_dict() for p in load_registry()])
+def list_projects(workspace: str | None = None) -> list[dict[str, Any]] | dict[str, Any]:
+    """List registered projects, optionally filtered to a workspace.
+
+    Pass workspace='default' to list only unassigned/default projects,
+    or any other workspace name to list its members.
+    """
+    if workspace is not None:
+        all_projects = projects_in_workspace(workspace)
+    else:
+        all_projects = load_registry()
+    return _with_completed([p.to_dict() for p in all_projects])
 
 
 @mcp.tool()
@@ -346,9 +361,8 @@ def project_status(name: str) -> dict[str, Any]:
     return _with_completed({"ok": True, "project": project.to_dict()})
 
 
-@mcp.tool()
-def dispatch(
-    name: str,
+def _launch_dispatch(
+    project: "Project",
     prompt: str,
     resume: bool = True,
     permission_mode: str | None = None,
@@ -358,52 +372,10 @@ def dispatch(
     session_id: str | None = None,
     language: str | None = None,
 ) -> dict[str, Any]:
-    """Dispatch a prompt to the project's agent. NON-BLOCKING.
+    """Start a background dispatch for a single project. Returns immediately.
 
-    Spawns a one-shot subprocess (e.g. `claude -p "..." --continue`) in the
-    project's cwd and returns immediately with a dispatch_id (<100ms).
-
-    **agent** (optional): override the project's registered agent for this
-    one dispatch only. Useful for e.g. sending a design-heavy task to a
-    different agent without mutating the registry. Registry is unchanged.
-
-    **fallback** (optional): list of agent names to try in order if the
-    primary agent exits non-zero (e.g. token/rate limit, crash). If omitted,
-    the project's saved `fallback` from the registry is used. Pass an empty
-    list `[]` to explicitly disable fallback for this dispatch.
-
-    **permission_mode** controls how the agent handles permission prompts:
-      - "bypass"     — skip all prompts (default for new projects)
-      - "auto"       — claude-only; classifier-reviewed actions (Sonnet/Opus 4.6 only)
-      - "restricted" — no skip flag; agent may fail on operations needing approval
-      - None (default): use the project's saved mode, or "bypass" for new projects.
-        The resolved value is saved to the registry for future dispatches.
-
-    **session_id** (optional): one-shot override for conversation resumption.
-      - Given → resume that specific session (agent-specific flag:
-        claude `-r <uuid>`, codex `resume <id>`, droid `-s <uuid>`,
-        opencode `-s <uuid>`, gemini `--resume <index>`). After this
-        dispatch the agent's own "resume latest" mechanism picks up the
-        just-used session, so subsequent default dispatches continue
-        from it without restating the id.
-      - None (default): use the project's saved `session_id` if any
-        (persistent pin), otherwise fall back to the agent's "resume
-        latest" flag. Droid has no headless "resume latest", so absence
-        of a session_id means a fresh session on every droid dispatch.
-
-    **language** (optional): one-shot override for the response language.
-      - A non-empty string (e.g. "Korean", "한국어", "ko") → prepend a
-        "Respond to the user in <language>." directive to the prompt.
-      - "" (empty string) → suppress the project's saved language for
-        this call (fall back to agent default, usually English) without
-        mutating the registry.
-      - None (default) → use the project's saved `language`, set via
-        `update_project(language=...)`. If unset, no directive is added.
+    Returns the plain result dict (without _with_completed wrapping).
     """
-    project, err = _require_project(name)
-    if err:
-        return err
-
     # Resolve effective agent chain: primary then fallbacks
     primary_agent = agent or project.agent
     if fallback is None:
@@ -789,6 +761,91 @@ def dispatch(
 
 
 @mcp.tool()
+def dispatch(
+    name: str,
+    prompt: str,
+    resume: bool = True,
+    permission_mode: str | None = None,
+    timeout: float = 600.0,
+    agent: str | None = None,
+    fallback: list[str] | None = None,
+    session_id: str | None = None,
+    language: str | None = None,
+) -> dict[str, Any]:
+    """Dispatch a prompt to a project or workspace. NON-BLOCKING.
+
+    **name**: project name, or @workspace to fan-out to all projects in that
+    workspace. When a workspace is targeted, each member project is dispatched
+    independently and a list of dispatch_ids is returned.
+
+    Spawns a one-shot subprocess (e.g. `claude -p "..." --continue`) in the
+    project's cwd and returns immediately with a dispatch_id (<100ms).
+
+    **agent** (optional): override the project's registered agent for this
+    one dispatch only. Useful for e.g. sending a design-heavy task to a
+    different agent without mutating the registry. Registry is unchanged.
+
+    **fallback** (optional): list of agent names to try in order if the
+    primary agent exits non-zero (e.g. token/rate limit, crash). If omitted,
+    the project's saved `fallback` from the registry is used. Pass an empty
+    list `[]` to explicitly disable fallback for this dispatch.
+
+    **permission_mode** controls how the agent handles permission prompts:
+      - "bypass"     — skip all prompts (default for new projects)
+      - "auto"       — claude-only; classifier-reviewed actions (Sonnet/Opus 4.6 only)
+      - "restricted" — no skip flag; agent may fail on operations needing approval
+      - None (default): use the project's saved mode, or "bypass" for new projects.
+        The resolved value is saved to the registry for future dispatches.
+
+    **session_id** (optional): one-shot override for conversation resumption.
+      - Given → resume that specific session (agent-specific flag:
+        claude `-r <uuid>`, codex `resume <id>`, droid `-s <uuid>`,
+        opencode `-s <uuid>`, gemini `--resume <index>`). After this
+        dispatch the agent's own "resume latest" mechanism picks up the
+        just-used session, so subsequent default dispatches continue
+        from it without restating the id.
+      - None (default): use the project's saved `session_id` if any
+        (persistent pin), otherwise fall back to the agent's "resume
+        latest" flag. Droid has no headless "resume latest", so absence
+        of a session_id means a fresh session on every droid dispatch.
+
+    **language** (optional): one-shot override for the response language.
+      - A non-empty string (e.g. "Korean", "한국어", "ko") → prepend a
+        "Respond to the user in <language>." directive to the prompt.
+      - "" (empty string) → suppress the project's saved language for
+        this call (fall back to agent default, usually English) without
+        mutating the registry.
+      - None (default) → use the project's saved `language`, set via
+        `update_project(language=...)`. If unset, no directive is added.
+    """
+    # Workspace fan-out: @workspace prefix forces workspace resolution.
+    if name.startswith("@"):
+        ws_name = name[1:]
+        ws_projects = projects_in_workspace(ws_name)
+        if not ws_projects:
+            return {
+                "ok": False,
+                "error": f"workspace {ws_name!r} has no projects (or does not exist)",
+            }
+        dispatches = []
+        for proj in ws_projects:
+            r = _launch_dispatch(
+                proj, prompt, resume, permission_mode, timeout,
+                agent, fallback, session_id, language,
+            )
+            dispatches.append({"project": proj.name, **{k: v for k, v in r.items() if k != "project"}})
+        return _with_completed({"ok": True, "workspace": ws_name, "dispatches": dispatches})
+
+    project, err = _require_project(name)
+    if err:
+        return err
+    return _with_completed(_launch_dispatch(
+        project, prompt, resume, permission_mode, timeout,
+        agent, fallback, session_id, language,
+    ))
+
+
+@mcp.tool()
 def check_dispatch(dispatch_id: str) -> dict[str, Any]:
     """Poll a background dispatch started by dispatch_background.
 
@@ -869,6 +926,7 @@ def add_project(
     description: str = "",
     tags: list[str] | None = None,
     language: str | None = None,
+    workspace: str | None = None,
 ) -> dict[str, Any]:
     """Append a project to registry.yaml.
 
@@ -881,6 +939,8 @@ def add_project(
     (e.g. "Korean", "한국어", "ko"). When set, every future dispatch
     prepends "Respond to the user in <language>." to the prompt. Omit
     or leave empty for the agent's own default (English).
+
+    **workspace** (optional): if given, also add the project to this workspace.
     """
     # Validate agent name at registration time so users don't hit
     # "no exec mode" errors only when they first try to dispatch.
@@ -912,6 +972,14 @@ def add_project(
         return {"ok": False, "error": str(e)}
 
     result: dict[str, Any] = {"ok": True, "project": proj.to_dict()}
+
+    # Optionally add to workspace after successful registration.
+    if workspace is not None:
+        try:
+            _registry_add_to_workspace(name, workspace)
+            result["workspace"] = workspace
+        except ValueError as e:
+            result["workspace_warning"] = str(e)
 
     # Auto-trust codex directory so `codex exec` works without manual config.
     if agent == "codex":
@@ -1149,6 +1217,7 @@ def dispatch_history(
 def orchestration_history(
     n: int = 20,
     window_minutes: int | None = None,
+    workspace: str | None = None,
 ) -> dict[str, Any]:
     """Portfolio-wide snapshot: in-flight dispatches + recent milestones + per-project stats.
 
@@ -1160,6 +1229,9 @@ def orchestration_history(
       - `per_project`: counts of succeeded/failed/in-flight per project
         within `window_minutes` (or all-time if not given)
       - `registered_projects`: registry snapshot for context
+
+    **workspace** (optional): when given, filters recent milestones, per-project
+    stats, and in-flight dispatches to only projects in that workspace.
     """
     timeline = _read_jsonl(events.timeline_path())
     timeline.sort(key=lambda r: r.get("ts", ""), reverse=True)
@@ -1176,13 +1248,24 @@ def orchestration_history(
     else:
         filtered = timeline
 
-    recent = filtered[:n]
+    # Resolve workspace filter set once.
+    ws_project_names: set[str] | None = None
+    if workspace is not None:
+        ws_project_names = {p.name for p in projects_in_workspace(workspace)}
+
+    if ws_project_names is not None:
+        recent_candidates = [r for r in filtered if r.get("project") in ws_project_names]
+    else:
+        recent_candidates = filtered
+    recent = recent_candidates[:n]
 
     # Per-project aggregation (count terminal events by outcome).
     per_project: dict[str, dict[str, int]] = {}
     last_ts_by_project: dict[str, str] = {}
     for r in filtered:
         proj = r.get("project", "?")
+        if ws_project_names is not None and proj not in ws_project_names:
+            continue
         stats = per_project.setdefault(proj, {
             "dispatched": 0, "succeeded": 0, "failed": 0, "cancelled": 0,
         })
@@ -1215,9 +1298,13 @@ def orchestration_history(
             }
             for e in _dispatches.values()
             if e["status"] == "running"
+            and (ws_project_names is None or e["project"] in ws_project_names)
         ]
 
-    registered = [p.to_dict() for p in load_registry()]
+    if ws_project_names is not None:
+        registered = [p.to_dict() for p in projects_in_workspace(workspace)]  # type: ignore[arg-type]
+    else:
+        registered = [p.to_dict() for p in load_registry()]
 
     return _with_completed({
         "ok": True,
