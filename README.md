@@ -36,7 +36,7 @@ Every dispatch is a fresh subprocess in the project's cwd (e.g. `claude -p "..."
 
 ## Status
 
-Available on [PyPI](https://pypi.org/project/central-mcp/).
+Install today with `uv` (or `pip` if needed). A one-line `curl` installer is planned so setup can bootstrap `uv` when missing and finish in one pass.
 
 ## Supported platforms
 
@@ -49,11 +49,13 @@ Run central-mcp on the platform it's been exercised on, and expect a bit of roug
 ## Quickstart
 
 ```bash
-# Install uv if you don't have it yet (https://docs.astral.sh/uv/)
+# Today: install uv first if you don't have it yet (https://docs.astral.sh/uv/)
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-> Or use pip: `pip install central-mcp`
+> For now you can also use pip: `pip install central-mcp`
+>
+> A first-party `curl` installer is planned to streamline this into a single command and bootstrap `uv` automatically when needed.
 
 (`tmux` only if you want the optional observation layer.)
 
@@ -391,13 +393,21 @@ central-mcp remove NAME
 central-mcp reorder NAME [NAME ...]  # reorder projects — unlisted ones keep relative order
 central-mcp list                   # one-line registry dump
 central-mcp brief                  # orchestrator-ready markdown snapshot
+central-mcp workspace list         # list workspaces with project counts
+central-mcp workspace current      # print the active workspace
+central-mcp workspace new NAME     # create a new workspace
+central-mcp workspace use NAME     # switch the active workspace
+central-mcp workspace add PROJECT --workspace NAME
+central-mcp workspace remove PROJECT --workspace NAME
 central-mcp up [--no-orchestrator] [--permission-mode {bypass,auto,restricted}] [--max-panes N]
-                                   # optional tmux observation layer
-central-mcp tmux [same flags as up]
+                                   # optional tmux observation layer (active workspace)
+central-mcp tmux [same flags as up] [--workspace NAME | --all]
                                    # create session if missing, then attach via tmux
-central-mcp zellij [same flags as up]
+central-mcp zellij [same flags as up] [--workspace NAME | --all]
                                    # same, but via zellij (generates a KDL layout)
-central-mcp down                   # kill observation session
+central-mcp tmux switch NAME       # attach to cmcp-<NAME> session (create if missing)
+central-mcp zellij switch NAME     # same, via zellij
+central-mcp down                   # kill all cmcp-* observation sessions
 central-mcp watch NAME [--from-start]
                                    # stream one project's dispatch events
 central-mcp upgrade [--check]      # self-update from PyPI (uv → pip fallback)
@@ -422,9 +432,11 @@ Once the orchestrator's summaries start matching what you would have checked in 
 Two multiplexer backends are supported as CLI commands:
 
 - **tmux** — `central-mcp tmux` (creates the session if missing, then attaches)
-- **zellij** — `central-mcp zellij` (generates a KDL layout, launches a zellij session named `central` or attaches to an existing one)
+- **zellij** — `central-mcp zellij` (generates a KDL layout, launches a zellij session or attaches to an existing one)
 
 Both produce the same logical layout (hub tab + overflow tabs, project panes running `central-mcp watch <project>`). Pick the one you already have installed; you can use both from different terminals as long as they don't share a session name at the same time.
+
+Sessions are named `cmcp-<workspace>` (e.g. `cmcp-default`, `cmcp-work`). Pass `--workspace NAME` to target a specific workspace, or `--all` to create sessions for every workspace in one shot. `central-mcp tmux switch NAME` / `central-mcp zellij switch NAME` attaches to `cmcp-<NAME>`, creating it if missing.
 
 A third option — **cmux** on macOS — doesn't have its own CLI command: you run `cmcp` inside cmux.app yourself and ask the orchestrator to build the observation panes. See [Running inside cmux](#running-inside-cmux) below.
 
@@ -438,13 +450,16 @@ Windows are named `cmcp-<N>` with the first window picking up a `-hub` suffix (`
 **Orchestrator layout**: the first window puts the orchestrator pane in a full-height left column sized to match one project column. So `orch + 1 project` reproduces a 50/50 split, `orch + 3 projects` yields four equal columns (orch + 3 projects in a single row), and `orch + 9 projects` gives orch a 1/6 column with 2 × 5 project grid on the right.
 
 ```bash
-central-mcp tmux                   # one-shot: create the session if missing, then attach
+central-mcp tmux                         # active workspace → create if missing, then attach
+central-mcp tmux --workspace work        # target the "work" workspace session
+central-mcp tmux --all                   # create/attach sessions for every workspace
+central-mcp tmux switch work             # jump to cmcp-work (create if missing)
 central-mcp tmux --permission-mode auto        # claude-only; classifier-reviewed orchestrator
 central-mcp tmux --permission-mode restricted  # orchestrator surfaces approval prompts
-central-mcp tmux --no-orchestrator # watch panes only (no orchestrator)
+central-mcp tmux --no-orchestrator       # watch panes only (no orchestrator)
 central-mcp tmux --max-panes 6
-central-mcp up                     # create the session but don't attach (scripted flows)
-central-mcp down                   # tear the session back down
+central-mcp up                           # create the session but don't attach (scripted flows)
+central-mcp down                         # tear down all cmcp-* sessions
 ```
 
 The hub window (`cmcp-1-hub`) uses tmux's `main-vertical` layout: the orchestrator pane sits on the left taking two cells' worth of space, and project panes stack on the right. So the hub holds `panes_per_window − 1` panes (default 3 — orchestrator + 2 projects), and overflow windows get the full `panes_per_window` projects each. Every pane carries its role name on its top border, and the orchestrator border is highlighted in bold yellow so you can spot it at a glance.
@@ -472,6 +487,39 @@ macOS only. [cmux.app](https://github.com/manaflow-ai/cmux) is a native GUI term
 The orchestrator reads `~/.central-mcp/AGENTS.md` on launch — which includes a terminal-size-aware recipe for this workflow — and uses its Bash tool to chain `cmux new-split`, `cmux send`, and `cmux send-key` per project. That recipe deliberately snaps each workspace to halving-safe balanced grids (`2×2`, `2×4`, `4×4`, etc.) rather than asking cmux to fake clean thirds from repeated 50/50 splits. Workspace naming mirrors tmux / zellij's window convention: the orchestrator's own workspace is renamed to `cmcp-hub`, and observation panes go into dedicated workspaces named `cmcp-watch-1`, `cmcp-watch-2`, … (one per terminal-size-derived grid chunk). cmux lets you tab between them from its sidebar.
 
 No `central-mcp cmux` subcommand exists: central-mcp itself stays out of the cmux socket, the agent does the work. If pane setup fails partway, the orchestrator reports which projects succeeded and you can ask it to retry the missing ones.
+
+## Workspaces
+
+Workspaces let you group projects into named sets and switch between them without editing the registry manually.
+
+```bash
+# Create and populate a workspace
+central-mcp workspace new work
+central-mcp workspace add api-server --workspace work
+central-mcp workspace add frontend --workspace work
+
+# Switch the active workspace
+central-mcp workspace use work
+
+# Inspect
+central-mcp workspace list     # shows all workspaces with project counts and active marker
+central-mcp workspace current  # prints "work"
+```
+
+Projects not assigned to any named workspace fall back to the built-in `default` workspace. `central-mcp workspace list` shows that count too.
+
+**Session naming:** each workspace gets its own multiplexer session — `cmcp-default`, `cmcp-work`, etc. The old `central` session name is kept as a backward-compat alias and is cleaned up by `central-mcp down`.
+
+**Observation with workspaces:**
+
+```bash
+central-mcp tmux                  # active workspace only
+central-mcp tmux --workspace work # specific workspace
+central-mcp tmux --all            # one session per workspace simultaneously
+central-mcp tmux switch work      # jump straight to cmcp-work
+```
+
+Workspace state is stored inside `~/.central-mcp/registry.yaml` (`current_workspace` field) — no separate config file needed.
 
 ## Registry resolution
 

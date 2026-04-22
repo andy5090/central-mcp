@@ -216,6 +216,33 @@ Fill `cmcp-watch-1` first, then `cmcp-watch-2`, etc., in project order.
 
 Outside this workflow, the no-Bash rule still applies — dispatch to project agents instead. Only applies inside cmux; tmux / zellij observation is handled by `central-mcp tmux` / `central-mcp zellij`.
 
+### Multi-workspace observation (`--all` mode)
+
+When the user asks to set up observation for **all workspaces** (e.g., "모든 워크스페이스 관찰 모드 켜줘" / "turn on observation for all workspaces"):
+
+Each workspace gets its own set of dedicated cmux workspaces named `cmcp-<workspace>-watch-<n>`:
+
+```
+cmux sidebar:
+  cmcp-hub                    ← orchestrator (renamed from your current workspace)
+  cmcp-default-watch-1        ← projects in the 'default' workspace
+  cmcp-work-watch-1           ← projects in the 'work' workspace
+  cmcp-personal-watch-1       ← projects in the 'personal' workspace
+```
+
+**Procedure:**
+
+1. Call `list_projects(workspace="__all__")` to get all registered projects, grouped by workspace.
+2. Read the registry's `workspaces` map and `current_workspace` to know which workspace is active.
+3. Rename the orchestrator pane: `cmux rename-workspace --workspace "$CMUX_WORKSPACE_ID" cmcp-hub`.
+4. For each workspace in the `workspaces` map:
+   - Compute grid dimensions using the same `W`/`H` env vars and halving-safe formula as the default recipe.
+   - Create `cmcp-<workspace>-watch-1`, `cmcp-<workspace>-watch-2`, … (using `session_name_for_workspace("<workspace>")` convention: `cmcp-<workspace>`).
+   - Build the grid and seed each pane with `central-mcp watch <project-name>` for projects in that workspace.
+5. Report per-workspace success/failure.
+
+**Default (current workspace only):** when the user asks for normal observation mode without `--all`, use only the projects in `current_workspace` and name the workspaces `cmcp-watch-1`, `cmcp-watch-2`, … as before.
+
 ## Exception
 
 If the user asks to edit central-mcp's own source code → switch to normal developer mode.

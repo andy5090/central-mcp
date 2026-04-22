@@ -71,7 +71,65 @@ Status legend: ✅ done · 🚧 in progress · 📋 planned · 💭 idea
 
 ---
 
-## Phase 3 — Worker mode (interactive approval)
+## Phase 3 — Workspaces 🚧 next
+
+**Goal**: let users group projects into named workspaces so orchestrators can address a group with one dispatch, and swap between different project sets (work / personal / client-X) without editing `registry.yaml`.
+
+Design spec: [`docs/architecture/workspaces.md`](architecture/workspaces.md)
+
+📋 **Sub-feature 1 — Project grouping inside a registry**
+- Top-level `workspaces: {name: [project, …]}` map in `registry.yaml`.
+- `dispatch("frontend", prompt)` when `frontend` is a workspace name → fan out to every project in that workspace; results aggregated or streamed per project.
+- `list_projects --workspace frontend` / `orchestration_history --workspace frontend` for filtered views.
+- `central-mcp up` / `cmcp zellij` / `cmcp tmux` can take `--workspace frontend` to bring up only that group's panes.
+
+📋 **Sub-feature 2 — Registry profiles (switchable workspaces)**
+- Multiple registry trees side-by-side: `~/.central-mcp/workspaces/<name>/registry.yaml`.
+- `central-mcp --workspace client-x` selects which registry + config + logs directory tree is active for the whole invocation.
+- Saved default in `config.toml` under `[workspace] default = "..."`.
+- Env var override: `CENTRAL_MCP_WORKSPACE=<name>`.
+
+💭 **Sub-feature 3 — Shared context** (later, after 1+2 land)
+- Prompts/system-instructions applied to every dispatch inside a workspace (e.g. "all these are TypeScript projects with shared style rules").
+- Per-workspace `CLAUDE.md` / `AGENTS.md` templates auto-applied when launching the orchestrator for that workspace.
+
+💭 **Open questions**
+- Resolution order when a name is both a project and a workspace — prefix rule (`@frontend` for workspace) or type disambiguation?
+- Concurrent dispatch limits when fan-out grows large.
+- How does `orchestration_history` present fan-out runs — one parent + N children, or flat list with a shared `group_id`?
+
+---
+
+## Phase 3b — User-specific instruction overlays 📋 planned
+
+**Goal**: let central-mcp load stable user-specific operating preferences without baking personal workflow rules into the shared router contract.
+
+📋 **Overlay model**
+- Keep `AGENTS.md` as the shared project/router contract.
+- Add a user-scoped overlay file for preferences such as:
+  - local process management handled directly by the orchestrator,
+  - project code changes still routed via dispatch,
+  - reporting/language/style preferences.
+- Treat the overlay as an augmentation layer, not a replacement for the core router policy.
+
+📋 **Precedence**
+- Current user turn instructions still win.
+- User-specific overlay should outrank roadmap/default router preferences, but not system/developer constraints.
+- Conflicts with core dispatch safety rules should resolve in favor of the shared router contract unless explicitly overridden by the user in the current turn.
+
+📋 **Likely surface**
+- Single-user first: one local file under the central-mcp home/config tree.
+- Later expansion: named user profiles or structured config + free-form notes.
+- Clear separation between persistent user preferences and temporary session memory (`.omx/notepad.md`).
+
+💭 **Open questions**
+- Should the first version be plain Markdown only, or structured config plus Markdown notes?
+- What is the minimal precedence model that stays predictable across orchestrators?
+- How should central-mcp expose the active overlay for debugging and auditability?
+
+---
+
+## Phase 4 — Worker mode (interactive approval)
 
 **Goal**: let `bypass=false` dispatches succeed when they need interactive permission prompts, by routing them through a pane-resident worker.
 
@@ -92,7 +150,7 @@ Status legend: ✅ done · 🚧 in progress · 📋 planned · 💭 idea
 
 ---
 
-## Phase 4 — Daemon + multi-client (demand-driven)
+## Phase 5 — Daemon + multi-client (demand-driven)
 
 **Goal**: let multiple MCP clients (Claude Desktop, Codex app, CLI scripts) share one central-mcp instance and subscribe to dispatch events.
 
@@ -112,7 +170,7 @@ Status legend: ✅ done · 🚧 in progress · 📋 planned · 💭 idea
 
 ---
 
-## Phase 5 — MCP resource subscriptions (demand-driven)
+## Phase 6 — MCP resource subscriptions (demand-driven)
 
 **Goal**: expose dispatch events as first-class MCP resources so external MCP clients can subscribe without reading local log files.
 
@@ -122,35 +180,7 @@ Status legend: ✅ done · 🚧 in progress · 📋 planned · 💭 idea
 - Backed by the same jsonl written in Phase 1 (no schema duplication).
 
 💭 **Depends on**
-- Phase 4 (daemon + HTTP/SSE transport) — MCP resource subscriptions require a long-lived server shared across clients.
-
----
-
-## Phase 6 — Workspaces (planned)
-
-**Goal**: let users group projects into workspaces so orchestrators can address a group with one dispatch, and let a single install swap between different project sets (work / personal / client-X) without editing `registry.yaml`.
-
-📋 **Project grouping inside a registry**
-- New optional `workspace` field per project (or a top-level `workspaces: {name: [project, …]}` map).
-- `dispatch("frontend", prompt)` when `frontend` is a workspace name → fan out to every project in that workspace; results aggregated or streamed per project.
-- `list_projects --workspace frontend` / `orchestration_history --workspace frontend` for filtered views.
-- `central-mcp up` / `cmcp zellij` can take `--workspace frontend` to bring up only that group's panes.
-
-📋 **Registry profiles (switchable workspaces)**
-- Multiple `registry.yaml` files side-by-side (e.g. `~/.central-mcp/workspaces/<name>/registry.yaml`).
-- `central-mcp --workspace client-x` selects which registry + config + logs directory tree is active for the whole invocation.
-- Saved default in `config.toml` under `[workspace] default = "..."`.
-- Env var override: `CENTRAL_MCP_WORKSPACE=<name>`.
-
-💭 **Shared context** (later, maybe)
-- Prompts/system-instructions applied to every dispatch inside a workspace (e.g. "all these are TypeScript projects with shared style rules").
-- Per-workspace `CLAUDE.md` / `AGENTS.md` templates auto-applied when launching the orchestrator for that workspace.
-- Defer until 1 + 2 land and the shape of shared-state needs is clearer from real use.
-
-💭 **Open questions**
-- Resolution order when a name is both a project and a workspace — prefix rule (`@frontend` for workspace) or type disambiguation?
-- Concurrent dispatch limits when fan-out grows large.
-- How does orchestration_history present fan-out runs — one parent + N children, or flat list with a shared group_id?
+- Phase 5 (daemon + HTTP/SSE transport) — MCP resource subscriptions require a long-lived server shared across clients.
 
 ---
 
@@ -170,7 +200,7 @@ Status legend: ✅ done · 🚧 in progress · 📋 planned · 💭 idea
 
 📋 **Routing config**
 - `config.toml` under `[routing]` for preferences: favored agent for code-heavy tasks, fallback chains, cost caps.
-- Per-workspace routing overrides (ties into Phase 6).
+- Per-workspace routing overrides (ties into Phase 3 — Workspaces).
 
 💭 **Open questions**
 - How much of this belongs in central-mcp vs. a purpose-built classifier sidecar?

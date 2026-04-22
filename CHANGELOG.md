@@ -3,6 +3,30 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.9.0] — 2026-04-22
+
+### Added
+- **Workspaces** — group projects into named sets; switch between them without editing `registry.yaml` directly.
+  - `cmcp workspace list / current / new / use / add / remove` CLI subcommand tree.
+  - `current_workspace` stored in `registry.yaml` (no separate config file); auto-migrated on first load.
+  - Projects not assigned to any named workspace fall back to the built-in `default` workspace (orphan logic).
+  - Registry functions: `load_workspaces`, `current_workspace`, `set_current_workspace`, `add_workspace`, `add_to_workspace`, `remove_from_workspace`, `projects_in_workspace`.
+- **Workspace-aware observation sessions** — `cmcp tmux` / `cmcp zellij` now create sessions named `cmcp-<workspace>` (e.g. `cmcp-default`, `cmcp-work`) instead of the generic `central`.
+  - `--workspace NAME` targets a specific workspace; `--all` creates sessions for every workspace simultaneously.
+  - `cmcp tmux switch NAME` / `cmcp zellij switch NAME` jump to `cmcp-<NAME>`, creating it if missing.
+  - `cmcp down` tears down all `cmcp-*` sessions (including the legacy `central` name for backward compat).
+- **Multi-workspace cmux recipe** added to shipped `src/central_mcp/data/{CLAUDE,AGENTS}.md` — in `--all` mode, the orchestrator creates one `cmcp-<workspace>-watch-<n>` workspace per group chunk.
+
+### Changed
+- Session naming: `cmcp-<workspace>` replaces the hardcoded `central` name. The old name is kept as a backward-compat alias and cleaned up by `cmcp down`.
+- `kill_all()` now accepts an optional `session_name` argument — `None` kills all `cmcp-*` sessions; a specific name kills just that session.
+- README / README_KO updated with Workspaces section, updated CLI reference, and session naming notes.
+
+### Upgrade note
+- Because the shipped runtime orchestrator instructions changed, existing installs may need `rm ~/.central-mcp/{CLAUDE,AGENTS}.md` before the next orchestrator launch to pick up the updated bundle.
+
+---
+
 ## [0.8.19] — 2026-04-22
 
 ### Added

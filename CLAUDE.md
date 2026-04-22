@@ -62,7 +62,7 @@ uv run --no-sync pytest tests/test_adapters.py -v   # targeted
 4. `git commit -am 'chore(release): X.Y.Z'` (or combine with a feature commit).
 5. `rm -rf dist && uv build`.
 6. `git push origin main`.
-7. `UV_PUBLISH_TOKEN=$PYPI_TOKEN uv publish` (token in `.env`, gitignored).
+7. **PyPI upload** — credentials are kept out of this file intentionally. See `.publish.md` (gitignored, local-only) for the exact command. If `.publish.md` doesn't exist yet, create it from the template in `.gitignore`'s comment or ask the agent to scaffold it.
 8. If you edited `src/central_mcp/data/{CLAUDE,AGENTS}.md`, note the copy-on-miss caveat in the CHANGELOG: existing installs need `rm ~/.central-mcp/{CLAUDE,AGENTS}.md` before the next orchestrator launch to pick up the new bundle.
 
 Patch-bump cadence is liberal (docs fixes, wording tweaks, small behavior changes). Minor bump for breaking CLI changes, new MCP tools, or backend architecture shifts.
