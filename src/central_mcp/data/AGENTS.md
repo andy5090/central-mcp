@@ -179,16 +179,16 @@ Total 7 splits = 2 × 4 − 1. ✓
 
 **Project → surface mapping + seeding.** `new-split` returns OK as soon as cmux queues the pane, but the spawned shell may not yet be at a prompt. If you send before the first prompt renders, the text lands on the pre-prompt screen (e.g. visibly concatenated with `Last login:`) and never reaches the shell's command line. Fixed sleeps are unreliable because zsh + oh-my-zsh rc timing varies pane-to-pane.
 
-Reliable fix: **poll `cmux tree --json` for per-surface readiness** before sending. In practice the safe gate is not merely "shell process exists", but "the shell prompt has rendered and the pane title has stabilized". `tty` is helpful when populated, but the stronger signal is a non-empty `title` that stays the same across consecutive polls. That avoids sending during transient startup states where the shell exists but is still printing login / rc output.
+Reliable fix: **poll `cmux tree --json` for per-surface readiness** before sending. The safe gate is a non-empty pane title that is not `'Terminal'` — cmux sets `'Terminal'` while the shell is still spawning, then changes it to the shell prompt once ready. Poll until the title transitions away from `'Terminal'` (max ~3 s); send regardless on timeout so a slow machine still gets seeded.
+
+Note: `tty` in the tree JSON is always `null` in current cmux builds — do not rely on it as a readiness signal.
 
 **Polling + seed recipe per pane** — for each `<workspace_ref, surface_ref, project_name>` in project order:
 
 ```bash
-# Wait for the surface's shell prompt to stabilize (up to ~12s).
-last_title=""
-stable=0
-for _ in $(seq 1 30); do
-  state=$(cmux --json tree --workspace <ws> | python3 -c "
+# Wait up to ~3s for the shell prompt to appear (title leaves 'Terminal' state).
+for _ in $(seq 1 10); do
+  title=$(cmux --json tree --workspace <ws> | python3 -c "
 import json, sys
 d = json.load(sys.stdin)
 for w in d.get('windows', []):
@@ -196,26 +196,16 @@ for w in d.get('windows', []):
     for p in ws.get('panes', []):
       for s in p.get('surfaces', []):
         if s.get('ref') == '<surface_ref>':
-          title = (s.get('title') or '').strip()
-          tty = '1' if s.get('tty') else '0'
-          print(f'{tty}\t{title}')
+          print((s.get('title') or '').strip())
           sys.exit(0)
 ")
-  title=${state#*$'\t'}
-  tty=${state%%$'\t'*}
-  if [ -n "$title" ] && [ "$title" = "$last_title" ]; then
-    stable=$((stable + 1))
-  else
-    stable=0
-    last_title="$title"
-  fi
-  if [ -n "$title" ] && [ "$stable" -ge 1 ]; then
+  if [ -n "$title" ] && [ "$title" != "Terminal" ]; then
     break
   fi
   sleep 0.3
 done
 
-# Seed. Leading \n is a belt-and-suspenders flush for any residual input.
+# Seed. Leading \n flushes any residual input regardless of timing.
 cmux send --workspace <ws> --surface <surface_ref> "\ncentral-mcp watch <project_name>"
 cmux send-key --workspace <ws> --surface <surface_ref> enter
 ```
