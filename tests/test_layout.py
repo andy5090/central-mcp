@@ -22,10 +22,14 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.fixture(autouse=True)
 def _cleanup_session():
-    """Kill the test session after each test, even on failure."""
+    """Kill test sessions after each test, even on failure."""
     yield
-    if tmux.has_session(layout.SESSION):
-        tmux.kill_session(layout.SESSION)
+    # Kill all cmcp-* sessions created during tests
+    for s in tmux.list_sessions(prefix="cmcp-"):
+        tmux.kill_session(s)
+    # Also clean up legacy session name if present
+    if tmux.has_session(layout.LEGACY_SESSION):
+        tmux.kill_session(layout.LEGACY_SESSION)
 
 
 class TestEnsureSession:
@@ -39,7 +43,7 @@ class TestEnsureSession:
 
         created, messages = layout.ensure_session()
         assert created is True
-        assert tmux.has_session(layout.SESSION)
+        assert tmux.has_session(layout.session_name_for_workspace("default"))
         assert any("proj-a" in m for m in messages)
         assert any("proj-b" in m for m in messages)
 
@@ -58,19 +62,33 @@ class TestEnsureSession:
         created, messages = layout.ensure_session()
         assert created is True
         assert any("no projects" in m.lower() for m in messages)
-        assert tmux.has_session(layout.SESSION)
+        assert tmux.has_session(layout.session_name_for_workspace("default"))
 
 
 class TestKillAll:
     def test_kills_existing_session(self, fake_home: Path) -> None:
-        tmux.new_session(layout.SESSION, "test", ".")
-        assert tmux.has_session(layout.SESSION)
+        sname = layout.session_name_for_workspace("default")
+        tmux.new_session(sname, "test", ".")
+        assert tmux.has_session(sname)
         killed, msg = layout.kill_all()
         assert killed is True
-        assert not tmux.has_session(layout.SESSION)
+        assert not tmux.has_session(sname)
+
+    def test_kills_specific_session_by_name(self, fake_home: Path) -> None:
+        sname = layout.session_name_for_workspace("work")
+        tmux.new_session(sname, "test", ".")
+        assert tmux.has_session(sname)
+        killed, msg = layout.kill_all(session_name=sname)
+        assert killed is True
+        assert not tmux.has_session(sname)
 
     def test_no_session_to_kill(self, fake_home: Path) -> None:
         killed, msg = layout.kill_all()
+        assert killed is False
+        assert "no observation sessions" in msg.lower()
+
+    def test_specific_session_not_found(self, fake_home: Path) -> None:
+        killed, msg = layout.kill_all(session_name="cmcp-ghost")
         assert killed is False
         assert "no session" in msg.lower()
 
@@ -87,7 +105,7 @@ class TestPaneDetails:
         layout.ensure_session()
         first = layout.window_name(0)
         r = tmux._run([
-            "list-panes", "-t", f"{layout.SESSION}:{first}",
+            "list-panes", "-t", f"{layout.session_name_for_workspace("default")}:{first}",
             "-F", "#{pane_index}",
         ])
         assert r.ok
@@ -102,7 +120,7 @@ class TestPaneDetails:
         layout.ensure_session()
         first = layout.window_name(0)
         r = tmux._run([
-            "list-panes", "-t", f"{layout.SESSION}:{first}",
+            "list-panes", "-t", f"{layout.session_name_for_workspace("default")}:{first}",
             "-F", "#{pane_current_path}",
         ])
         assert r.ok
@@ -123,7 +141,7 @@ class TestPaneDetails:
 
         first = layout.window_name(0)
         r = tmux._run([
-            "capture-pane", "-p", "-t", f"{layout.SESSION}:{first}.0",
+            "capture-pane", "-p", "-t", f"{layout.session_name_for_workspace("default")}:{first}.0",
         ])
         assert r.ok
         text = r.stdout
@@ -140,7 +158,7 @@ class TestPaneDetails:
 
         layout.ensure_session()
         r = tmux._run([
-            "list-windows", "-t", layout.SESSION,
+            "list-windows", "-t", layout.session_name_for_workspace("default"),
             "-F", "#{window_layout}",
         ])
         assert r.ok
@@ -155,14 +173,15 @@ class TestUpDown:
         d = tmp_path / "proj"
         d.mkdir()
         registry.add_project("proj", str(d), agent="gemini")
+        sname = layout.session_name_for_workspace("default")
 
         created, _ = layout.ensure_session()
         assert created
-        assert tmux.has_session(layout.SESSION)
+        assert tmux.has_session(sname)
 
-        killed, _ = layout.kill_all()
+        killed, _ = layout.kill_all(session_name=sname)
         assert killed
-        assert not tmux.has_session(layout.SESSION)
+        assert not tmux.has_session(sname)
 
 
 class TestOrchestratorPane:
@@ -187,7 +206,7 @@ class TestOrchestratorPane:
         assert any(f"{first} -> proj" in m for m in messages)
 
         r = tmux._run([
-            "list-panes", "-t", f"{layout.SESSION}:{first}",
+            "list-panes", "-t", f"{layout.session_name_for_workspace("default")}:{first}",
             "-F", "#{pane_index}:#{pane_current_path}",
         ])
         assert r.ok
@@ -244,8 +263,8 @@ class TestWindowChunking:
         assert created
         assert not any("failed" in m for m in messages), messages
         w1 = layout.window_name(0)
-        assert _window_names(layout.SESSION) == [w1]
-        assert _pane_count(layout.SESSION, w1) == 4
+        assert _window_names(layout.session_name_for_workspace("default")) == [w1]
+        assert _pane_count(layout.session_name_for_workspace("default"), w1) == 4
 
     def test_five_items_overflow_to_second_window(
         self, fake_home: Path, tmp_path: Path
@@ -259,9 +278,9 @@ class TestWindowChunking:
         assert created
         assert not any("failed" in m for m in messages), messages
         w1, w2 = layout.window_name(0), layout.window_name(1)
-        assert _window_names(layout.SESSION) == [w1, w2]
-        assert _pane_count(layout.SESSION, w1) == 4
-        assert _pane_count(layout.SESSION, w2) == 1
+        assert _window_names(layout.session_name_for_workspace("default")) == [w1, w2]
+        assert _pane_count(layout.session_name_for_workspace("default"), w1) == 4
+        assert _pane_count(layout.session_name_for_workspace("default"), w2) == 1
 
     def test_hub_holds_fewer_panes_when_orchestrator_present(
         self, fake_home: Path, tmp_path: Path
@@ -282,8 +301,8 @@ class TestWindowChunking:
         assert created
         hub = layout.window_name(0, has_orchestrator=True)
         assert hub.endswith(layout.HUB_SUFFIX)
-        assert _window_names(layout.SESSION) == [hub]
-        assert _pane_count(layout.SESSION, hub) == 3
+        assert _window_names(layout.session_name_for_workspace("default")) == [hub]
+        assert _pane_count(layout.session_name_for_workspace("default"), hub) == 3
 
     def test_orchestrator_plus_four_projects_overflows_to_second_window(
         self, fake_home: Path, tmp_path: Path
@@ -306,9 +325,9 @@ class TestWindowChunking:
         assert not any("failed" in m for m in messages), messages
         hub = layout.window_name(0, has_orchestrator=True)
         overflow = layout.window_name(1, has_orchestrator=True)
-        assert _window_names(layout.SESSION) == [hub, overflow]
-        assert _pane_count(layout.SESSION, hub) == 4
-        assert _pane_count(layout.SESSION, overflow) == 1
+        assert _window_names(layout.session_name_for_workspace("default")) == [hub, overflow]
+        assert _pane_count(layout.session_name_for_workspace("default"), hub) == 4
+        assert _pane_count(layout.session_name_for_workspace("default"), overflow) == 1
 
     def test_orchestrator_plus_eight_projects_chunks_into_three_windows(
         self, fake_home: Path, tmp_path: Path
@@ -327,11 +346,11 @@ class TestWindowChunking:
 
         created, messages = layout.ensure_session(orchestrator=orch)
         assert created
-        names = _window_names(layout.SESSION)
+        names = _window_names(layout.session_name_for_workspace("default"))
         assert len(names) == 3
-        assert _pane_count(layout.SESSION, names[0]) == 4
-        assert _pane_count(layout.SESSION, names[1]) == 4
-        assert _pane_count(layout.SESSION, names[2]) == 1
+        assert _pane_count(layout.session_name_for_workspace("default"), names[0]) == 4
+        assert _pane_count(layout.session_name_for_workspace("default"), names[1]) == 4
+        assert _pane_count(layout.session_name_for_workspace("default"), names[2]) == 1
 
     def test_twenty_projects_span_multiple_windows(
         self, fake_home: Path, tmp_path: Path
@@ -346,10 +365,10 @@ class TestWindowChunking:
         assert created
         assert not any("failed" in m for m in messages), messages
 
-        names = _window_names(layout.SESSION)
+        names = _window_names(layout.session_name_for_workspace("default"))
         assert names == [layout.window_name(i) for i in range(5)]
         for name in names:
-            assert _pane_count(layout.SESSION, name) == 4
+            assert _pane_count(layout.session_name_for_workspace("default"), name) == 4
 
     def test_custom_panes_per_window(self, fake_home: Path, tmp_path: Path) -> None:
         # 8 projects with panes_per_window=2 → 4 windows of 2 panes each.
@@ -362,10 +381,10 @@ class TestWindowChunking:
         assert created
         assert not any("failed" in m for m in messages), messages
 
-        names = _window_names(layout.SESSION)
+        names = _window_names(layout.session_name_for_workspace("default"))
         assert len(names) == 4
         for name in names:
-            assert _pane_count(layout.SESSION, name) == 2
+            assert _pane_count(layout.session_name_for_workspace("default"), name) == 2
 
     def test_invalid_panes_per_window_rejected(
         self, fake_home: Path, tmp_path: Path
@@ -401,7 +420,7 @@ class TestActivePane:
         orch = layout.OrchestratorPane(command=":", cwd=str(orch_dir), label="stub")
 
         layout.ensure_session(orchestrator=orch)
-        window, pane = self._active(layout.SESSION)
+        window, pane = self._active(layout.session_name_for_workspace("default"))
         assert window == layout.window_name(0, has_orchestrator=True)
         assert pane == 0
 
@@ -415,7 +434,7 @@ class TestActivePane:
             registry.add_project(f"p{i}", str(d), agent="shell")
 
         layout.ensure_session()
-        window, pane = self._active(layout.SESSION)
+        window, pane = self._active(layout.session_name_for_workspace("default"))
         assert window == layout.window_name(0)
         assert pane == 0
 
@@ -440,7 +459,7 @@ class TestPaneTitlesAndStyle:
             registry.add_project(name, str(d), agent="shell")
 
         layout.ensure_session()
-        titles = self._pane_titles(f"{layout.SESSION}:{layout.window_name(0)}")
+        titles = self._pane_titles(f"{layout.session_name_for_workspace("default")}:{layout.window_name(0)}")
         assert "alpha" in titles
         assert "beta" in titles
 
@@ -457,7 +476,7 @@ class TestPaneTitlesAndStyle:
 
         layout.ensure_session(orchestrator=orch)
         hub = layout.window_name(0, has_orchestrator=True)
-        titles = self._pane_titles(f"{layout.SESSION}:{hub}")
+        titles = self._pane_titles(f"{layout.session_name_for_workspace("default")}:{hub}")
         assert any("Central MCP Orchestrator" in t for t in titles)
         assert "proj" in titles
 
@@ -500,7 +519,7 @@ class TestPaneTitlesAndStyle:
 
         hub = layout.window_name(0, has_orchestrator=True)
         r = tmux._run([
-            "list-panes", "-t", f"{layout.SESSION}:{hub}",
+            "list-panes", "-t", f"{layout.session_name_for_workspace("default")}:{hub}",
             "-F", "#{pane_index}:#{pane_top}:#{pane_left}:#{pane_width}:#{pane_height}",
         ])
         assert r.ok
@@ -578,7 +597,7 @@ class TestPaneTitlesAndStyle:
         layout.ensure_session(orchestrator=orch)
         hub = layout.window_name(0, has_orchestrator=True)
         r = tmux._run([
-            "list-panes", "-t", f"{layout.SESSION}:{hub}",
+            "list-panes", "-t", f"{layout.session_name_for_workspace("default")}:{hub}",
             "-F", "#{pane_index}:#{pane_left}:#{pane_width}:#{pane_top}",
         ])
         assert r.ok

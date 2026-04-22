@@ -110,8 +110,13 @@ def build_parser() -> argparse.ArgumentParser:
         "tmux",
         help="attach to the observation session via tmux (creates it first if needed)",
     )
-    # Mirror `up`'s flags so the combined `tmux` (= up + tmux attach) is
-    # configurable in one shot.
+    tmux_sub = p_tmux.add_subparsers(dest="tmux_sub")
+    p_tmux_switch = tmux_sub.add_parser("switch", help="attach to cmcp-<name> tmux session (create if missing)")
+    p_tmux_switch.add_argument("ws_name", metavar="NAME")
+    p_tmux_switch.add_argument("--no-orchestrator", action="store_true")
+    p_tmux_switch.add_argument("--permission-mode", dest="permission_mode",
+                               choices=["bypass", "auto", "restricted"], default="bypass")
+    p_tmux_switch.add_argument("--max-panes", type=int, default=None, metavar="N")
     p_tmux.add_argument("--no-orchestrator", action="store_true")
     p_tmux.add_argument(
         "--permission-mode",
@@ -127,12 +132,23 @@ def build_parser() -> argparse.ArgumentParser:
         "--max-panes", type=int, default=None, metavar="N",
         help="max panes per tmux window (default: auto — terminal-size derived)",
     )
+    p_tmux.add_argument("--workspace", metavar="NAME", default=None,
+                        help="show only projects in this workspace (default: current workspace)")
+    p_tmux.add_argument("--all", action="store_true",
+                        help="create sessions for all workspaces")
     p_tmux.set_defaults(func=cmd_tmux)
 
     p_zellij = sub.add_parser(
         "zellij",
         help="attach to the observation session via zellij (creates it first if needed)",
     )
+    zellij_sub = p_zellij.add_subparsers(dest="zellij_sub")
+    p_zellij_switch = zellij_sub.add_parser("switch", help="attach to cmcp-<name> zellij session (create if missing)")
+    p_zellij_switch.add_argument("ws_name", metavar="NAME")
+    p_zellij_switch.add_argument("--no-orchestrator", action="store_true")
+    p_zellij_switch.add_argument("--permission-mode", dest="permission_mode",
+                                 choices=["bypass", "auto", "restricted"], default="bypass")
+    p_zellij_switch.add_argument("--max-panes", type=int, default=None, metavar="N")
     p_zellij.add_argument("--no-orchestrator", action="store_true")
     p_zellij.add_argument(
         "--permission-mode",
@@ -148,6 +164,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--max-panes", type=int, default=None, metavar="N",
         help="max panes per zellij tab (default: auto — terminal-size derived)",
     )
+    p_zellij.add_argument("--workspace", metavar="NAME", default=None,
+                          help="show only projects in this workspace (default: current workspace)")
+    p_zellij.add_argument("--all", action="store_true",
+                          help="create sessions for all workspaces")
     p_zellij.set_defaults(func=cmd_zellij)
 
     p_list = sub.add_parser("list", help="print the registry")

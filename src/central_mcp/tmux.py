@@ -40,6 +40,17 @@ def has_session(name: str) -> bool:
     return _run(["has-session", "-t", name]).ok
 
 
+def list_sessions(prefix: str = "") -> list[str]:
+    """Return all tmux session names, optionally filtered by prefix."""
+    r = _run(["list-sessions", "-F", "#{session_name}"])
+    if not r.ok:
+        return []
+    names = [line.strip() for line in r.stdout.splitlines() if line.strip()]
+    if prefix:
+        names = [n for n in names if n.startswith(prefix)]
+    return names
+
+
 def list_clients(name: str) -> list[str]:
     """Return the list of client TTYs currently attached to `name`.
 

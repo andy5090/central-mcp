@@ -24,14 +24,17 @@ from pathlib import Path
 from central_mcp.grid import pick_panes_per_window, pick_rows
 from central_mcp.layout import (
     DEFAULT_PANES_PER_WINDOW,
+    LEGACY_SESSION,
     OrchestratorPane,
+    SESSION_PREFIX,
     WINDOW_BASE,
     HUB_SUFFIX,
+    session_name_for_workspace,
     window_name,
 )
 from central_mcp.registry import Project, load_registry
 
-SESSION = "central"
+SESSION = LEGACY_SESSION  # kept for backward-compat imports
 
 
 @dataclass
@@ -260,6 +263,7 @@ def build_layout(
     orchestrator: OrchestratorPane | None = None,
     panes_per_window: int = DEFAULT_PANES_PER_WINDOW,
     term_size: tuple[int, int] | None = None,
+    projects: list[Project] | None = None,
 ) -> str:
     """Build the full KDL layout string for the current registry.
 
@@ -272,12 +276,15 @@ def build_layout(
 
     `panes_per_window` defaults to the static constant; the CLI
     resolves `None` via `grid.pick_panes_per_window` before calling.
+    `projects` defaults to `load_registry()`; pass a workspace-filtered
+    list to scope to one workspace.
     """
     if panes_per_window < 1:
         raise ValueError(f"panes_per_window must be >= 1, got {panes_per_window}")
 
     has_orchestrator = orchestrator is not None
-    projects = load_registry()
+    if projects is None:
+        projects = load_registry()
 
     pane_kdls: list[str] = []
     if orchestrator is not None:
@@ -341,9 +348,14 @@ def write_layout(
     path: Path,
     orchestrator: OrchestratorPane | None = None,
     panes_per_window: int = DEFAULT_PANES_PER_WINDOW,
+    projects: list[Project] | None = None,
 ) -> Path:
     """Write the generated KDL layout to disk and return the path."""
-    kdl = build_layout(orchestrator=orchestrator, panes_per_window=panes_per_window)
+    kdl = build_layout(
+        orchestrator=orchestrator,
+        panes_per_window=panes_per_window,
+        projects=projects,
+    )
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(kdl)
     return path
@@ -353,25 +365,36 @@ def ensure_session(
     orchestrator: OrchestratorPane | None = None,
     panes_per_window: int = DEFAULT_PANES_PER_WINDOW,
     layout_path: Path | None = None,
+    session_name: str | None = None,
+    projects: list[Project] | None = None,
 ) -> tuple[bool, list[str]]:
     """Start the Zellij session if missing, using a generated KDL layout.
 
     Returns (created, messages). Idempotent — if the session already
     exists, no layout is written and we just report that.
+
+    `session_name` defaults to `cmcp-<current_workspace>`.
+    `projects` defaults to `load_registry()`; pass a workspace-filtered
+    list to scope to one workspace.
     """
+    if session_name is None:
+        from central_mcp.registry import current_workspace
+        session_name = session_name_for_workspace(current_workspace())
+
     messages: list[str] = []
-    if has_session(SESSION):
-        messages.append(f"session '{SESSION}' already exists — leaving as-is")
+    if has_session(session_name):
+        messages.append(f"session '{session_name}' already exists — leaving as-is")
         return False, messages
 
     if layout_path is None:
         from central_mcp import paths
-        layout_path = paths.central_mcp_home() / "zellij-layout.kdl"
+        layout_path = paths.central_mcp_home() / f"zellij-layout-{session_name}.kdl"
     write_layout(
         layout_path,
         orchestrator=orchestrator,
         panes_per_window=panes_per_window,
+        projects=projects,
     )
     messages.append(f"wrote layout: {layout_path}")
-    messages.append(f"session '{SESSION}' — attach with: central-mcp zellij")
+    messages.append(f"session '{session_name}' — attach with: central-mcp zellij")
     return True, messages

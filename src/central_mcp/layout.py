@@ -25,10 +25,17 @@ from dataclasses import dataclass
 from central_mcp import tmux
 from central_mcp.registry import Project, load_registry
 
-SESSION = "central"
+SESSION_PREFIX = "cmcp-"
+LEGACY_SESSION = "central"
+SESSION = LEGACY_SESSION  # kept for backward-compat imports
 WINDOW_BASE = "cmcp"
 HUB_SUFFIX = "-hub"
 DEFAULT_PANES_PER_WINDOW = 4
+
+
+def session_name_for_workspace(workspace: str) -> str:
+    """Return the tmux session name for a given workspace: 'cmcp-<workspace>'."""
+    return f"{SESSION_PREFIX}{workspace}"
 
 
 def window_name(window_index: int = 0, *, has_orchestrator: bool = False) -> str:
@@ -268,6 +275,8 @@ def _pane_command(p: Project) -> str:
 def ensure_session(
     orchestrator: OrchestratorPane | None = None,
     panes_per_window: int = DEFAULT_PANES_PER_WINDOW,
+    session_name: str | None = None,
+    projects: list[Project] | None = None,
 ) -> tuple[bool, list[str]]:
     """Idempotently create the observation session if it doesn't exist.
 
@@ -279,15 +288,25 @@ def ensure_session(
 
     Project panes run `central-mcp watch <project>` so users see
     dispatch activity live in each pane.
+
+    `session_name` defaults to `cmcp-<current_workspace>`.
+    `projects` defaults to `load_registry()` (all projects); pass a
+    workspace-filtered list to scope to one workspace.
     """
     if panes_per_window < 1:
         raise ValueError(f"panes_per_window must be >= 1, got {panes_per_window}")
+
+    if session_name is None:
+        from central_mcp.registry import current_workspace
+        session_name = session_name_for_workspace(current_workspace())
+
     messages: list[str] = []
-    if tmux.has_session(SESSION):
-        messages.append(f"session '{SESSION}' already exists — leaving as-is")
+    if tmux.has_session(session_name):
+        messages.append(f"session '{session_name}' already exists — leaving as-is")
         return False, messages
 
-    projects = load_registry()
+    if projects is None:
+        projects = load_registry()
     has_orchestrator = orchestrator is not None
 
     # Each plan entry: (title_for_border, cwd, wrapped_cmd, is_orchestrator)
@@ -314,7 +333,7 @@ def ensure_session(
     if not plan:
         messages.append("registry.yaml has no projects and no orchestrator — creating empty session")
         r = tmux.new_session(
-            SESSION, window_name(0), ".",
+            session_name, window_name(0), ".",
             width=_term_cols, height=_term_rows,
         )
         if not r.ok:
@@ -333,31 +352,24 @@ def ensure_session(
 
     for win_idx, chunk in enumerate(chunks):
         wname = window_name(win_idx, has_orchestrator=has_orchestrator)
-        target = f"{SESSION}:{wname}"
+        target = f"{session_name}:{wname}"
         first_title, first_cwd, first_cmd, first_is_orch = chunk[0]
 
         if win_idx == 0:
             r = tmux.new_session(
-                SESSION, wname, first_cwd, command=first_cmd,
+                session_name, wname, first_cwd, command=first_cmd,
                 width=_term_cols, height=_term_rows,
             )
             op = "new-session"
         else:
-            r = tmux.new_window(SESSION, wname, first_cwd, command=first_cmd)
+            r = tmux.new_window(session_name, wname, first_cwd, command=first_cmd)
             op = "new-window"
         if not r.ok:
             messages.append(f"{op} for {wname} failed: {r.stderr.strip()}")
             continue
         messages.append(f"{wname} pane 0 -> {first_title} ({first_cwd})")
 
-        # Pane border titles make each pane self-identify. Apply to every
-        # pane we create, orchestrator included. (set-option scope is
-        # per-window so this line suffices to turn titles on.)
         tmux.set_window_option(target, "pane-border-status", "top")
-        # Highlight the orchestrator pane's title in bold yellow via a
-        # conditional border format. Changing pane-border-format (title
-        # text) does NOT fight with pane-active-border-style (border
-        # characters), so tmux's own active-pane indicator still works.
         if first_is_orch:
             tmux.set_window_option(
                 target,
@@ -366,12 +378,6 @@ def ensure_session(
             )
         tmux.set_pane_title(f"{target}.0", first_title)
 
-        # For the orchestrator's own tab (first window, has_orch=True),
-        # give the orchestrator a full-height left column sized to one
-        # project column. Overflow windows stay on the flat grid.
-        # Narrow terminals can't host an orch-column layout (the
-        # column would fall below the readable-width floor), so they
-        # also fall back to the flat vertical-stack grid.
         from central_mcp.grid import pick_rows, _MIN_PANE_COLS
         narrow = _term_cols < 2 * _MIN_PANE_COLS
         if win_idx == 0 and first_is_orch and not narrow:
@@ -382,21 +388,40 @@ def ensure_session(
             rows = pick_rows(len(chunk), term_size=(_term_cols, _term_rows))
             _fill_grid(target, wname, f"{target}.0", chunk[1:], rows, messages)
 
-    # Focus the first window/pane so attaching users land on pane 0
-    # (orchestrator when present) rather than the last-split pane.
     first_wname = window_name(0, has_orchestrator=has_orchestrator)
-    tmux.select_window(f"{SESSION}:{first_wname}")
-    tmux.select_pane(f"{SESSION}:{first_wname}.0")
+    tmux.select_window(f"{session_name}:{first_wname}")
+    tmux.select_pane(f"{session_name}:{first_wname}.0")
 
-    messages.append(f"created '{SESSION}' — attach with: central-mcp tmux")
+    messages.append(f"created '{session_name}' — attach with: central-mcp tmux")
     return True, messages
 
 
-def kill_all() -> tuple[bool, str]:
-    """Kill the central session if it exists. Returns (killed, message)."""
-    if not tmux.has_session(SESSION):
-        return False, f"no session named '{SESSION}'"
-    r = tmux.kill_session(SESSION)
-    if not r.ok:
-        return False, f"kill-session failed: {r.stderr.strip()}"
-    return True, f"killed session '{SESSION}'"
+def kill_all(session_name: str | None = None) -> tuple[bool, str]:
+    """Kill observation session(s).
+
+    If `session_name` is given, kill that specific session.
+    If None, kill all `cmcp-*` sessions plus the legacy `central` session.
+    Returns (killed, message).
+    """
+    if session_name is not None:
+        if not tmux.has_session(session_name):
+            return False, f"no session named '{session_name}'"
+        r = tmux.kill_session(session_name)
+        if not r.ok:
+            return False, f"kill-session failed: {r.stderr.strip()}"
+        return True, f"killed session '{session_name}'"
+
+    # Kill all cmcp-* sessions + legacy central.
+    to_kill = tmux.list_sessions(prefix=SESSION_PREFIX)
+    if tmux.has_session(LEGACY_SESSION):
+        to_kill.append(LEGACY_SESSION)
+    if not to_kill:
+        return False, "no observation sessions found"
+    killed: list[str] = []
+    for s in to_kill:
+        r = tmux.kill_session(s)
+        if r.ok:
+            killed.append(s)
+    if not killed:
+        return False, "kill-session failed for all sessions"
+    return True, f"killed: {', '.join(killed)}"

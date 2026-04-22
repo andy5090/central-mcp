@@ -270,22 +270,47 @@ def cmd_upgrade(args: argparse.Namespace) -> int:
     return upgrade.run(check_only=args.check)
 
 
-def _teardown_observation_session() -> bool:
-    """Kill tmux + zellij observation sessions if present and clear
-    the version stamp. Returns True if anything was actually torn
-    down. Silent — callers print their own surrounding context.
+def _teardown_observation_session(session_name: str | None = None) -> bool:
+    """Kill tmux + zellij observation sessions and clear the version stamp.
+
+    If `session_name` is given, kills only that specific tmux session.
+    If None, kills all `cmcp-*` + legacy `central` tmux sessions.
+    Always kills the matching zellij session (or all cmcp-* if no name given).
+    Returns True if anything was actually torn down.
     """
     from central_mcp import session_info
 
-    any_killed, _ = layout.kill_all()
+    any_killed, _ = layout.kill_all(session_name)
     if shutil.which("zellij"):
         from central_mcp import zellij as zj
-        if zj.has_session(zj.SESSION):
-            r = zj._run(["delete-session", zj.SESSION, "--force"])
-            if r.ok:
-                any_killed = True
+        if session_name is not None:
+            if zj.has_session(session_name):
+                r = zj._run(["delete-session", session_name, "--force"])
+                if r.ok:
+                    any_killed = True
+        else:
+            # Kill all cmcp-* zellij sessions + legacy
+            for zs in _zellij_cmcp_sessions():
+                r = zj._run(["delete-session", zs, "--force"])
+                if r.ok:
+                    any_killed = True
     session_info.clear()
     return any_killed
+
+
+def _zellij_cmcp_sessions() -> list[str]:
+    """Return all zellij session names starting with 'cmcp-' plus legacy 'central'."""
+    from central_mcp import zellij as zj
+    from central_mcp.layout import SESSION_PREFIX, LEGACY_SESSION
+    try:
+        r = zj._run(["list-sessions", "--no-formatting"])
+        names = [line.strip() for line in r.stdout.splitlines() if line.strip()]
+        cmcp = [n for n in names if n.startswith(SESSION_PREFIX)]
+        if LEGACY_SESSION in names:
+            cmcp.append(LEGACY_SESSION)
+        return cmcp
+    except Exception:
+        return []
 
 
 def cmd_down(args: argparse.Namespace) -> int:
@@ -310,22 +335,20 @@ def cmd_down(args: argparse.Namespace) -> int:
 
     # zellij is optional — only try if the binary is on PATH.
     if shutil.which("zellij"):
-        from central_mcp import zellij as zj
-        if zj.has_session(zj.SESSION):
-            # `delete-session --force` is the universal "make this
-            # session go away" command — it kills active sessions AND
-            # purges serialized state for EXITED sessions, so reruns
-            # after a crash don't fail on the stale name.
-            r = zj._run(["delete-session", zj.SESSION, "--force"])
-            if r.ok:
-                print(f"zellij: deleted session '{zj.SESSION}'")
-                any_killed = True
-            else:
-                detail = (r.stderr or r.stdout or "").strip()
-                print(f"zellij: delete-session failed{': ' + detail if detail else ''}")
-                any_error = True
+        zj_sessions = _zellij_cmcp_sessions()
+        if zj_sessions:
+            from central_mcp import zellij as zj
+            for zs in zj_sessions:
+                r = zj._run(["delete-session", zs, "--force"])
+                if r.ok:
+                    print(f"zellij: deleted session '{zs}'")
+                    any_killed = True
+                else:
+                    detail = (r.stderr or r.stdout or "").strip()
+                    print(f"zellij: delete-session '{zs}' failed{': ' + detail if detail else ''}")
+                    any_error = True
         else:
-            print(f"zellij: no session named '{zj.SESSION}'")
+            print("zellij: no observation sessions found")
 
     # Always clear the stamp so a later `cmcp up` isn't held back by
     # an orphan file pointing at a version/multiplexer that's gone.
@@ -336,104 +359,161 @@ def cmd_down(args: argparse.Namespace) -> int:
     return 0 if any_killed else 0
 
 
-def cmd_tmux(args: argparse.Namespace) -> int:
-    """Attach to the observation tmux session via the CLI.
+def _resolve_workspace_for_tmux(args: argparse.Namespace) -> str:
+    """Return the target workspace name for tmux/zellij commands."""
+    ws_override = getattr(args, "workspace", None)
+    return ws_override if ws_override else current_workspace()
 
-    Named after the backend (tmux) so users learn a consistent
-    convention: `central-mcp tmux` attaches via tmux, `central-mcp
-    zellij` attaches via zellij. If the session doesn't exist yet,
-    creates it first (equivalent of `central-mcp up && tmux attach`)
-    so a single command brings the whole layout up and drops the user
-    in.
-    """
+
+def cmd_tmux(args: argparse.Namespace) -> int:
+    """Attach to the observation tmux session via the CLI."""
     from central_mcp import session_info
+
+    # Handle `cmcp tmux switch <name>`
+    if getattr(args, "tmux_sub", None) == "switch":
+        return _cmd_tmux_switch(args)
 
     if not shutil.which("tmux"):
         print("error: tmux is not installed or not on PATH", file=sys.stderr)
         return 1
 
-    # 0.6.8+: always teardown + rebuild so the layout reflects the
-    # current terminal's size (tmux's proportional rescale on attach
-    # does NOT preserve the equal-width / orch-column ratios we build
-    # with `-l N%` splits). Attached clients on the old session get
-    # disconnected — acceptable for the common single-terminal
-    # workflow. The `session_info` stamp guard from 0.6.1 is now
-    # redundant for this path but kept for direct `pip install -U`
-    # users who bypass the CLI.
-    if tmux.has_session(layout.SESSION):
-        _teardown_observation_session()
-
+    use_all = getattr(args, "all", False)
     orchestrator = _orchestrator_pane_for_up(args)
     panes_per_window = _resolve_max_panes(args)
     if panes_per_window < 1:
-        print(
-            f"error: --max-panes must be >= 1 (got {panes_per_window})",
-            file=sys.stderr,
-        )
+        print(f"error: --max-panes must be >= 1 (got {panes_per_window})", file=sys.stderr)
         return 1
-    created, messages = layout.ensure_session(
-        orchestrator=orchestrator,
-        panes_per_window=panes_per_window,
-    )
-    for m in messages:
-        print(m)
-    if not created:
-        return 1
-    session_info.write(multiplexer="tmux")
 
-    os.execvp("tmux", ["tmux", "attach", "-t", layout.SESSION])
+    if use_all:
+        ws_map = load_workspaces() or {"default": []}
+        workspaces = list(ws_map.keys())
+        attach_ws = current_workspace()
+        for ws in workspaces:
+            sname = layout.session_name_for_workspace(ws)
+            projs = projects_in_workspace(ws)
+            if tmux.has_session(sname):
+                _teardown_observation_session(sname)
+            created, messages = layout.ensure_session(
+                orchestrator=orchestrator if ws == attach_ws else None,
+                panes_per_window=panes_per_window,
+                session_name=sname,
+                projects=projs,
+            )
+            for m in messages:
+                print(f"[{ws}] {m}")
+        session_info.write(multiplexer="tmux")
+        attach_sname = layout.session_name_for_workspace(attach_ws)
+        os.execvp("tmux", ["tmux", "attach", "-t", attach_sname])
+    else:
+        ws = _resolve_workspace_for_tmux(args)
+        sname = layout.session_name_for_workspace(ws)
+        projs = projects_in_workspace(ws)
+        if tmux.has_session(sname):
+            _teardown_observation_session(sname)
+        created, messages = layout.ensure_session(
+            orchestrator=orchestrator,
+            panes_per_window=panes_per_window,
+            session_name=sname,
+            projects=projs,
+        )
+        for m in messages:
+            print(m)
+        if not created:
+            return 1
+        session_info.write(multiplexer="tmux")
+        os.execvp("tmux", ["tmux", "attach", "-t", sname])
+
+
+def _cmd_tmux_switch(args: argparse.Namespace) -> int:
+    """Attach to cmcp-<name> tmux session, creating it if missing."""
+    ws = args.ws_name
+    sname = layout.session_name_for_workspace(ws)
+    if not tmux.has_session(sname):
+        orchestrator = _orchestrator_pane_for_up(args)
+        panes_per_window = _resolve_max_panes(args)
+        projs = projects_in_workspace(ws)
+        created, messages = layout.ensure_session(
+            orchestrator=orchestrator,
+            panes_per_window=panes_per_window,
+            session_name=sname,
+            projects=projs,
+        )
+        for m in messages:
+            print(m)
+        if not created and not tmux.has_session(sname):
+            return 1
+    os.execvp("tmux", ["tmux", "attach", "-t", sname])
 
 
 def cmd_zellij(args: argparse.Namespace) -> int:
-    """Attach to the observation session via Zellij.
-
-    Mirrors `cmd_tmux` but uses Zellij's KDL layout: builds the file
-    from the current registry, then launches (or attaches to) a session
-    named `central`. Panes run exactly the same commands as tmux mode
-    (`central-mcp watch <project>` per project, the orchestrator on
-    the left half of the hub tab).
-    """
+    """Attach to the observation session via Zellij."""
     from central_mcp import zellij, session_info
+
+    # Handle `cmcp zellij switch <name>`
+    if getattr(args, "zellij_sub", None) == "switch":
+        return _cmd_zellij_switch(args)
 
     if not shutil.which("zellij"):
         print("error: zellij is not installed or not on PATH", file=sys.stderr)
         return 1
 
+    use_all = getattr(args, "all", False)
     orchestrator = _orchestrator_pane_for_up(args)
     panes_per_window = _resolve_max_panes(args)
     if panes_per_window < 1:
-        print(
-            f"error: --max-panes must be >= 1 (got {panes_per_window})",
-            file=sys.stderr,
-        )
+        print(f"error: --max-panes must be >= 1 (got {panes_per_window})", file=sys.stderr)
         return 1
 
-    # 0.6.8+: always teardown + rebuild so the layout reflects the
-    # current terminal's size. Zellij's KDL is static — without a
-    # rebuild it keeps whatever ratios were baked in when the session
-    # first started, even if the user has since resized or switched
-    # between terminals with different aspect ratios.
-    if zellij.has_session(zellij.SESSION):
-        _teardown_observation_session()
+    if use_all:
+        ws_map = load_workspaces() or {"default": []}
+        workspaces = list(ws_map.keys())
+        attach_ws = current_workspace()
+        for ws in workspaces:
+            sname = layout.session_name_for_workspace(ws)
+            projs = projects_in_workspace(ws)
+            if zellij.has_session(sname):
+                _teardown_observation_session(sname)
+            layout_path = paths.central_mcp_home() / f"zellij-layout-{sname}.kdl"
+            zellij.write_layout(layout_path, orchestrator=orchestrator if ws == attach_ws else None,
+                                panes_per_window=panes_per_window, projects=projs)
+            print(f"[{ws}] wrote layout: {layout_path}")
+        session_info.write(multiplexer="zellij")
+        attach_sname = layout.session_name_for_workspace(attach_ws)
+        attach_layout = paths.central_mcp_home() / f"zellij-layout-{attach_sname}.kdl"
+        os.execvp("zellij", ["zellij", "--session", attach_sname,
+                              "--new-session-with-layout", str(attach_layout)])
+    else:
+        ws = _resolve_workspace_for_tmux(args)
+        sname = layout.session_name_for_workspace(ws)
+        projs = projects_in_workspace(ws)
+        if zellij.has_session(sname):
+            _teardown_observation_session(sname)
+        layout_path = paths.central_mcp_home() / f"zellij-layout-{sname}.kdl"
+        zellij.write_layout(layout_path, orchestrator=orchestrator,
+                            panes_per_window=panes_per_window, projects=projs)
+        print(f"wrote layout: {layout_path}")
+        session_info.write(multiplexer="zellij")
+        os.execvp("zellij", ["zellij", "--session", sname,
+                              "--new-session-with-layout", str(layout_path)])
 
-    layout_path = paths.central_mcp_home() / "zellij-layout.kdl"
-    zellij.write_layout(
-        layout_path,
-        orchestrator=orchestrator,
-        panes_per_window=panes_per_window,
-    )
-    print(f"wrote layout: {layout_path}")
-    session_info.write(multiplexer="zellij")
-    # `--session NAME --layout FILE` means "add FILE as a new tab to the
-    # existing session NAME" and errors out if NAME doesn't exist yet.
-    # `--new-session-with-layout` (-n) is the correct flag for creating
-    # a brand-new session from a layout file — combine with --session
-    # to pin the name.
-    os.execvp(
-        "zellij",
-        ["zellij", "--session", zellij.SESSION,
-         "--new-session-with-layout", str(layout_path)],
-    )
+
+def _cmd_zellij_switch(args: argparse.Namespace) -> int:
+    """Attach to cmcp-<name> zellij session, creating it if missing."""
+    from central_mcp import zellij, session_info
+    ws = args.ws_name
+    sname = layout.session_name_for_workspace(ws)
+    if not zellij.has_session(sname):
+        orchestrator = _orchestrator_pane_for_up(args)
+        panes_per_window = _resolve_max_panes(args)
+        projs = projects_in_workspace(ws)
+        layout_path = paths.central_mcp_home() / f"zellij-layout-{sname}.kdl"
+        zellij.write_layout(layout_path, orchestrator=orchestrator,
+                            panes_per_window=panes_per_window, projects=projs)
+        print(f"wrote layout: {layout_path}")
+        session_info.write(multiplexer="zellij")
+    os.execvp("zellij", ["zellij", "--session", sname,
+                          "--new-session-with-layout",
+                          str(paths.central_mcp_home() / f"zellij-layout-{sname}.kdl")])
 
 
 # ---------- registry mutation ----------
