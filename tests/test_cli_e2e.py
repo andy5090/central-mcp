@@ -197,6 +197,93 @@ class TestAutoInitOnRun:
             assert "First-run bootstrap" not in r2.stdout
 
 
+class TestWorkspace:
+    def _add_project(self, name: str, cli_env: dict, tmp_path: Path) -> None:
+        d = tmp_path / name
+        d.mkdir(exist_ok=True)
+        _run(["add", name, str(d)], cli_env)
+
+    def test_workspace_list_shows_default(self, cli_env: dict) -> None:
+        _run(["init"], cli_env)
+        r = _run(["workspace", "list"], cli_env)
+        assert r.returncode == 0
+        assert "default" in r.stdout
+
+    def test_workspace_current_default(self, cli_env: dict) -> None:
+        _run(["init"], cli_env)
+        r = _run(["workspace", "current"], cli_env)
+        assert r.returncode == 0
+        assert "default" in r.stdout
+
+    def test_workspace_new_and_list(self, cli_env: dict) -> None:
+        _run(["init"], cli_env)
+        r = _run(["workspace", "new", "work"], cli_env)
+        assert r.returncode == 0
+        r = _run(["workspace", "list"], cli_env)
+        assert "work" in r.stdout
+
+    def test_workspace_new_duplicate_fails(self, cli_env: dict) -> None:
+        _run(["init"], cli_env)
+        _run(["workspace", "new", "work"], cli_env)
+        r = _run(["workspace", "new", "work"], cli_env)
+        assert r.returncode == 1
+        assert "already exists" in r.stderr
+
+    def test_workspace_use_and_current(self, cli_env: dict) -> None:
+        _run(["init"], cli_env)
+        _run(["workspace", "new", "work"], cli_env)
+        r = _run(["workspace", "use", "work"], cli_env)
+        assert r.returncode == 0
+        r = _run(["workspace", "current"], cli_env)
+        assert "work" in r.stdout
+
+    def test_workspace_use_unknown_fails(self, cli_env: dict) -> None:
+        _run(["init"], cli_env)
+        r = _run(["workspace", "use", "ghost"], cli_env)
+        assert r.returncode == 1
+        assert "unknown workspace" in r.stderr
+
+    def test_workspace_add_project(self, cli_env: dict, tmp_path: Path) -> None:
+        _run(["init"], cli_env)
+        self._add_project("alpha", cli_env, tmp_path)
+        _run(["workspace", "new", "work"], cli_env)
+        r = _run(["workspace", "add", "alpha", "--workspace", "work"], cli_env)
+        assert r.returncode == 0
+        r = _run(["workspace", "list"], cli_env)
+        assert "work" in r.stdout
+
+    def test_workspace_add_unknown_project_fails(self, cli_env: dict) -> None:
+        _run(["init"], cli_env)
+        _run(["workspace", "new", "work"], cli_env)
+        r = _run(["workspace", "add", "ghost", "--workspace", "work"], cli_env)
+        assert r.returncode == 1
+        assert "unknown project" in r.stderr
+
+    def test_workspace_remove_project(self, cli_env: dict, tmp_path: Path) -> None:
+        _run(["init"], cli_env)
+        self._add_project("alpha", cli_env, tmp_path)
+        _run(["workspace", "new", "work"], cli_env)
+        _run(["workspace", "add", "alpha", "--workspace", "work"], cli_env)
+        r = _run(["workspace", "remove", "alpha", "--workspace", "work"], cli_env)
+        assert r.returncode == 0
+
+    def test_workspace_list_shows_active_marker(self, cli_env: dict) -> None:
+        _run(["init"], cli_env)
+        _run(["workspace", "new", "work"], cli_env)
+        _run(["workspace", "use", "work"], cli_env)
+        r = _run(["workspace", "list"], cli_env)
+        assert r.returncode == 0
+        assert "*" in r.stdout  # active marker
+
+    def test_workspace_list_shows_project_counts(self, cli_env: dict, tmp_path: Path) -> None:
+        _run(["init"], cli_env)
+        self._add_project("alpha", cli_env, tmp_path)
+        _run(["workspace", "new", "work"], cli_env)
+        _run(["workspace", "add", "alpha", "--workspace", "work"], cli_env)
+        r = _run(["workspace", "list"], cli_env)
+        assert "1" in r.stdout  # 1 project in work
+
+
 class TestHelp:
     def test_run_help_shows_run_flags(self, cli_env: dict) -> None:
         # `central-mcp --help` routes to `central-mcp run --help`

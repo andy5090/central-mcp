@@ -18,8 +18,15 @@ from central_mcp import paths
 from central_mcp import tmux
 from central_mcp.registry import (
     add_project as registry_add,
+    add_to_workspace,
+    add_workspace,
+    current_workspace,
     load_registry,
+    load_workspaces,
+    projects_in_workspace,
+    remove_from_workspace,
     remove_project as registry_remove,
+    set_current_workspace,
 )
 
 
@@ -878,3 +885,79 @@ def cmd_run(args: argparse.Namespace) -> int:
     except FileNotFoundError:
         print(f"error: {binary!r} vanished from PATH between detection and exec", file=sys.stderr)
         return 1
+
+
+# ---------- workspace ----------
+
+def cmd_workspace(args: argparse.Namespace) -> int:
+    sub = getattr(args, "workspace_sub", None)
+    if sub == "list":
+        return _ws_list()
+    if sub == "current":
+        return _ws_current()
+    if sub == "new":
+        return _ws_new(args.ws_name)
+    if sub == "use":
+        return _ws_use(args.ws_name)
+    if sub == "add":
+        return _ws_add_project(args.project, args.workspace)
+    if sub == "remove":
+        return _ws_remove_project(args.project, args.workspace)
+    print("usage: cmcp workspace <list|current|new|use|add|remove>", file=sys.stderr)
+    return 1
+
+
+def _ws_list() -> int:
+    ws_map = load_workspaces()
+    active = current_workspace()
+    if not ws_map:
+        ws_map = {"default": []}
+    for name, members in ws_map.items():
+        count = len(projects_in_workspace(name))
+        marker = "*" if name == active else " "
+        print(f"  {marker} {name:<20} ({count} project{'s' if count != 1 else ''})")
+    return 0
+
+
+def _ws_current() -> int:
+    print(current_workspace())
+    return 0
+
+
+def _ws_new(name: str) -> int:
+    try:
+        add_workspace(name)
+        print(f"workspace created: {name}")
+        return 0
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+
+
+def _ws_use(name: str) -> int:
+    try:
+        set_current_workspace(name)
+        print(f"switched to workspace: {name}")
+        return 0
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+
+
+def _ws_add_project(project: str, workspace: str) -> int:
+    try:
+        add_to_workspace(project, workspace)
+        print(f"added {project!r} to workspace {workspace!r}")
+        return 0
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+
+
+def _ws_remove_project(project: str, workspace: str) -> int:
+    removed = remove_from_workspace(project, workspace)
+    if removed:
+        print(f"removed {project!r} from workspace {workspace!r}")
+        return 0
+    print(f"error: {project!r} is not a member of workspace {workspace!r}", file=sys.stderr)
+    return 1

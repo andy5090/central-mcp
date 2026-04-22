@@ -32,6 +32,7 @@ from central_mcp.cli._commands import (
     cmd_up,
     cmd_upgrade,
     cmd_watch,
+    cmd_workspace,
     cmd_zellij,
 )
 
@@ -238,6 +239,28 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_unalias.add_argument("name", nargs="?", default="cmcp")
     p_unalias.set_defaults(func=cmd_unalias)
+
+    p_ws = sub.add_parser("workspace", help="manage project workspaces")
+    ws_sub = p_ws.add_subparsers(dest="workspace_sub")
+
+    ws_sub.add_parser("list", help="list workspaces with project counts and active marker")
+    ws_sub.add_parser("current", help="print the active workspace name")
+
+    p_ws_new = ws_sub.add_parser("new", help="create a new empty workspace")
+    p_ws_new.add_argument("ws_name", metavar="NAME")
+
+    p_ws_use = ws_sub.add_parser("use", help="switch the active workspace")
+    p_ws_use.add_argument("ws_name", metavar="NAME")
+
+    p_ws_add = ws_sub.add_parser("add", help="add a project to a workspace")
+    p_ws_add.add_argument("project", metavar="PROJECT")
+    p_ws_add.add_argument("--workspace", required=True, metavar="WORKSPACE")
+
+    p_ws_rm = ws_sub.add_parser("remove", help="remove a project from a workspace")
+    p_ws_rm.add_argument("project", metavar="PROJECT")
+    p_ws_rm.add_argument("--workspace", required=True, metavar="WORKSPACE")
+
+    p_ws.set_defaults(func=cmd_workspace)
 
     p_run = sub.add_parser(
         "run",
