@@ -15,3 +15,5 @@ registry.yaml
 docs/feedback.md
 .omx/
 .env
+.publish.md
+docs/superpowers/
