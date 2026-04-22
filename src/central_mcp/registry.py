@@ -280,3 +280,135 @@ def remove_project(
     data["projects"] = projects
     _write_raw(data, registry_path)
     return True
+
+
+# ---------- workspaces ----------
+
+def _migrate_workspaces(data: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    """Ensure registry data has `workspaces` and `current_workspace` keys.
+
+    Returns (data, was_modified). Callers that pass a non-empty data dict
+    and get was_modified=True should persist the result.
+    """
+    modified = False
+    if "workspaces" not in data:
+        data["workspaces"] = {"default": []}
+        modified = True
+    if "current_workspace" not in data:
+        data["current_workspace"] = "default"
+        modified = True
+    return data, modified
+
+
+def load_workspaces(path: Path | None = None) -> dict[str, list[str]]:
+    """Return the workspaces map, auto-migrating if needed.
+
+    Returns empty dict when no registry file exists yet (fresh install
+    before `init` is run).
+    """
+    data = _read_raw(path)
+    if not data:
+        return {}
+    data, modified = _migrate_workspaces(data)
+    if modified:
+        _write_raw(data, path)
+    return {k: list(v) for k, v in (data.get("workspaces") or {}).items()}
+
+
+def current_workspace(path: Path | None = None) -> str:
+    """Return the name of the currently active workspace (default: 'default')."""
+    data = _read_raw(path)
+    if not data:
+        return "default"
+    data, modified = _migrate_workspaces(data)
+    if modified:
+        _write_raw(data, path)
+    return data.get("current_workspace", "default")
+
+
+def set_current_workspace(name: str, path: Path | None = None) -> None:
+    """Set the active workspace. Raises ValueError if workspace doesn't exist."""
+    data = _read_raw(path)
+    data, _ = _migrate_workspaces(data)
+    workspaces = data.get("workspaces") or {}
+    if name not in workspaces:
+        raise ValueError(f"unknown workspace {name!r}")
+    data["current_workspace"] = name
+    _write_raw(data, path)
+
+
+def add_workspace(name: str, path: Path | None = None) -> None:
+    """Add a new empty workspace. Raises ValueError if already exists."""
+    data = _read_raw(path)
+    data, _ = _migrate_workspaces(data)
+    workspaces = data.get("workspaces") or {}
+    if name in workspaces:
+        raise ValueError(f"workspace {name!r} already exists")
+    workspaces[name] = []
+    data["workspaces"] = workspaces
+    _write_raw(data, path)
+
+
+def add_to_workspace(project_name: str, workspace_name: str, path: Path | None = None) -> None:
+    """Add a project to a workspace membership list.
+
+    Raises ValueError if the project or workspace doesn't exist.
+    Idempotent — adding an already-listed project is a no-op.
+    """
+    data = _read_raw(path)
+    data, _ = _migrate_workspaces(data)
+    known_projects = {p["name"] for p in (data.get("projects") or []) if p.get("name")}
+    if project_name not in known_projects:
+        raise ValueError(f"unknown project {project_name!r}")
+    workspaces = data.get("workspaces") or {}
+    if workspace_name not in workspaces:
+        raise ValueError(f"unknown workspace {workspace_name!r}")
+    if project_name not in workspaces[workspace_name]:
+        workspaces[workspace_name].append(project_name)
+    data["workspaces"] = workspaces
+    _write_raw(data, path)
+
+
+def remove_from_workspace(project_name: str, workspace_name: str, path: Path | None = None) -> bool:
+    """Remove a project from a workspace. Returns False if not a member."""
+    data = _read_raw(path)
+    data, _ = _migrate_workspaces(data)
+    workspaces = data.get("workspaces") or {}
+    members = list(workspaces.get(workspace_name, []))
+    if project_name not in members:
+        return False
+    members.remove(project_name)
+    workspaces[workspace_name] = members
+    data["workspaces"] = workspaces
+    _write_raw(data, path)
+    return True
+
+
+def projects_in_workspace(workspace_name: str, path: Path | None = None) -> list[Project]:
+    """Return projects belonging to a workspace.
+
+    For 'default': includes projects explicitly listed in 'default' plus
+    any orphans (projects not listed in any other workspace).
+    For named workspaces: only explicitly listed members.
+    """
+    data = _read_raw(path)
+    if not data:
+        return []
+    data, modified = _migrate_workspaces(data)
+    if modified:
+        _write_raw(data, path)
+
+    all_projects = [_project_from_raw(p) for p in (data.get("projects") or [])]
+    workspaces = data.get("workspaces") or {}
+
+    if workspace_name == "default":
+        in_other_workspace: set[str] = set()
+        for ws_name, members in workspaces.items():
+            if ws_name != "default":
+                in_other_workspace.update(members)
+        default_explicit = set(workspaces.get("default", []))
+        return [p for p in all_projects
+                if p.name in default_explicit or p.name not in in_other_workspace]
+
+    members = set(workspaces.get(workspace_name, []))
+    return [p for p in all_projects if p.name in members]
