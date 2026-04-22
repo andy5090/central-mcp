@@ -222,9 +222,42 @@ def test_auto_migration_inserts_default_workspace(fake_home: Path) -> None:
     registry.add_project("beta", "/b")
     ws = registry.load_workspaces()
     assert "default" in ws
-    # default starts empty; orphan logic makes all projects appear via projects_in_workspace
+    # Migration seeds default with existing projects so the YAML reflects reality.
+    assert set(ws["default"]) == {"alpha", "beta"}
     projects = registry.projects_in_workspace("default")
     assert {p.name for p in projects} == {"alpha", "beta"}
+
+
+def test_migration_populates_default_with_existing_projects(fake_home: Path) -> None:
+    from ruamel.yaml import YAML
+    reg_path = registry._default_path()
+    reg_path.parent.mkdir(parents=True, exist_ok=True)
+    _yaml = YAML()
+    with reg_path.open("w") as f:
+        _yaml.dump({
+            "projects": [
+                {"name": "foo", "path": "/foo", "agent": "claude"},
+                {"name": "bar", "path": "/bar", "agent": "codex"},
+            ],
+        }, f)
+    ws = registry.load_workspaces()
+    assert set(ws["default"]) == {"foo", "bar"}
+    # Verify the file was written back with the populated list.
+    with reg_path.open() as f:
+        on_disk = _yaml.load(f)
+    assert set(on_disk["workspaces"]["default"]) == {"foo", "bar"}
+    assert on_disk["current_workspace"] == "default"
+
+
+def test_migration_add_to_workspace_removes_from_default(fake_home: Path) -> None:
+    registry.add_project("alpha", "/a")
+    registry.add_project("beta", "/b")
+    registry.add_workspace("work")          # triggers migration: default=["alpha","beta"]
+    registry.add_to_workspace("alpha", "work")
+    ws = registry.load_workspaces()
+    assert "alpha" not in ws["default"]     # moved out of default
+    assert "alpha" in ws["work"]
+    assert "beta" in ws["default"]          # untouched
 
 
 def test_auto_migration_inserts_current_workspace_field(fake_home: Path) -> None:

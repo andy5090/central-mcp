@@ -289,10 +289,15 @@ def _migrate_workspaces(data: dict[str, Any]) -> tuple[dict[str, Any], bool]:
 
     Returns (data, was_modified). Callers that pass a non-empty data dict
     and get was_modified=True should persist the result.
+
+    When `workspaces` is absent (pre-workspace registry), `default` is
+    seeded with all existing project names so the YAML reflects reality.
+    New projects added later start as orphans until assigned somewhere.
     """
     modified = False
     if "workspaces" not in data:
-        data["workspaces"] = {"default": []}
+        existing = [p["name"] for p in (data.get("projects") or []) if p.get("name")]
+        data["workspaces"] = {"default": existing}
         modified = True
     if "current_workspace" not in data:
         data["current_workspace"] = "default"
@@ -354,6 +359,9 @@ def add_to_workspace(project_name: str, workspace_name: str, path: Path | None =
 
     Raises ValueError if the project or workspace doesn't exist.
     Idempotent — adding an already-listed project is a no-op.
+
+    When adding to a non-default workspace, the project is also removed from
+    `default` so each project appears in exactly one workspace in the YAML.
     """
     data = _read_raw(path)
     data, _ = _migrate_workspaces(data)
@@ -365,6 +373,10 @@ def add_to_workspace(project_name: str, workspace_name: str, path: Path | None =
         raise ValueError(f"unknown workspace {workspace_name!r}")
     if project_name not in workspaces[workspace_name]:
         workspaces[workspace_name].append(project_name)
+    # Moving to a named workspace: remove from default so the YAML doesn't
+    # show stale default membership after the project has been assigned.
+    if workspace_name != "default" and project_name in workspaces.get("default", []):
+        workspaces["default"] = [m for m in workspaces["default"] if m != project_name]
     data["workspaces"] = workspaces
     _write_raw(data, path)
 
