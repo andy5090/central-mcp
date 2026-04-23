@@ -297,7 +297,7 @@ def ensure_session(
         raise ValueError(f"panes_per_window must be >= 1, got {panes_per_window}")
 
     if session_name is None:
-        from central_mcp.registry import current_workspace
+        from central_mcp.config import current_workspace
         session_name = session_name_for_workspace(current_workspace())
 
     messages: list[str] = []

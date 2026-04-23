@@ -16,6 +16,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Token counts in `timeline.jsonl`** — `log_timeline()` now records the parsed `tokens` dict (when the agent reported one), so the monitor and `orchestration_history` can aggregate portfolio-wide token usage without re-parsing stdout.
 - **`per_project.tokens_total` in `orchestration_history`** — daily token totals per project are now exposed in the MCP response alongside `dispatched` / `succeeded` / `failed` / `cancelled`.
 
+### Changed
+- **`current_workspace` moved from `registry.yaml` → `config.toml`** — it's a per-user UI state, not a shared project record, so it lives alongside the other user preferences now. `ensure_initialized()` performs a one-shot migration on startup: lifts the value out of `registry.yaml` into `[user].current_workspace` and deletes the legacy key. No user action needed.
+- **`config.toml` auto-seeded with system timezone** — `[user].timezone` is now injected on install/upgrade (idempotent, runs at every startup) so the file reflects a concrete IANA name (e.g. `Asia/Seoul`) the user can inspect/edit rather than an invisible fallback. Falls back to `/etc/localtime` → `UTC` on misconfigured hosts.
+
+### Added
+- **`central_mcp.config` module** — centralized read/write for `~/.central-mcp/config.toml` with `user_timezone()` / `current_workspace()` / `ensure_initialized()` helpers. Previous `[orchestrator].default` handling carried over; new `[user]` section adds `timezone` + `current_workspace`.
+
 ### Fixed
 - **`log_timeline()` concurrency** — writes to `~/.central-mcp/timeline.jsonl` now go through a `threading.Lock` + `fcntl.flock` (POSIX) so ts-generation and file append are atomic as a pair. Previously, the MCP handler thread and `_run_bg` daemon threads could race between `datetime.now()` and `f.write()`, letting the file's line order diverge from ts order — which would have broken monitor's reverse-scan early-break under concurrent writes. Windows native (no `fcntl`) falls back to `threading.Lock` only.
 

@@ -16,17 +16,17 @@ from central_mcp import install as install_mod
 from central_mcp import layout
 from central_mcp import paths
 from central_mcp import tmux
+from central_mcp import config as user_config
+from central_mcp.config import current_workspace, set_current_workspace
 from central_mcp.registry import (
     add_project as registry_add,
     add_to_workspace,
     add_workspace,
-    current_workspace,
     load_registry,
     load_workspaces,
     projects_in_workspace,
     remove_from_workspace,
     remove_project as registry_remove,
-    set_current_workspace,
 )
 
 
@@ -97,6 +97,7 @@ def _flags_for(agent: str, mode: str) -> list[str] | None:
 # ---------- server / listing ----------
 
 def cmd_serve(args: argparse.Namespace) -> int:
+    user_config.ensure_initialized()
     from central_mcp.server import main as server_main
     server_main()
     return 0
@@ -594,6 +595,10 @@ def cmd_init(args: argparse.Namespace) -> int:
     )
     print(f"wrote {reg}")
 
+    # Seed config.toml with system timezone + default workspace so the file
+    # reflects resolved values (not fallbacks) the user can inspect and edit.
+    user_config.ensure_initialized()
+
     if not args.no_alias:
         _try_auto_alias("cmcp")
 
@@ -847,6 +852,7 @@ def _prompt_choice(installed: list[tuple[str, str, str]]) -> tuple[str, str, str
 
 def cmd_run(args: argparse.Namespace) -> int:
     _ensure_default_registry()
+    user_config.ensure_initialized()
     _maybe_auto_install()
     installed = _detect_installed()
     if not installed:

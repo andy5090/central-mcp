@@ -285,7 +285,7 @@ def remove_project(
 # ---------- workspaces ----------
 
 def _migrate_workspaces(data: dict[str, Any]) -> tuple[dict[str, Any], bool]:
-    """Ensure registry data has `workspaces` and `current_workspace` keys.
+    """Ensure registry data has a `workspaces` map.
 
     Returns (data, was_modified). Callers that pass a non-empty data dict
     and get was_modified=True should persist the result.
@@ -293,14 +293,15 @@ def _migrate_workspaces(data: dict[str, Any]) -> tuple[dict[str, Any], bool]:
     When `workspaces` is absent (pre-workspace registry), `default` is
     seeded with all existing project names so the YAML reflects reality.
     New projects added later start as orphans until assigned somewhere.
+
+    Note: the active workspace name (`current_workspace`) lives in
+    `config.toml`, not here. If a legacy registry still carries that key,
+    `config.ensure_initialized()` migrates it out on startup.
     """
     modified = False
     if "workspaces" not in data:
         existing = [p["name"] for p in (data.get("projects") or []) if p.get("name")]
         data["workspaces"] = {"default": existing}
-        modified = True
-    if "current_workspace" not in data:
-        data["current_workspace"] = "default"
         modified = True
     return data, modified
 
@@ -318,28 +319,6 @@ def load_workspaces(path: Path | None = None) -> dict[str, list[str]]:
     if modified:
         _write_raw(data, path)
     return {k: list(v) for k, v in (data.get("workspaces") or {}).items()}
-
-
-def current_workspace(path: Path | None = None) -> str:
-    """Return the name of the currently active workspace (default: 'default')."""
-    data = _read_raw(path)
-    if not data:
-        return "default"
-    data, modified = _migrate_workspaces(data)
-    if modified:
-        _write_raw(data, path)
-    return data.get("current_workspace", "default")
-
-
-def set_current_workspace(name: str, path: Path | None = None) -> None:
-    """Set the active workspace. Raises ValueError if workspace doesn't exist."""
-    data = _read_raw(path)
-    data, _ = _migrate_workspaces(data)
-    workspaces = data.get("workspaces") or {}
-    if name not in workspaces:
-        raise ValueError(f"unknown workspace {name!r}")
-    data["current_workspace"] = name
-    _write_raw(data, path)
 
 
 def add_workspace(name: str, path: Path | None = None) -> None:

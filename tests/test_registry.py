@@ -213,10 +213,6 @@ def test_load_workspaces_no_registry_returns_empty(fake_home: Path) -> None:
     assert registry.load_workspaces() == {}
 
 
-def test_current_workspace_no_registry_returns_default(fake_home: Path) -> None:
-    assert registry.current_workspace() == "default"
-
-
 def test_auto_migration_inserts_default_workspace(fake_home: Path) -> None:
     registry.add_project("alpha", "/a")
     registry.add_project("beta", "/b")
@@ -246,7 +242,6 @@ def test_migration_populates_default_with_existing_projects(fake_home: Path) -> 
     with reg_path.open() as f:
         on_disk = _yaml.load(f)
     assert set(on_disk["workspaces"]["default"]) == {"foo", "bar"}
-    assert on_disk["current_workspace"] == "default"
 
 
 def test_migration_add_to_workspace_removes_from_default(fake_home: Path) -> None:
@@ -258,22 +253,6 @@ def test_migration_add_to_workspace_removes_from_default(fake_home: Path) -> Non
     assert "alpha" not in ws["default"]     # moved out of default
     assert "alpha" in ws["work"]
     assert "beta" in ws["default"]          # untouched
-
-
-def test_auto_migration_inserts_current_workspace_field(fake_home: Path) -> None:
-    registry.add_project("alpha", "/a")
-    assert registry.current_workspace() == "default"
-
-
-def test_auto_migration_workspaces_exists_but_no_current(fake_home: Path) -> None:
-    from ruamel.yaml import YAML
-    reg_path = registry._default_path()
-    reg_path.parent.mkdir(parents=True, exist_ok=True)
-    _yaml = YAML()
-    with reg_path.open("w") as f:
-        _yaml.dump({"projects": [{"name": "p", "path": "/p", "agent": "claude"}],
-                    "workspaces": {"default": ["p"]}}, f)
-    assert registry.current_workspace() == "default"
 
 
 def test_add_workspace(fake_home: Path) -> None:
@@ -293,25 +272,6 @@ def test_add_workspace_default_raises(fake_home: Path) -> None:
     registry.add_project("p", "/p")  # triggers migration creating default
     with pytest.raises(ValueError, match="already exists"):
         registry.add_workspace("default")
-
-
-def test_set_current_workspace(fake_home: Path) -> None:
-    registry.add_project("p", "/p")
-    registry.add_workspace("work")
-    registry.set_current_workspace("work")
-    assert registry.current_workspace() == "work"
-
-
-def test_set_current_workspace_default_always_valid(fake_home: Path) -> None:
-    registry.add_project("p", "/p")
-    registry.set_current_workspace("default")
-    assert registry.current_workspace() == "default"
-
-
-def test_set_current_workspace_unknown_raises(fake_home: Path) -> None:
-    registry.add_project("p", "/p")
-    with pytest.raises(ValueError, match="unknown workspace"):
-        registry.set_current_workspace("nonexistent")
 
 
 def test_add_to_workspace(fake_home: Path) -> None:

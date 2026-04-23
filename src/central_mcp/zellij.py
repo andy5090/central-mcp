@@ -378,7 +378,7 @@ def ensure_session(
     list to scope to one workspace.
     """
     if session_name is None:
-        from central_mcp.registry import current_workspace
+        from central_mcp.config import current_workspace
         session_name = session_name_for_workspace(current_workspace())
 
     messages: list[str] = []
