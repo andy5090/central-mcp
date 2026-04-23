@@ -91,6 +91,12 @@ Design spec: [`docs/architecture/workspaces.md`](architecture/workspaces.md)
 ✅ **Migration fix (0.9.2)**
 - On first migration of a pre-workspace registry, `default` is now seeded with all existing project names so the YAML reflects reality. `add_to_workspace` to a named workspace removes the project from `default` to avoid duplicate membership.
 
+✅ **`current_workspace` moved to config.toml (0.10.0)**
+- Per-user UI state, not shared project metadata — it lives in `config.toml [user].current_workspace` now, alongside `[user].timezone` and `[orchestrator].default`. One-shot migration on startup lifts any legacy `current_workspace` key out of `registry.yaml`.
+
+✅ **`list_projects()` scopes to current workspace by default (0.10.1)**
+- Calling the tool with no args returns the user's *current* workspace instead of every registered project across workspaces — matches orchestrator intuition ("what am I working on right now"). Opt into the old behavior with `workspace="__all__"` (canonical) or `workspace="*"` (alias).
+
 💭 **Sub-feature 3 — Shared context** (deferred until 1+2 usage reveals actual needs)
 - Prompts/system-instructions applied to every dispatch inside a workspace.
 - Per-workspace `CLAUDE.md` / `AGENTS.md` templates auto-applied when launching the orchestrator for that workspace.
@@ -102,7 +108,7 @@ Design spec: [`docs/architecture/workspaces.md`](architecture/workspaces.md)
 
 ---
 
-## Phase 4 — UX & personalization 🚧 in progress
+## Phase 4 — UX & personalization ✅ largely shipped in 0.10.x
 
 **Goal**: make central-mcp more tailored to individual users and more observable at a glance — covering personal workflow rules, watch-pane readability, and usage visibility.
 
@@ -111,24 +117,49 @@ Design spec: [`docs/architecture/workspaces.md`](architecture/workspaces.md)
 - Augmentation layer — outranks router defaults but not system/developer constraints; user turn instructions still win.
 - Never overwritten by upgrades. Single-user; named profiles deferred.
 
-✅ **Watch mode visual improvements** (shipped 0.9.4)
+✅ **Watch mode visual improvements** (shipped 0.9.4 → refined through 0.9.x)
 - Elapsed time prefix (`+  42s`) on every output line during active dispatch.
 - Code block detection (` ``` ` / `~~~` fences) → magenta to separate prose from code.
-- Spinner / progress-bar / blank lines dimmed to reduce visual clutter.
+- Spinner / progress-bar / blank lines dimmed to reduce visual clutter; agent-specific noise filtering (Codex headers, Gemini warnings).
 - Fallback `attempt_start` transitions rendered in yellow with `↻` arrow.
+- Curses sticky header keeps project / agent / status pinned while the log scrolls below.
 
-✅ **Token usage monitoring — detection** (shipped 0.9.4)
-- Per-dispatch token count (`{input, output, total}`) extracted from agent stdout via regex patterns (Claude Code, Codex, Gemini).
-- Surfaced in `dispatch` result, `dispatch_history`, and the `complete` footer in watch mode.
+✅ **Token usage monitoring — full backend rebuild** (shipped 0.10.0)
+- **Adapter-driven JSON-output parsing** replaces the 0.9.4 regex path (which matched 0% in practice because agent CLIs don't emit tokens in plain stdout). Each adapter's `exec_argv` now requests structured output (`claude --output-format json`, `codex --json`, `gemini -o json`, `droid -o json`, `opencode --format json`) and its `parse_output(stdout)` returns `(display_text, {input, output, total})` deterministically. Gemini aggregates across router + main models per request.
+- **`~/.central-mcp/tokens.db` SQLite aggregation store** — single flat `usage` table, `UNIQUE(source, session_id, request_id)` making re-syncs idempotent. `source` is either `dispatch` (subprocess) or `orchestrator` (session-file derived).
+- **Orchestrator-session token backfill** — `dispatch()` scans the active orchestrator's session file on every call and records per-turn tokens (Claude Code: `~/.claude/projects/<slug>/*.jsonl`; Codex: `~/.codex/sessions/**/rollout-*.jsonl`). Gemini has no on-disk session store → no-op; opencode (SQLite-backed) is a Phase 4.1 follow-up.
+- All reads windowed by `config.toml [user].timezone`, auto-seeded with the system IANA name on install/upgrade.
 
-📋 **Token usage monitoring — budget tracking** (next)
-- Running cumulative token / cost tracker per project and per workspace (configurable cap).
-- Alert when approaching configured token or cost threshold.
+✅ **`token_usage` MCP tool** (shipped 0.10.0)
+- Portfolio-wide aggregation split out from `orchestration_history` so event history and token accounting evolve independently. Parameters: `period` (`today`/`week`/`month`/`all`), `project`, `workspace`, `group_by` (`project`/`agent`/`source`). Paves the way for a live token pane.
+
+✅ **`central-mcp monitor` portfolio dashboard** (shipped 0.10.0)
+- Curses live view. Top: per-agent subscription quota bars (Claude Pro 5h/wk, Codex ChatGPT 1h/day) polled from provider OAuth usage APIs; Gemini shows auth type only. Bottom: DISPATCH STATS with `today tok` / `7d tok` columns.
+- Quota refreshes every 90s in a background thread; stats every 10s.
+
+✅ **Timeline rotation + archive summaries** (shipped 0.10.0)
+- `log_timeline()` opportunistically rotates `timeline.jsonl` (>5 MB or >10k lines) into `archive/timeline-<utc-microsecond>.jsonl` + paired `*-summary.json` (per-project event counts, per-agent events, `{from, to}` ts range). Dormant at today's install sizes — infrastructure in place for long-running deployments.
+- `orchestration_history(include_archives=True)` attaches archive summaries (not raw records) so callers can see the full shape of history without blowing past context.
+
+✅ **Concurrency correctness** (shipped 0.10.0)
+- `log_timeline()` serialized with `threading.Lock` + `fcntl.flock` (POSIX). File line order now tracks `ts` order under concurrent writers (MCP handler thread + multiple `_run_bg` daemon threads). Windows native gracefully degrades to `threading.Lock` only.
+
+✅ **User config consolidation** (shipped 0.10.0)
+- New `central_mcp.config` module owns `~/.central-mcp/config.toml`. Sections: `[orchestrator].default`, `[user].timezone`, `[user].current_workspace`.
+
+✅ **Arrow-key interactive pickers** (shipped 0.10.2)
+- `central-mcp run` (orchestrator choice) and `central-mcp up` (multiplexer choice) use ↑/↓ (or k/j) navigation with a bold highlight + cursor-hide during selection. Non-TTY environments (piped stdin, Windows native) transparently fall back to the legacy numbered prompt.
+
+📋 **Token budget + alerting** (Phase 4.1, next)
+- Running cumulative token / cost tracker per project and per workspace (configurable cap). tokens.db + `token_usage` tool provide the primitives; budget policy + UI alerts still to land.
 - Watch mode shows cumulative consumption alongside elapsed time.
 
+📋 **opencode orchestrator-session backfill** (Phase 4.1)
+- `orch_session` currently supports claude + codex via filesystem JSONL; opencode's SQLite-backed sessions need a dedicated reader.
+
 💭 **Open questions**
-- Full syntax highlighting (`pygments`/`rich`) or extend regex-only heuristics?
-- Token count budget: stored in `registry.yaml` per project, or separate `budget.yaml`?
+- Full syntax highlighting (`pygments`/`rich`) or extend current heuristics?
+- Token budget: stored in `registry.yaml` per project, or separate `budget.yaml`?
 - Named user profiles (defer until demand is clear).
 
 ---
