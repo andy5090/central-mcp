@@ -3,7 +3,7 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.9.6] — 2026-04-24
+## [0.10.0] — 2026-04-24
 
 ### Added
 - **`central-mcp monitor` — portfolio-wide dashboard** — a new curses subcommand that shows:
