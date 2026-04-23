@@ -3,6 +3,25 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.9.2] — 2026-04-23
+
+### Changed
+- **Orchestrator auto-reporting** — `AGENTS.md` and `CLAUDE.md` now instruct orchestrators to always proactively report dispatch results without waiting for the user to ask "status?":
+  - Claude Code: `Agent(run_in_background=True)` to poll `check_dispatch` every 30 s (required, not optional).
+  - Codex: `spawn_agent` for background polling — Codex's multi-agent API supports non-blocking sub-agents equivalent to Claude Code's background agents.
+  - Gemini / other: synchronous polling loop until complete, then report.
+- **`_MCP_INSTRUCTIONS`** updated to document all three orchestrator polling paths inline.
+- **Roadmap restructured** — phases consolidated around user value: Phase 4 UX & personalization (user overlays + watch improvements + token monitoring), Phase 5 Distribution & docs, Phase 6 Daemon + push notifications, Phase 7 Agent harness. Interactive approval worker mode removed (non-goal).
+
+### Notes for existing installs
+Runtime orchestrator files are copied once on first launch. To pick up the updated polling instructions:
+```bash
+rm ~/.central-mcp/AGENTS.md ~/.central-mcp/CLAUDE.md
+# restart cmcp — files are re-copied automatically
+```
+
+---
+
 ## [0.9.1] — 2026-04-22
 
 ### Added

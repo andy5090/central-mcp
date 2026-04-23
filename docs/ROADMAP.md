@@ -102,96 +102,71 @@ Design spec: [`docs/architecture/workspaces.md`](architecture/workspaces.md)
 
 ---
 
-## Phase 3b — User-specific instruction overlays 🚧 next
+## Phase 4 — UX & personalization 🚧 next
 
-**Goal**: let central-mcp load stable user-specific operating preferences without baking personal workflow rules into the shared router contract.
+**Goal**: make central-mcp more tailored to individual users and more observable at a glance — covering personal workflow rules, watch-pane readability, and usage visibility.
 
-📋 **Overlay model**
+📋 **User-specific instruction overlays**
 - Keep `AGENTS.md` as the shared project/router contract.
-- Add a user-scoped overlay file for preferences such as:
-  - local process management handled directly by the orchestrator,
-  - project code changes still routed via dispatch,
-  - reporting/language/style preferences.
-- Treat the overlay as an augmentation layer, not a replacement for the core router policy.
+- Add a user-scoped overlay file at `~/.central-mcp/user.md` for persistent preferences: reporting style, language, process management rules, routing hints.
+- Overlay is an augmentation layer — it outranks router defaults but not system/developer constraints; current user turn instructions still win.
+- Single-user first; named profiles deferred until demand is clear.
 
-📋 **Precedence**
-- Current user turn instructions still win.
-- User-specific overlay should outrank roadmap/default router preferences, but not system/developer constraints.
-- Conflicts with core dispatch safety rules should resolve in favor of the shared router contract unless explicitly overridden by the user in the current turn.
+📋 **Watch mode visual improvements**
+- stdout output lines: context-aware coloring based on dispatch state (running vs. complete)
+- Elapsed time indicator alongside output lines during active dispatch
+- Code block detection (` ``` ` fences) → distinct color/dim to separate prose from code
+- Dim repeated/noisy lines (progress spinners, blank lines) to reduce visual clutter
+- Fallback attempt transitions rendered more prominently
 
-📋 **Likely surface**
-- Single-user first: one local file under the central-mcp home/config tree.
-- Later expansion: named user profiles or structured config + free-form notes.
-- Clear separation between persistent user preferences and temporary session memory (`.omx/notepad.md`).
+📋 **Token & usage monitoring**
+- Per-dispatch token count surfaced in dispatch result and `orchestration_history`
+- Running budget tracker per project / per workspace (configurable cap)
+- Watch mode shows token consumption alongside elapsed time
+- Alert when approaching configured token or cost threshold
 
 💭 **Open questions**
-- Should the first version be plain Markdown only, or structured config plus Markdown notes?
-- What is the minimal precedence model that stays predictable across orchestrators?
-- How should central-mcp expose the active overlay for debugging and auditability?
+- Plain Markdown overlay only, or structured config + free-form notes?
+- Full syntax highlighting (requires `pygments`/`rich` dependency) or regex-only heuristics?
+- Token count source: parse agent stdout, or add a reporting hook per adapter?
 
 ---
 
-## Phase 3c — curl-based quickstart installer 📋 planned
+## Phase 5 — Distribution & docs 📋 planned
 
-**Goal**: let new users go from zero to a running hub in one terminal command without assuming `uv` or `pip` is already installed.
+**Goal**: make it trivially easy for new users to discover, install, and understand central-mcp.
 
-📋 **Installer script**
+📋 **curl-based quickstart installer**
 - Single `curl | sh` command bootstraps `uv` if missing, then runs `uv tool install central-mcp`.
 - Runs `central-mcp init` to scaffold `~/.central-mcp/` and the `cmcp` alias.
-- Prints a next-steps summary pointing to `central-mcp install <client>`.
+- Hosted at a stable short URL (e.g. `get.central-mcp.dev`).
 
-📋 **Hosted at a stable URL** — short redirect (e.g. `get.central-mcp.dev`) so the quickstart stays linkable as the implementation evolves.
-
-💭 **Open questions**
-- macOS + Linux only, or attempt Windows/PowerShell parity?
-- Should the script verify the installed binary version before printing success?
-
----
-
-## Phase 3d — Static documentation site 📋 planned
-
-**Goal**: provide a browsable, searchable reference beyond the README so users can find command syntax, configuration options, and examples without reading raw Markdown.
-
-📋 **Scope**
+📋 **Static documentation site**
 - Generated from existing docs (`README.md`, `CHANGELOG.md`, CLI reference, MCP tool signatures).
 - Covers: quickstart, CLI reference, MCP tool API, workspace guide, observation layer guide, adapter configuration.
 - Hosted on GitHub Pages or equivalent; auto-deployed on each release tag.
 
 💭 **Open questions**
+- macOS + Linux only for the installer, or attempt Windows/PowerShell parity?
 - Static generator choice (VitePress, Starlight, mkdocs-material)?
 - How much of the tool-signature documentation can be auto-generated from source?
 
 ---
 
-## Phase 4 — Worker mode (interactive approval)
+## Phase 6 — Daemon + push notifications (demand-driven)
 
-**Goal**: let `bypass=false` dispatches succeed when they need interactive permission prompts, by routing them through a pane-resident worker.
-
-💭 **Opt-in, additive**: non-observation mode stays unchanged. Worker mode activates only when `central-mcp up --worker-mode` is used.
-
-💭 **Mechanism**
-- Each project pane runs `central-mcp _worker-loop <project>`.
-- Worker creates `~/.central-mcp/workers/<project>.pid` + `.fifo`.
-- Dispatch server checks for an alive worker before spawning:
-  - Worker present → write prompt to FIFO, wait for completion signal, read result.
-  - Worker dead/absent → current subprocess path (fallback).
-- Output capture via `tee` to the same jsonl log from Phase 1.
-
-💭 **Caveats**
-- Serial: one dispatch per project at a time.
-- Fallback needed if worker dies mid-dispatch.
-- Dispatch timeout must be generous (user may be away).
-
----
-
-## Phase 5 — Daemon + multi-client (demand-driven)
-
-**Goal**: let multiple MCP clients (Claude Desktop, Codex app, CLI scripts) share one central-mcp instance and subscribe to dispatch events.
+**Goal**: let multiple MCP clients share one central-mcp instance and receive dispatch completions via push rather than polling.
 
 💭 **Lazy daemon**
 - First MCP connection spawns a background daemon, holds PID lock at `~/.central-mcp/daemon.pid`.
 - Unix socket at `~/.central-mcp/daemon.sock` (localhost TCP fallback for Windows).
 - stdio `central-mcp serve` auto-detects daemon and proxies — clients keep their current config.
+
+💭 **MCP resource subscriptions**
+- `dispatch://<project>/events` — stream of event objects.
+- `resources/subscribe` support → server pushes `notifications/resources/updated` on completion.
+- Backed by the same jsonl written in Phase 1 (no schema duplication).
+- Eliminates background polling loops in orchestrators; any agent gets completions automatically.
 
 💭 **Commands** (power users only)
 - `central-mcp daemon {start|stop|status|logs|restart}`
@@ -201,20 +176,6 @@ Design spec: [`docs/architecture/workspaces.md`](architecture/workspaces.md)
 - Auto-restart on crash? (probably no, surface error to clients)
 - Version mismatch handling on upgrade (CLI vs daemon)?
 - Cross-platform socket story (Windows)?
-
----
-
-## Phase 6 — MCP resource subscriptions (demand-driven)
-
-**Goal**: expose dispatch events as first-class MCP resources so external MCP clients can subscribe without reading local log files.
-
-💭 **Resources**
-- `dispatch://<project>/events` — stream of event objects.
-- `resources/subscribe` support → server pushes `notifications/resources/updated` on new events.
-- Backed by the same jsonl written in Phase 1 (no schema duplication).
-
-💭 **Depends on**
-- Phase 5 (daemon + HTTP/SSE transport) — MCP resource subscriptions require a long-lived server shared across clients.
 
 ---
 
@@ -248,6 +209,7 @@ Design spec: [`docs/architecture/workspaces.md`](architecture/workspaces.md)
 - **`central-mcp install <client>` stdio setup stays the default.** Even after daemon mode lands, orchestrators continue using stdio transport for simplicity; daemon is transparent behind it.
 - **No browser UI.** central-mcp is a terminal-native hub. Observation happens in tmux/zellij panes or by tailing logs.
 - **No agent-state syncing.** Each agent manages its own conversation state; central-mcp only orchestrates dispatches and observes their lifecycle.
+- **No interactive approval / worker mode.** Dispatch is non-interactive by design. If a user needs to approve actions mid-run, they should run the agent directly in a terminal — that's outside central-mcp's scope.
 
 ---
 

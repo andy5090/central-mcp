@@ -185,10 +185,12 @@ dispatch is NON-BLOCKING. It spawns the agent as a subprocess and
 returns a dispatch_id instantly (<100ms). To get the result:
 
   1. Call dispatch(name, prompt) → returns dispatch_id.
-  2. Spawn a BACKGROUND subagent (Agent tool with run_in_background=true
-     in Claude Code, or equivalent) to poll check_dispatch(dispatch_id)
-     every 3 seconds until status is no longer "running", then report.
-  3. Tell the user "dispatched to <project>, I'll report when it's done"
+  2. Spawn a background sub-agent to poll check_dispatch(dispatch_id)
+     every 30 s until status is "complete" or "error", then report:
+     - Claude Code: Agent(run_in_background=True, prompt="poll …")
+     - Codex: spawn_agent(message="poll mcp__central__check_dispatch …")
+     - Gemini/other: poll synchronously in a loop, then report.
+  3. Tell the user "dispatched to <project>, I'll report when done"
      and CONTINUE the conversation.
 
 IMPORTANT: Every MCP tool response may include a `completed_dispatches`
