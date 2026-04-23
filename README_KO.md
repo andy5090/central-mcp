@@ -1,7 +1,7 @@
 # central-mcp
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/andy5090/central-mcp/main/docs/logo.png" alt="central-mcp logo" width="280"/>
+  <img src="https://raw.githubusercontent.com/andy5090/central-mcp/main/docs/logo.png?v=0.10.0" alt="central-mcp logo" width="280"/>
 </p>
 
 **여러 코딩 에이전트를 하나의 허브에서 디스패치하는, 오케스트레이터 비종속 MCP 서버.**

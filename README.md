@@ -1,7 +1,7 @@
 # central-mcp
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/andy5090/central-mcp/main/docs/logo.png" alt="central-mcp logo" width="280"/>
+  <img src="https://raw.githubusercontent.com/andy5090/central-mcp/main/docs/logo.png?v=0.10.0" alt="central-mcp logo" width="280"/>
 </p>
 
 [![PyPI version](https://img.shields.io/pypi/v/central-mcp)](https://pypi.org/project/central-mcp/)
