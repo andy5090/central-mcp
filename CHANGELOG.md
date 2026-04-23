@@ -16,6 +16,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Token counts in `timeline.jsonl`** — `log_timeline()` now records the parsed `tokens` dict (when the agent reported one), so the monitor and `orchestration_history` can aggregate portfolio-wide token usage without re-parsing stdout.
 - **`per_project.tokens_total` in `orchestration_history`** — daily token totals per project are now exposed in the MCP response alongside `dispatched` / `succeeded` / `failed` / `cancelled`.
 
+### Added
+- **`tokens.db` SQLite aggregation store** (`~/.central-mcp/tokens.db`) — a flat `usage` table holds one row per observed token-reporting event, keyed by `(source, session_id, request_id)` so re-syncs are idempotent. `source` is either `dispatch` (subprocess run) or `orchestrator` (derived from session files — wiring lands in a follow-up). `monitor` and `orchestration_history` now read token totals (today + last 7d) via `SUM(...) GROUP BY project` from this table instead of scanning `timeline.jsonl`.
+- **monitor dashboard: today + last-7d columns** — the DISPATCH STATS section now shows two token columns (`today tok` / `7d tok`) plus a header summary (`today: N  │  last 7d: M`). The user's `config.toml [user].timezone` defines the "today" boundary.
+- **`orchestration_history.per_project` exposes `tokens_today` / `tokens_week`** — replacing the previous `tokens_total`. Both pulled from `tokens.db`, windowed by the user's configured timezone.
+
 ### Changed
 - **`current_workspace` moved from `registry.yaml` → `config.toml`** — it's a per-user UI state, not a shared project record, so it lives alongside the other user preferences now. `ensure_initialized()` performs a one-shot migration on startup: lifts the value out of `registry.yaml` into `[user].current_workspace` and deletes the legacy key. No user action needed.
 - **`config.toml` auto-seeded with system timezone** — `[user].timezone` is now injected on install/upgrade (idempotent, runs at every startup) so the file reflects a concrete IANA name (e.g. `Asia/Seoul`) the user can inspect/edit rather than an invisible fallback. Falls back to `/etc/localtime` → `UTC` on misconfigured hosts.

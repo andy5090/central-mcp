@@ -27,7 +27,8 @@ from typing import Any
 
 from fastmcp import FastMCP
 
-from central_mcp import events, paths
+from central_mcp import config as user_config
+from central_mcp import events, paths, tokens_db
 from central_mcp.adapters import get_adapter
 from central_mcp.adapters.base import VALID_AGENTS, VALID_PERMISSION_MODES
 from central_mcp.registry import (
@@ -815,6 +816,22 @@ def _launch_dispatch(
             tokens=final_result.get("tokens") if final_result else None,
         )
 
+        # Mirror parsed token counts into tokens.db so aggregation queries
+        # (today / week) don't have to re-scan timeline.jsonl on every call.
+        # Best-effort: log_timeline already succeeded; this is the derived index.
+        tok = final_result.get("tokens") if final_result else None
+        if tok:
+            tokens_db.record(
+                ts=datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
+                project=project.name,
+                agent=(final_result.get("agent_used") if final_result else None) or entry["agent"],
+                source="dispatch",
+                dispatch_id=dispatch_id,
+                input_tokens=tok.get("input"),
+                output_tokens=tok.get("output"),
+                total_tokens=tok.get("total") or events.token_total(tok),
+            )
+
     with _dispatch_lock:
         _dispatches[dispatch_id] = entry
 
@@ -1461,7 +1478,6 @@ def orchestration_history(
             continue
         stats = per_project.setdefault(proj, {
             "dispatched": 0, "succeeded": 0, "failed": 0, "cancelled": 0,
-            "tokens_total": 0,
         })
         evt = r.get("event")
         if evt == "dispatched":
@@ -1475,12 +1491,22 @@ def orchestration_history(
             stats["failed"] += 1
         elif evt == "cancelled":
             stats["cancelled"] += 1
-        stats["tokens_total"] += events.token_total(r.get("tokens"))
         ts = r.get("ts", "")
         if ts > last_ts_by_project.get(proj, ""):
             last_ts_by_project[proj] = ts
     for proj, last_ts in last_ts_by_project.items():
         per_project[proj]["last_ts"] = last_ts  # type: ignore[assignment]
+
+    # Token aggregates come from tokens.db, not timeline scan. Keyed by
+    # the user's configured timezone (falls back to system / UTC).
+    tz = user_config.user_timezone()
+    today_tokens = tokens_db.today_by_project(tz)
+    week_tokens = tokens_db.week_by_project(tz)
+    for proj in per_project:
+        td = today_tokens.get(proj) or {"dispatch": 0, "orchestrator": 0, "total": 0}
+        wk = week_tokens.get(proj)  or {"dispatch": 0, "orchestrator": 0, "total": 0}
+        per_project[proj]["tokens_today"] = td["total"]      # type: ignore[assignment]
+        per_project[proj]["tokens_week"]  = wk["total"]      # type: ignore[assignment]
 
     with _dispatch_lock:
         in_flight = [

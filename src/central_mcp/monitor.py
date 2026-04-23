@@ -6,8 +6,9 @@ Displays a curses-based live dashboard with two sections:
                   API Key users see "no subscription quota". Gemini has no
                   quota API so only auth-type is shown.
 
-  DISPATCH STATS — Per-project token totals and dispatch counts for today (UTC),
-                   read from ~/.central-mcp/timeline.jsonl.
+  DISPATCH STATS — Per-project dispatch counts (today, user's timezone) from
+                   timeline.jsonl, plus token sums (today + last 7d) from
+                   tokens.db (SQLite).
 
 Quota is refreshed every 90 seconds in a background thread. Stats refresh
 every 10 seconds. Press q / ESC / Ctrl+C to exit.
@@ -22,8 +23,8 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
-from central_mcp import events
-from central_mcp.events import token_total
+from central_mcp import config as user_config
+from central_mcp import events, tokens_db
 from central_mcp.quota import claude as _claude
 from central_mcp.quota import codex as _codex
 from central_mcp.quota import gemini as _gemini
@@ -201,24 +202,30 @@ def _spawn_fetch() -> None:
 # ── Dispatch stats ────────────────────────────────────────────────────────────
 
 def _load_today_stats() -> dict[str, dict[str, Any]]:
-    """Aggregate today's (UTC) per-project stats from the global timeline.
+    """Aggregate per-project stats for the user's "today".
 
-    Reads the timeline in reverse and stops at the first record older than
-    midnight UTC — avoids re-parsing unbounded history on each refresh.
+    Dispatch counts / last-status / last-ts come from a reverse scan of
+    timeline.jsonl (bounded to today's local-tz records). Token totals
+    (today + last-7d) come from tokens.db — an SQLite sum over the same
+    window, keyed by source='dispatch' or 'orchestrator'. Timeline and
+    DB are written atomically in the dispatch path, so the two views
+    stay consistent.
     """
+    tz_str = user_config.user_timezone()
+    tz = _resolve_tz(tz_str)
+
     path = events.timeline_path()
     try:
         raw = path.read_text(encoding="utf-8")
     except Exception:
-        return {}
+        raw = ""
 
-    lines = raw.splitlines()
-    midnight = datetime.now(timezone.utc).replace(
-        hour=0, minute=0, second=0, microsecond=0
-    )
+    now_local = datetime.now(tz)
+    today_start_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start_utc = today_start_local.astimezone(timezone.utc)
+
     stats: dict[str, dict[str, Any]] = {}
-
-    for ln in reversed(lines):
+    for ln in reversed(raw.splitlines()):
         if not ln.strip():
             continue
         try:
@@ -229,13 +236,14 @@ def _load_today_stats() -> dict[str, dict[str, Any]]:
             ts = datetime.fromisoformat(r.get("ts", "").replace("Z", "+00:00"))
         except Exception:
             continue
-        if ts < midnight:
-            break  # everything earlier is also < midnight
+        if ts < today_start_utc:
+            break   # file order == ts order (write lock), so nothing earlier matters
 
         proj = r.get("project", "?")
         s = stats.setdefault(proj, {
             "dispatches": 0,
-            "tokens_total": 0,
+            "tokens_today": 0,
+            "tokens_week": 0,
             "last_ts": None,
             "last_ok": None,
             "agent": "",
@@ -245,15 +253,34 @@ def _load_today_stats() -> dict[str, dict[str, Any]]:
         if evt == "dispatched":
             s["dispatches"] += 1
         elif evt in ("complete", "error"):
-            # Reverse iteration: the *first* complete/error we see is the
-            # most recent one. Preserve it rather than overwriting later.
+            # Reverse iteration → first match is the most recent.
             if s["last_ts"] is None:
                 s["last_ts"] = r.get("ts")
                 s["last_ok"] = r.get("ok", False)
                 s["agent"] = r.get("agent") or s["agent"]
-            s["tokens_total"] += token_total(r.get("tokens"))
+
+    # Overlay token aggregates from tokens.db (today + week).
+    today_tokens = tokens_db.today_by_project(tz_str)
+    week_tokens  = tokens_db.week_by_project(tz_str)
+    for proj in set(stats) | set(today_tokens) | set(week_tokens):
+        s = stats.setdefault(proj, {
+            "dispatches": 0, "tokens_today": 0, "tokens_week": 0,
+            "last_ts": None, "last_ok": None, "agent": "",
+        })
+        s["tokens_today"] = (today_tokens.get(proj) or {}).get("total", 0)
+        s["tokens_week"]  = (week_tokens.get(proj)  or {}).get("total", 0)
 
     return stats
+
+
+def _resolve_tz(tz_str: str | None):
+    if not tz_str:
+        return timezone.utc
+    try:
+        from zoneinfo import ZoneInfo
+        return ZoneInfo(tz_str)
+    except Exception:
+        return timezone.utc
 
 
 # ── Curses rendering ──────────────────────────────────────────────────────────
@@ -393,12 +420,19 @@ def _draw(
     row += 1
 
     # ── Dispatch stats ──
-    total_tokens = sum(s.get("tokens_total", 0) for s in stats.values())
-    header = f" DISPATCH STATS (today UTC)  total tokens: {total_tokens:,}"
+    total_today = sum(s.get("tokens_today", 0) for s in stats.values())
+    total_week  = sum(s.get("tokens_week",  0) for s in stats.values())
+    header = (
+        f" DISPATCH STATS   today: {total_today:,} tokens  │  "
+        f"last 7d: {total_week:,} tokens"
+    )
     _wstr(stdscr, row, 0, header[: cols - 1], curses.A_BOLD)
     row += 1
 
-    col_hdr = f" {'project':<22} {'agent':<10} {'runs':>5}  {'tokens':>9}  last"
+    col_hdr = (
+        f" {'project':<22} {'agent':<10} {'runs':>5}  "
+        f"{'today tok':>10}  {'7d tok':>10}  last"
+    )
     _wstr(stdscr, row, 0, col_hdr[: cols - 1], curses.A_DIM)
     row += 1
 
@@ -411,25 +445,33 @@ def _draw(
         if row >= rows - 1:
             break
         s = stats.get(proj, {})
-        agent  = _truncate(s.get("agent") or "?", 10)
-        runs   = s.get("dispatches", 0)
-        tokens = s.get("tokens_total", 0)
-        last   = _fmt_last(s.get("last_ts"))
-        ok     = s.get("last_ok")
-        badge  = "✓" if ok is True else ("✗" if ok is False else " ")
-        tok_s  = f"{tokens:,}" if tokens else "—"
-        line   = f" {_truncate(proj, 22):<22} {agent:<10} {runs:>5}  {tok_s:>9}  {last} {badge}"
-        attr   = (curses.color_pair(2) if ok is True
-                  else curses.color_pair(3) if ok is False else 0)
+        agent    = _truncate(s.get("agent") or "?", 10)
+        runs     = s.get("dispatches", 0)
+        tok_day  = s.get("tokens_today", 0)
+        tok_wk   = s.get("tokens_week", 0)
+        last     = _fmt_last(s.get("last_ts"))
+        ok       = s.get("last_ok")
+        badge    = "✓" if ok is True else ("✗" if ok is False else " ")
+        td_s     = f"{tok_day:,}" if tok_day else "—"
+        tw_s     = f"{tok_wk:,}"  if tok_wk  else "—"
+        line     = (
+            f" {_truncate(proj, 22):<22} {agent:<10} {runs:>5}  "
+            f"{td_s:>10}  {tw_s:>10}  {last} {badge}"
+        )
+        attr     = (curses.color_pair(2) if ok is True
+                    else curses.color_pair(3) if ok is False else 0)
         _wstr(stdscr, row, 0, line[: cols - 1], attr)
         row += 1
         shown.add(proj)
 
-    # Registered projects with no activity today
+    # Registered projects with no activity in the window.
     for proj in projects:
         if proj in shown or row >= rows - 1:
             continue
-        line = f" {_truncate(proj, 22):<22} {'—':<10} {'0':>5}  {'—':>9}  no activity today"
+        line = (
+            f" {_truncate(proj, 22):<22} {'—':<10} {'0':>5}  "
+            f"{'—':>10}  {'—':>10}  no recent activity"
+        )
         _wstr(stdscr, row, 0, line[: cols - 1], curses.A_DIM)
         row += 1
 

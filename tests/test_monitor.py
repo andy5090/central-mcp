@@ -45,54 +45,88 @@ class TestTokenTotal:
 
 
 class TestLoadTodayStats:
+    """`_load_today_stats` resolves "today" in the user's configured timezone
+    (config.toml `[user].timezone`, falling back to the system tz). Tests
+    pin timezone to UTC so timestamps are unambiguous.
+    """
+
     def test_missing_timeline_returns_empty(self, fake_home: Path) -> None:
+        from central_mcp import config as _cfg
+        _cfg.set_user_timezone("UTC")
         assert monitor._load_today_stats() == {}
 
-    def test_counts_dispatches_and_tokens_from_today(self, fake_home: Path) -> None:
+    def test_counts_dispatches_from_today_only(self, fake_home: Path) -> None:
+        from central_mcp import config as _cfg
+        _cfg.set_user_timezone("UTC")
+
         now = datetime.now(timezone.utc)
         today_mid = now.replace(hour=12, minute=0, second=0, microsecond=0)
         yesterday = today_mid - timedelta(days=1)
         path = events.timeline_path()
         _write_timeline(path, [
             # Yesterday — must be excluded
-            {"ts": yesterday.isoformat(), "project": "p1", "event": "dispatched",
-             "id": "old"},
-            {"ts": yesterday.isoformat(), "project": "p1", "event": "complete",
-             "id": "old", "ok": True, "agent": "claude",
-             "tokens": {"total": 9999}},
+            {"ts": yesterday.isoformat(timespec="milliseconds"),
+             "project": "p1", "event": "dispatched", "id": "old"},
             # Today
-            {"ts": today_mid.isoformat(), "project": "p1", "event": "dispatched",
-             "id": "a"},
-            {"ts": today_mid.isoformat(), "project": "p1", "event": "complete",
-             "id": "a", "ok": True, "agent": "claude",
-             "tokens": {"total": 100}},
-            {"ts": today_mid.isoformat(), "project": "p1", "event": "dispatched",
-             "id": "b"},
-            {"ts": today_mid.isoformat(), "project": "p1", "event": "complete",
-             "id": "b", "ok": False, "agent": "claude",
-             "tokens": {"input": 20, "output": 30}},
-            {"ts": today_mid.isoformat(), "project": "p2", "event": "dispatched",
-             "id": "c"},
+            {"ts": today_mid.isoformat(timespec="milliseconds"),
+             "project": "p1", "event": "dispatched", "id": "a"},
+            {"ts": today_mid.isoformat(timespec="milliseconds"),
+             "project": "p1", "event": "complete", "id": "a",
+             "ok": True, "agent": "claude"},
+            {"ts": today_mid.isoformat(timespec="milliseconds"),
+             "project": "p1", "event": "dispatched", "id": "b"},
+            {"ts": today_mid.isoformat(timespec="milliseconds"),
+             "project": "p1", "event": "complete", "id": "b",
+             "ok": False, "agent": "claude"},
+            {"ts": today_mid.isoformat(timespec="milliseconds"),
+             "project": "p2", "event": "dispatched", "id": "c"},
         ])
         stats = monitor._load_today_stats()
         assert stats["p1"]["dispatches"] == 2
-        assert stats["p1"]["tokens_total"] == 150
         assert stats["p1"]["agent"] == "claude"
-        # last_ok is "most recent" under reverse iteration — b completed
-        # after a, so last_ok should be False.
+        # Reverse iteration means the first terminal event we see is the
+        # most recent (b, which failed).
         assert stats["p1"]["last_ok"] is False
         assert stats["p2"]["dispatches"] == 1
-        assert stats["p2"]["tokens_total"] == 0
-        # Yesterday's 9999 tokens must not leak in
-        assert "old" not in stats
+        # Token fields default to 0 when tokens.db has no rows.
+        assert stats["p1"]["tokens_today"] == 0
+        assert stats["p1"]["tokens_week"] == 0
+
+    def test_token_aggregates_come_from_tokens_db(self, fake_home: Path) -> None:
+        from central_mcp import config as _cfg
+        from central_mcp import tokens_db
+        _cfg.set_user_timezone("UTC")
+
+        now = datetime.now(timezone.utc)
+        tokens_db.record(
+            ts=now.isoformat(timespec="milliseconds"),
+            project="p1", agent="claude", source="dispatch",
+            dispatch_id="d1", total_tokens=1234,
+        )
+        tokens_db.record(
+            ts=(now - timedelta(days=2)).isoformat(timespec="milliseconds"),
+            project="p1", agent="claude", source="dispatch",
+            dispatch_id="d2", total_tokens=500,     # within the 7d window
+        )
+        # Seed a timeline dispatch so the project shows up in stats.
+        _write_timeline(events.timeline_path(), [
+            {"ts": now.isoformat(timespec="milliseconds"),
+             "project": "p1", "event": "dispatched", "id": "d1"},
+        ])
+        stats = monitor._load_today_stats()
+        assert stats["p1"]["tokens_today"] == 1234
+        assert stats["p1"]["tokens_week"] == 1234 + 500
 
     def test_skips_malformed_lines(self, fake_home: Path) -> None:
+        from central_mcp import config as _cfg
+        _cfg.set_user_timezone("UTC")
         now = datetime.now(timezone.utc).replace(hour=12)
         path = events.timeline_path()
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
             "{ not json\n"
-            + json.dumps({"ts": now.isoformat(), "project": "p", "event": "dispatched"})
+            + json.dumps({"ts": now.isoformat(timespec="milliseconds"),
+                          "project": "p", "event": "dispatched"})
             + "\n"
             + "also garbage\n",
             encoding="utf-8",
