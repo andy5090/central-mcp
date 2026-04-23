@@ -170,3 +170,119 @@ def week_by_project(tz_str: str | None) -> dict[str, dict[str, int]]:
     """Token sums per project for the last 7 local-tz days (inclusive)."""
     start, end = _window_utc(tz_str, days=7)
     return _aggregate(start, end)
+
+
+# ── general-purpose aggregation (for token_usage MCP tool) ───────────────────
+
+_PERIOD_DAYS = {"today": 1, "week": 7, "month": 30}
+
+
+def _resolve_window(period: str, tz_str: str | None) -> tuple[str | None, str | None]:
+    """Translate a period label into a (start_utc, end_utc) pair.
+
+    `period="all"` returns (None, None) → no bounds.
+    """
+    if period == "all":
+        return None, None
+    days = _PERIOD_DAYS.get(period, 1)
+    return _window_utc(tz_str, days=days)
+
+
+def aggregate(
+    period: str = "today",
+    tz_str: str | None = None,
+    project_filter: set[str] | None = None,
+    group_by: str = "project",
+) -> dict[str, Any]:
+    """Flexible token-usage aggregation.
+
+    period: today | week | month | all
+    project_filter: include only these projects (None = all)
+    group_by: project | agent | source
+
+    Returns:
+      {
+        "window": {"start": ISO, "end": ISO},      # (None, None) when period='all'
+        "breakdown": {
+           "<group_key>": {"dispatch": N, "orchestrator": M, "total": N+M,
+                           "input": X, "output": Y}
+        },
+        "total": {...}    # sum across all groups
+      }
+    """
+    start, end = _resolve_window(period, tz_str)
+    if group_by not in ("project", "agent", "source"):
+        group_by = "project"
+
+    # Build query dynamically.
+    group_col = {"project": "COALESCE(project, '')",
+                 "agent": "agent",
+                 "source": "source"}[group_by]
+    where_parts: list[str] = []
+    params: list[Any] = []
+    if start is not None:
+        where_parts.append("ts >= ?")
+        params.append(start)
+    if end is not None:
+        where_parts.append("ts < ?")
+        params.append(end)
+    if project_filter is not None:
+        placeholders = ",".join("?" * len(project_filter))
+        if project_filter:
+            where_parts.append(f"COALESCE(project, '') IN ({placeholders})")
+            params.extend(sorted(project_filter))
+        else:
+            # Empty filter = match nothing; short-circuit.
+            return {
+                "window": {"start": start, "end": end},
+                "breakdown": {},
+                "total": {"dispatch": 0, "orchestrator": 0, "total": 0,
+                          "input": 0, "output": 0},
+            }
+    where_sql = f" WHERE {' AND '.join(where_parts)}" if where_parts else ""
+
+    sql = f"""
+        SELECT {group_col} AS grp,
+               source,
+               SUM(COALESCE(input_tokens, 0))  AS input_sum,
+               SUM(COALESCE(output_tokens, 0)) AS output_sum,
+               SUM(COALESCE(total_tokens, 0))  AS total_sum
+        FROM usage
+        {where_sql}
+        GROUP BY grp, source
+    """
+    try:
+        with _connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+    except Exception:
+        return {
+            "window": {"start": start, "end": end},
+            "breakdown": {},
+            "total": {"dispatch": 0, "orchestrator": 0, "total": 0,
+                      "input": 0, "output": 0},
+        }
+
+    breakdown: dict[str, dict[str, int]] = {}
+    for r in rows:
+        key = r["grp"]
+        entry = breakdown.setdefault(key, {
+            "dispatch": 0, "orchestrator": 0, "total": 0,
+            "input": 0, "output": 0,
+        })
+        entry[r["source"]] = int(r["total_sum"] or 0)
+        entry["input"]  += int(r["input_sum"]  or 0)
+        entry["output"] += int(r["output_sum"] or 0)
+    for v in breakdown.values():
+        v["total"] = v["dispatch"] + v["orchestrator"]
+
+    total: dict[str, int] = {"dispatch": 0, "orchestrator": 0, "total": 0,
+                             "input": 0, "output": 0}
+    for v in breakdown.values():
+        for k in total:
+            total[k] += v[k]
+
+    return {
+        "window": {"start": start, "end": end},
+        "breakdown": breakdown,
+        "total": total,
+    }

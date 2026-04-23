@@ -1496,17 +1496,10 @@ def orchestration_history(
             last_ts_by_project[proj] = ts
     for proj, last_ts in last_ts_by_project.items():
         per_project[proj]["last_ts"] = last_ts  # type: ignore[assignment]
-
-    # Token aggregates come from tokens.db, not timeline scan. Keyed by
-    # the user's configured timezone (falls back to system / UTC).
-    tz = user_config.user_timezone()
-    today_tokens = tokens_db.today_by_project(tz)
-    week_tokens = tokens_db.week_by_project(tz)
-    for proj in per_project:
-        td = today_tokens.get(proj) or {"dispatch": 0, "orchestrator": 0, "total": 0}
-        wk = week_tokens.get(proj)  or {"dispatch": 0, "orchestrator": 0, "total": 0}
-        per_project[proj]["tokens_today"] = td["total"]      # type: ignore[assignment]
-        per_project[proj]["tokens_week"]  = wk["total"]      # type: ignore[assignment]
+    # Token aggregates are intentionally NOT on this response — call the
+    # dedicated `token_usage` tool to query tokens.db. Keeping event history
+    # and token accounting as distinct surfaces lets each evolve independently
+    # (e.g. future real-time token pane).
 
     with _dispatch_lock:
         in_flight = [
@@ -1534,6 +1527,67 @@ def orchestration_history(
         "recent": recent,
         "per_project": per_project,
         "registered_projects": registered,
+    })
+
+
+@mcp.tool()
+def token_usage(
+    period: str = "today",
+    project: str | None = None,
+    workspace: str | None = None,
+    group_by: str = "project",
+) -> dict[str, Any]:
+    """Portfolio-wide token-usage aggregation (SQL over `tokens.db`).
+
+    Separated from `orchestration_history` so token monitoring can evolve
+    independently of event/dispatch history (and eventually power a live
+    token pane). Reads are windowed by the user's configured timezone.
+
+    **period**: `today` | `week` | `month` | `all`
+    **project**: restrict to one project name (mutually exclusive with
+      `workspace`; if both are given, `project` wins)
+    **workspace**: restrict to projects in a workspace (via registry)
+    **group_by**: `project` | `agent` | `source` — how `breakdown` is keyed
+
+    Returns:
+      {
+        "ok": True,
+        "period": "today",
+        "window": {"start": ISO, "end": ISO} | {"start": null, "end": null},
+        "group_by": "project",
+        "breakdown": { key: {dispatch, orchestrator, total, input, output} },
+        "total": {dispatch, orchestrator, total, input, output}
+      }
+    """
+    if period not in ("today", "week", "month", "all"):
+        return {"ok": False, "error": f"unknown period {period!r}"}
+    if group_by not in ("project", "agent", "source"):
+        return {"ok": False, "error": f"unknown group_by {group_by!r}"}
+
+    project_filter: set[str] | None = None
+    if project is not None:
+        project_filter = {project}
+    elif workspace is not None:
+        try:
+            project_filter = {p.name for p in projects_in_workspace(workspace)}
+        except Exception as exc:
+            return {"ok": False, "error": f"workspace lookup failed: {exc}"}
+
+    tz = user_config.user_timezone()
+    agg = tokens_db.aggregate(
+        period=period,
+        tz_str=tz,
+        project_filter=project_filter,
+        group_by=group_by,
+    )
+    return _with_completed({
+        "ok": True,
+        "period": period,
+        "timezone": tz,
+        "window": agg["window"],
+        "group_by": group_by,
+        "breakdown": agg["breakdown"],
+        "total": agg["total"],
     })
 
 
