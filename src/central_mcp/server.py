@@ -892,6 +892,16 @@ def dispatch(
       - None (default) → use the project's saved `language`, set via
         `update_project(language=...)`. If unset, no directive is added.
     """
+    # Backfill orchestrator-side token usage from its active session
+    # file. Best-effort; a failed sync must never block a dispatch.
+    try:
+        orch = user_config.orchestrator_default()
+        if orch:
+            from central_mcp import orch_session
+            orch_session.sync_orchestrator(orch)
+    except Exception:
+        pass
+
     # Workspace fan-out: @workspace prefix forces workspace resolution.
     if name.startswith("@"):
         ws_name = name[1:]

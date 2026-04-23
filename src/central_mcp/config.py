@@ -81,6 +81,18 @@ def _get_table(doc: tomlkit.TOMLDocument, name: str) -> Any:
 
 # ── timezone ──────────────────────────────────────────────────────────────────
 
+def orchestrator_default() -> str | None:
+    """Return `[orchestrator].default` from config.toml, or None if unset.
+
+    Used by `central-mcp run` to decide which CLI to launch, and by
+    `orch_session.sync_orchestrator` to know which session files to scan
+    for per-turn token usage.
+    """
+    orch = _read().get("orchestrator") or {}
+    val = orch.get("default")
+    return str(val) if val else None
+
+
 def user_timezone() -> str:
     """Return the user's configured timezone; fall back to system, then UTC."""
     user = _read().get("user") or {}
