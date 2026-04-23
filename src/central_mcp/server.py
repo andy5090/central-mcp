@@ -1424,6 +1424,7 @@ def orchestration_history(
     n: int = 20,
     window_minutes: int | None = None,
     workspace: str | None = None,
+    include_archives: bool = False,
 ) -> dict[str, Any]:
     """Portfolio-wide snapshot: in-flight dispatches + recent milestones + per-project stats.
 
@@ -1438,6 +1439,11 @@ def orchestration_history(
 
     **workspace** (optional): when given, filters recent milestones, per-project
     stats, and in-flight dispatches to only projects in that workspace.
+
+    **include_archives** (optional): when True, attach `archived_summaries`
+    — one compact aggregate per rotated timeline file — so callers get
+    a window onto long-past activity without raw records bloating context.
+    Live timeline.jsonl is always included.
     """
     timeline = _read_jsonl(events.timeline_path())
     timeline.sort(key=lambda r: r.get("ts", ""), reverse=True)
@@ -1520,14 +1526,28 @@ def orchestration_history(
     else:
         registered = [p.to_dict() for p in load_registry()]
 
-    return _with_completed({
+    archived_summaries: list[dict[str, Any]] = []
+    if include_archives:
+        for archive_path in events.list_archives():
+            summary = events.read_archive_summary(archive_path)
+            if summary is None:
+                continue
+            archived_summaries.append({
+                "file": archive_path.name,
+                **summary,
+            })
+
+    response: dict[str, Any] = {
         "ok": True,
         "window_minutes": window_minutes,
         "in_flight": in_flight,
         "recent": recent,
         "per_project": per_project,
         "registered_projects": registered,
-    })
+    }
+    if include_archives:
+        response["archived_summaries"] = archived_summaries
+    return _with_completed(response)
 
 
 @mcp.tool()

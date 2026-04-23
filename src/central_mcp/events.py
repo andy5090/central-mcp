@@ -57,8 +57,151 @@ def timeline_path() -> Path:
     Backs `orchestration_history` and portfolio-level summaries so
     the orchestrator can answer "how is everything going?" without
     stitching per-project files together.
+
+    Automatically rotated into `archive/` once it exceeds
+    `_ROTATE_BYTES` or `_ROTATE_LINES`; readers that care about the
+    full history call `list_archives()` / `read_archive_summary()`.
     """
     return paths.central_mcp_home() / "timeline.jsonl"
+
+
+def archive_dir() -> Path:
+    """Where rotated `timeline-<ts>.jsonl` + `*-summary.json` pairs live."""
+    return paths.central_mcp_home() / "archive"
+
+
+# Rotation thresholds. Deliberately generous — a working install at ~500
+# dispatches/day needs years to hit 5 MB — so the default behaviour is
+# "dormant, correct when it matters". Monkeypatch in tests to exercise
+# the rotate path.
+_ROTATE_BYTES = 5 * 1024 * 1024   # 5 MB
+_ROTATE_LINES = 10_000
+
+
+def _summarize_jsonl(path: Path) -> dict[str, Any]:
+    """Build a compact stats dict from a timeline-shaped JSONL file.
+
+    Used when rotating a full `timeline.jsonl` into the archive so that
+    `orchestration_history(include_archives=True)` can surface aggregate
+    history without loading raw records into context.
+    """
+    summary: dict[str, Any] = {
+        "covers":       {"from": None, "to": None},
+        "record_count": 0,
+        "per_project":  {},
+        "per_agent":    {},
+    }
+    try:
+        with path.open("r", encoding="utf-8", errors="replace") as fh:
+            for ln in fh:
+                line = ln.strip()
+                if not line:
+                    continue
+                try:
+                    r = json.loads(line)
+                except Exception:
+                    continue
+                ts = r.get("ts") or ""
+                if ts:
+                    if not summary["covers"]["from"] or ts < summary["covers"]["from"]:
+                        summary["covers"]["from"] = ts
+                    if not summary["covers"]["to"]   or ts > summary["covers"]["to"]:
+                        summary["covers"]["to"] = ts
+                summary["record_count"] += 1
+                proj = r.get("project") or "?"
+                pstats = summary["per_project"].setdefault(proj, {
+                    "dispatched": 0, "succeeded": 0, "failed": 0, "cancelled": 0,
+                })
+                evt = r.get("event")
+                if evt == "dispatched":
+                    pstats["dispatched"] += 1
+                elif evt == "complete":
+                    if r.get("ok"):
+                        pstats["succeeded"] += 1
+                    else:
+                        pstats["failed"] += 1
+                elif evt == "error":
+                    pstats["failed"] += 1
+                elif evt == "cancelled":
+                    pstats["cancelled"] += 1
+                agent = r.get("agent")
+                if agent:
+                    summary["per_agent"].setdefault(agent, {"events": 0})
+                    summary["per_agent"][agent]["events"] += 1
+    except Exception:
+        pass
+    return summary
+
+
+def _rotate_now(path: Path) -> None:
+    """Move current timeline.jsonl into archive/ and write a paired summary.
+
+    Must be called inside `_timeline_lock`. Silent on failure — rotation
+    is opportunistic; a missed rotation just delays the next attempt.
+    """
+    if not path.exists() or path.stat().st_size == 0:
+        return
+    # Microsecond-precision suffix so rapid back-to-back rotations (common
+    # in tests that dial the threshold down) don't collide on `rename()`.
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    d = archive_dir()
+    d.mkdir(parents=True, exist_ok=True)
+    archived = d / f"timeline-{ts}.jsonl"
+    summary_path = d / f"timeline-{ts}-summary.json"
+    try:
+        summary = _summarize_jsonl(path)
+        path.rename(archived)
+        summary_path.write_text(
+            json.dumps(summary, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
+
+
+def _maybe_rotate(path: Path) -> None:
+    """Trigger a rotate if `path` exceeds size or line-count thresholds.
+
+    Cheap size check first to avoid scanning every append; only counts
+    lines if the byte threshold has been crossed (line threshold is
+    mainly a safety net for pathological single-line-per-event
+    workloads).
+    """
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return
+    if size >= _ROTATE_BYTES:
+        _rotate_now(path)
+        return
+    # Only bother counting lines if we're within 25% of the line threshold
+    # by byte-proxy (avoids an O(n) scan on every append for tiny files).
+    if size < _ROTATE_BYTES // 4:
+        return
+    try:
+        with path.open("rb") as fh:
+            lines = sum(1 for _ in fh)
+    except OSError:
+        return
+    if lines >= _ROTATE_LINES:
+        _rotate_now(path)
+
+
+def list_archives() -> list[Path]:
+    """Return archived `timeline-*.jsonl` files, newest → oldest."""
+    d = archive_dir()
+    if not d.is_dir():
+        return []
+    return sorted(d.glob("timeline-*.jsonl"), reverse=True)
+
+
+def read_archive_summary(archive_path: Path) -> dict[str, Any] | None:
+    """Return the `*-summary.json` paired with an archive file, or None."""
+    summary_path = archive_path.with_name(archive_path.stem + "-summary.json")
+    try:
+        return json.loads(summary_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
 
 
 def log_event(project: str, dispatch_id: str, event: str, **data: Any) -> None:
@@ -135,5 +278,8 @@ def log_timeline(dispatch_id: str, project: str, event: str, **data: Any) -> Non
                 finally:
                     if fcntl is not None:
                         fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+            # Rotate on thresholds, still inside the process-level lock so
+            # the rename never races a concurrent append in this process.
+            _maybe_rotate(path)
     except Exception:
         pass
