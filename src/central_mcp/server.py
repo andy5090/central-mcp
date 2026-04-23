@@ -16,6 +16,7 @@ critical path and can be absent entirely.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import threading
 import time
@@ -45,6 +46,44 @@ from central_mcp.registry import (
 from central_mcp.scrub import scrub
 
 DEFAULT_PERMISSION_MODE = "bypass"
+
+# Token-usage extraction — regex patterns tried in order.
+# Returns {"input": int, "output": int, "total": int} or {"total": int} or None.
+_TOKEN_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    # Claude Code: "Tokens: 2,341 input · 234 output" or ", 234 output"
+    (re.compile(r"[Tt]okens?\s*:\s*([\d,]+)\s+input\s*[·,]\s*([\d,]+)\s+output"), "in_out"),
+    # Generic: "1234 input tokens, 567 output tokens"
+    (re.compile(r"([\d,]+)\s+input\s+tokens?\s*[,;·]\s*([\d,]+)\s+output\s+tokens?"), "in_out"),
+    # Gemini-style: "Input tokens: 1234 … Output tokens: 567"
+    (
+        re.compile(
+            r"[Ii]nput\s+tokens?\s*:\s*([\d,]+).*?[Oo]utput\s+tokens?\s*:\s*([\d,]+)",
+            re.DOTALL,
+        ),
+        "in_out",
+    ),
+    # Total-only fallback: "Total tokens: 1234" / "total_tokens: 1234"
+    (re.compile(r"[Tt]otal[\s_]tokens?\s*[=:]\s*([\d,]+)"), "total"),
+]
+
+
+def _extract_token_usage(output: str, agent: str = "") -> dict[str, int] | None:
+    """Try to parse token counts from agent stdout. Returns None when not found."""
+    if not output:
+        return None
+    for pat, kind in _TOKEN_PATTERNS:
+        m = pat.search(output)
+        if not m:
+            continue
+        if kind == "in_out":
+            inp = int(m.group(1).replace(",", ""))
+            out = int(m.group(2).replace(",", ""))
+            return {"input": inp, "output": out, "total": inp + out}
+        if kind == "total":
+            total = int(m.group(1).replace(",", ""))
+            return {"total": total}
+    return None
+
 
 # How many chars of dispatch stdout to keep on each terminal event so
 # orchestration_history / dispatch_history can surface "what came out"
@@ -318,6 +357,7 @@ def _project_history(project: str, n: int) -> list[dict[str, Any]]:
             "error": t.get("error"),
             "prompt": s.get("prompt", ""),
             "output_preview": t.get("output_preview", ""),
+            "tokens": t.get("tokens"),
         })
     return merged
 
@@ -683,6 +723,12 @@ def _launch_dispatch(
                 }
                 if last.get("timeout"):
                     final_status = "timeout"
+                tokens = _extract_token_usage(
+                    final_result.get("output", ""),
+                    agent=final_result.get("agent_used") or "",
+                )
+                if tokens:
+                    final_result["tokens"] = tokens
         except Exception as exc:
             final_status = "error"
             final_result = {
@@ -714,6 +760,7 @@ def _launch_dispatch(
             fallback_used=bool(final_result and final_result.get("fallback_used")),
             error=final_result.get("error") if final_result else None,
             output_preview=output_preview,
+            tokens=final_result.get("tokens") if final_result else None,
         )
 
         # Append a compact milestone to the global timeline so portfolio-

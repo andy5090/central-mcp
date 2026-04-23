@@ -102,33 +102,34 @@ Design spec: [`docs/architecture/workspaces.md`](architecture/workspaces.md)
 
 ---
 
-## Phase 4 — UX & personalization 🚧 next
+## Phase 4 — UX & personalization 🚧 in progress
 
 **Goal**: make central-mcp more tailored to individual users and more observable at a glance — covering personal workflow rules, watch-pane readability, and usage visibility.
 
-📋 **User-specific instruction overlays**
-- Keep `AGENTS.md` as the shared project/router contract.
-- Add a user-scoped overlay file at `~/.central-mcp/user.md` for persistent preferences: reporting style, language, process management rules, routing hints.
-- Overlay is an augmentation layer — it outranks router defaults but not system/developer constraints; current user turn instructions still win.
-- Single-user first; named profiles deferred until demand is clear.
+✅ **User-specific instruction overlays** (shipped 0.9.4)
+- `~/.central-mcp/user.md` scaffolded on first launch; orchestrators read it at session start.
+- Augmentation layer — outranks router defaults but not system/developer constraints; user turn instructions still win.
+- Never overwritten by upgrades. Single-user; named profiles deferred.
 
-📋 **Watch mode visual improvements**
-- stdout output lines: context-aware coloring based on dispatch state (running vs. complete)
-- Elapsed time indicator alongside output lines during active dispatch
-- Code block detection (` ``` ` fences) → distinct color/dim to separate prose from code
-- Dim repeated/noisy lines (progress spinners, blank lines) to reduce visual clutter
-- Fallback attempt transitions rendered more prominently
+✅ **Watch mode visual improvements** (shipped 0.9.4)
+- Elapsed time prefix (`+  42s`) on every output line during active dispatch.
+- Code block detection (` ``` ` / `~~~` fences) → magenta to separate prose from code.
+- Spinner / progress-bar / blank lines dimmed to reduce visual clutter.
+- Fallback `attempt_start` transitions rendered in yellow with `↻` arrow.
 
-📋 **Token & usage monitoring**
-- Per-dispatch token count surfaced in dispatch result and `orchestration_history`
-- Running budget tracker per project / per workspace (configurable cap)
-- Watch mode shows token consumption alongside elapsed time
-- Alert when approaching configured token or cost threshold
+✅ **Token usage monitoring — detection** (shipped 0.9.4)
+- Per-dispatch token count (`{input, output, total}`) extracted from agent stdout via regex patterns (Claude Code, Codex, Gemini).
+- Surfaced in `dispatch` result, `dispatch_history`, and the `complete` footer in watch mode.
+
+📋 **Token usage monitoring — budget tracking** (next)
+- Running cumulative token / cost tracker per project and per workspace (configurable cap).
+- Alert when approaching configured token or cost threshold.
+- Watch mode shows cumulative consumption alongside elapsed time.
 
 💭 **Open questions**
-- Plain Markdown overlay only, or structured config + free-form notes?
-- Full syntax highlighting (requires `pygments`/`rich` dependency) or regex-only heuristics?
-- Token count source: parse agent stdout, or add a reporting hook per adapter?
+- Full syntax highlighting (`pygments`/`rich`) or extend regex-only heuristics?
+- Token count budget: stored in `registry.yaml` per project, or separate `budget.yaml`?
+- Named user profiles (defer until demand is clear).
 
 ---
 

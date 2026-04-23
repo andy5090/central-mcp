@@ -759,6 +759,10 @@ def _ensure_launch_dir(target: Path) -> None:
         content = _read_packaged(fname)
         if not dest.exists() or dest.read_text() != content:
             dest.write_text(content)
+    # user.md is user-authored — scaffold once, never overwrite.
+    user_md = target / "user.md"
+    if not user_md.exists():
+        user_md.write_text(_read_packaged("user.md"))
     settings_dir = target / ".claude"
     settings_dir.mkdir(exist_ok=True)
     settings_file = settings_dir / "settings.json"

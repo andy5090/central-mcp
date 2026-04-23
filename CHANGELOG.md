@@ -3,6 +3,22 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.9.4] — 2026-04-23
+
+### Added
+- **User preference overlay** — `~/.central-mcp/user.md` is scaffolded on first `cmcp` launch. Edit it to set persistent reporting style, routing hints, and process-management rules; orchestrators read it at session start and apply it on top of shared defaults. The file is never overwritten by upgrades.
+- **Watch mode visual improvements** — `central-mcp watch` output is now context-aware:
+  - Elapsed-time prefix (`+  42s`) on every output line while a dispatch is active.
+  - Code blocks (` ``` ` / `~~~` fences) rendered in magenta to separate prose from code.
+  - Spinner, progress-bar, and blank lines dimmed to reduce visual noise.
+  - Fallback `attempt_start` transitions rendered in yellow with a `↻` arrow instead of plain dim text.
+- **Token usage monitoring** — dispatch result, `dispatch_history`, and the per-project watch `complete` footer now include a `tokens` field (`{input, output, total}`) when the agent reports token counts in its stdout. Regex patterns cover Claude Code, Codex, and Gemini output formats; returns `null` when not detected.
+
+### Notes for existing installs
+Because `AGENTS.md` and `CLAUDE.md` now reference `user.md`, existing installs will auto-update those files on the next `cmcp` launch (0.9.3 behaviour). `user.md` itself is only created if absent — your edits are preserved.
+
+---
+
 ## [0.9.3] — 2026-04-23
 
 ### Changed

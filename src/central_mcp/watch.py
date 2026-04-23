@@ -14,8 +14,10 @@ lights up on the first dispatch.
 from __future__ import annotations
 
 import json
+import re
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TextIO
 
@@ -31,13 +33,14 @@ def _c(color: str, text: str) -> str:
     return f"\x1b[{color}m{text}\x1b[0m"
 
 
-DIM = lambda s: _c("2", s)
-BOLD = lambda s: _c("1", s)
-RED = lambda s: _c("31", s)
-GREEN = lambda s: _c("32", s)
-YELLOW = lambda s: _c("33", s)
-BLUE = lambda s: _c("34", s)
-CYAN = lambda s: _c("36", s)
+DIM     = lambda s: _c("2", s)
+BOLD    = lambda s: _c("1", s)
+RED     = lambda s: _c("31", s)
+GREEN   = lambda s: _c("32", s)
+YELLOW  = lambda s: _c("33", s)
+BLUE    = lambda s: _c("34", s)
+CYAN    = lambda s: _c("36", s)
+MAGENTA = lambda s: _c("35", s)
 
 
 def _fmt_ts(ts: str) -> str:
@@ -47,20 +50,55 @@ def _fmt_ts(ts: str) -> str:
     return ts[11:19] if "T" in ts else ts[:8]
 
 
-def _render(record: dict[str, Any], out: TextIO) -> None:
+# Lines that are visual noise: spinners, progress bars, bare percentages.
+_NOISE_RE = re.compile(
+    r"^\s*(?:"
+    r"[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏⣾⣽⣻⢿⡿⣟⣯⣷|/\\-]"
+    r"|[▏▎▍▌▋▊▉█=\-#>. ]+\s*(?:\d+%)?"
+    r"|\d+%"
+    r"|\.{3,}"
+    r")\s*$"
+)
+
+# Opening ``` / ~~~ fences.
+_FENCE_RE = re.compile(r"^(`{3,}|~{3,})")
+
+
+def _is_noise(line: str) -> bool:
+    stripped = line.strip()
+    if not stripped:
+        return True
+    return bool(_NOISE_RE.match(stripped))
+
+
+@dataclass
+class _DispatchState:
+    started_at: float = 0.0
+    in_code_block: bool = False
+    done: bool = False
+
+
+def _render(
+    record: dict[str, Any],
+    out: TextIO,
+    states: dict[str, _DispatchState] | None = None,
+) -> None:
+    if states is None:
+        states = {}
+
     event = record.get("event", "?")
     ts = _fmt_ts(record.get("ts", ""))
     did = record.get("id", "????????")
     agent = record.get("agent") or record.get("agent_used") or ""
+    state = states.setdefault(did, _DispatchState())
 
     if event == "start":
+        state.started_at = time.time()
+        state.in_code_block = False
+        state.done = False
         header = BOLD(CYAN(f"── {ts} [{did}] start ──"))
         out.write(f"\n{header}\n")
         if agent:
-            # Bold (not dim) so the actual agent running this dispatch
-            # is obvious at a glance — per-dispatch overrides and
-            # fallback chains mean it can differ from the project's
-            # registry default.
             out.write(BOLD(f"agent: {agent}") + "\n")
         chain = record.get("chain") or []
         if len(chain) > 1:
@@ -71,23 +109,39 @@ def _render(record: dict[str, Any], out: TextIO) -> None:
         out.write("\n")
 
     elif event == "attempt_start":
-        # Only worth showing when a fallback kicks in. The `start` event
-        # already covered the first attempt's agent/command.
-        out.write(DIM(f"{ts} attempting {agent}…\n"))
+        out.write(YELLOW(f"↻ {ts}  fallback → {agent}\n"))
 
     elif event == "output":
         chunk = record.get("chunk", "")
         stream = record.get("stream", "stdout")
-        if stream == "stderr":
-            out.write(RED(chunk) + "\n")
+
+        # Toggle code-block state on fence markers.
+        if _FENCE_RE.match(chunk):
+            state.in_code_block = not state.in_code_block
+
+        # Elapsed prefix during active dispatch.
+        if state.started_at and not state.done:
+            elapsed = time.time() - state.started_at
+            prefix = DIM(f"+{elapsed:4.0f}s ")
         else:
-            out.write(chunk + "\n")
+            prefix = "       "
+
+        if stream == "stderr":
+            out.write(prefix + RED(chunk) + "\n")
+        elif state.in_code_block:
+            out.write(prefix + MAGENTA(chunk) + "\n")
+        elif _is_noise(chunk):
+            out.write(DIM(prefix + chunk) + "\n")
+        else:
+            out.write(prefix + chunk + "\n")
 
     elif event == "complete":
+        state.done = True
         ok = record.get("ok")
         status = record.get("status", "complete")
         exit_code = record.get("exit_code")
         dur = record.get("duration_sec")
+        tokens = record.get("tokens")
         used = record.get("agent_used") or agent or ""
         bits = []
         if used:
@@ -96,6 +150,12 @@ def _render(record: dict[str, Any], out: TextIO) -> None:
             bits.append(f"{dur}s")
         if exit_code is not None:
             bits.append(f"exit={exit_code}")
+        if tokens:
+            total = tokens.get("total") or (
+                (tokens.get("input") or 0) + (tokens.get("output") or 0)
+            )
+            if total:
+                bits.append(f"tokens={total:,}")
         summary = " · ".join(bits)
         if ok:
             badge = GREEN("✓ done")
@@ -116,6 +176,7 @@ def _render(record: dict[str, Any], out: TextIO) -> None:
         out.write("\n")
 
     elif event == "error":
+        state.done = True
         err = record.get("error", "unknown error")
         out.write(RED(f"\n── {ts} [{did}] ✗ error: {err} ──\n\n"))
 
@@ -129,7 +190,6 @@ def _tail_forever(path: Path, from_start: bool) -> None:
     changes in ways that suggest the file was replaced.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
-    # Touch so reader below succeeds on a fresh project.
     if not path.exists():
         path.touch()
 
@@ -137,13 +197,13 @@ def _tail_forever(path: Path, from_start: bool) -> None:
     if not from_start:
         f.seek(0, 2)
 
+    states: dict[str, _DispatchState] = {}
+
     try:
         while True:
             line = f.readline()
             if not line:
                 time.sleep(0.15)
-                # Detect rotation/truncation: if the file's new size is
-                # smaller than our position, reopen from the top.
                 try:
                     current_size = path.stat().st_size
                     if current_size < f.tell():
@@ -161,7 +221,7 @@ def _tail_forever(path: Path, from_start: bool) -> None:
                 sys.stdout.write(DIM(f"(unparseable log line: {line[:80]!r})\n"))
                 sys.stdout.flush()
                 continue
-            _render(record, sys.stdout)
+            _render(record, sys.stdout, states)
     finally:
         try:
             f.close()
