@@ -3,7 +3,20 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.9.5] — 2026-04-23
+## [0.9.6] — 2026-04-24
+
+### Added
+- **`central-mcp monitor` — portfolio-wide dashboard** — a new curses subcommand that shows:
+  - **AGENT QUOTA** for each coding-agent CLI:
+    - `claude` (Pro/Team/Enterprise OAuth): 5-hour and weekly utilization bars with reset ETAs, polled from `api.anthropic.com/api/oauth/usage` using the token in `~/.claude/.credentials.json`. API-key users see "no subscription quota".
+    - `codex` (ChatGPT plan): 1-hour and daily `used_percent` bars with reset ETAs, polled from `chatgpt.com/api/codex/usage` using the token in `~/.codex/auth.json`. API-key users see "no subscription quota".
+    - `gemini`: auth type only (no quota API is exposed by Gemini).
+  - **DISPATCH STATS (today UTC)**: per-project dispatch count, token total, last dispatch time/status, plus a portfolio-wide token sum — aggregated from `~/.central-mcp/timeline.jsonl`. Quota refreshes every 90s in a background thread; stats every 10s.
+- **New `central_mcp.quota` package** (`claude.py`, `codex.py`, `gemini.py`) — standalone fetchers that return `{"mode": "api_key"}` / `{"mode": "pro"/"chatgpt", "raw": …}` or `None` (CLI not installed). Safe to call from tests or other UIs.
+- **Token counts in `timeline.jsonl`** — `log_timeline()` now records the parsed `tokens` dict (when the agent reported one), so the monitor and `orchestration_history` can aggregate portfolio-wide token usage without re-parsing stdout.
+- **`per_project.tokens_total` in `orchestration_history`** — daily token totals per project are now exposed in the MCP response alongside `dispatched` / `succeeded` / `failed` / `cancelled`.
+
+
 
 ### Added
 - **`get_user_preferences` MCP tool** — returns the current content of `~/.central-mcp/user.md` so orchestrators can read existing preferences before merging in new ones.

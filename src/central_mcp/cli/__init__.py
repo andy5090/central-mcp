@@ -31,6 +31,7 @@ from central_mcp.cli._commands import (
     cmd_unalias,
     cmd_up,
     cmd_upgrade,
+    cmd_monitor,
     cmd_watch,
     cmd_workspace,
     cmd_zellij,
@@ -91,6 +92,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="replay the whole log from the beginning instead of following from end",
     )
     p_watch.set_defaults(func=cmd_watch)
+
+    p_monitor = sub.add_parser(
+        "monitor",
+        help="portfolio-wide dashboard: per-agent subscription quota + today's dispatch stats",
+    )
+    p_monitor.set_defaults(func=cmd_monitor)
 
     p_upgrade = sub.add_parser(
         "upgrade",

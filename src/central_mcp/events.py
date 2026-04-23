@@ -71,6 +71,26 @@ def log_event(project: str, dispatch_id: str, event: str, **data: Any) -> None:
         pass
 
 
+def token_total(tokens: dict[str, Any] | None) -> int:
+    """Coalesce an agent's token dict into a single integer total.
+
+    Prefers the explicit `total` field; falls back to `input + output`.
+    Returns 0 for None / empty / unparseable input.
+    """
+    if not tokens or not isinstance(tokens, dict):
+        return 0
+    total = tokens.get("total")
+    if total:
+        try:
+            return int(total)
+        except (TypeError, ValueError):
+            pass
+    try:
+        return int(tokens.get("input") or 0) + int(tokens.get("output") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def log_timeline(dispatch_id: str, project: str, event: str, **data: Any) -> None:
     """Append one milestone to the global timeline.
 

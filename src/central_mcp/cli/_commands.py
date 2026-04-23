@@ -258,6 +258,11 @@ def cmd_watch(args: argparse.Namespace) -> int:
     return watch.run(args.name, from_start=args.from_start)
 
 
+def cmd_monitor(_args: argparse.Namespace) -> int:
+    from central_mcp.monitor import run as _monitor_run
+    return _monitor_run()
+
+
 def cmd_upgrade(args: argparse.Namespace) -> int:
     from central_mcp import upgrade
     # Always tear down any live observation session before replacing

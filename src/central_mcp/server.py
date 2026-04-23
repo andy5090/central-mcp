@@ -812,6 +812,7 @@ def _launch_dispatch(
             fallback_used=bool(final_result and final_result.get("fallback_used")),
             prompt_preview=(entry.get("prompt") or "")[:120],
             output_preview=output_preview,
+            tokens=final_result.get("tokens") if final_result else None,
         )
 
     with _dispatch_lock:
@@ -1460,6 +1461,7 @@ def orchestration_history(
             continue
         stats = per_project.setdefault(proj, {
             "dispatched": 0, "succeeded": 0, "failed": 0, "cancelled": 0,
+            "tokens_total": 0,
         })
         evt = r.get("event")
         if evt == "dispatched":
@@ -1473,6 +1475,7 @@ def orchestration_history(
             stats["failed"] += 1
         elif evt == "cancelled":
             stats["cancelled"] += 1
+        stats["tokens_total"] += events.token_total(r.get("tokens"))
         ts = r.get("ts", "")
         if ts > last_ts_by_project.get(proj, ""):
             last_ts_by_project[proj] = ts
