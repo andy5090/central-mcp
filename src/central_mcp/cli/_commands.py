@@ -754,12 +754,11 @@ def _save_preference(key: str) -> None:
 
 def _ensure_launch_dir(target: Path) -> None:
     target.mkdir(parents=True, exist_ok=True)
-    claude_md = target / "CLAUDE.md"
-    if not claude_md.exists():
-        claude_md.write_text(_read_packaged("CLAUDE.md"))
-    agents_md = target / "AGENTS.md"
-    if not agents_md.exists():
-        agents_md.write_text(_read_packaged("AGENTS.md"))
+    for fname in ("CLAUDE.md", "AGENTS.md"):
+        dest = target / fname
+        content = _read_packaged(fname)
+        if not dest.exists() or dest.read_text() != content:
+            dest.write_text(content)
     settings_dir = target / ".claude"
     settings_dir.mkdir(exist_ok=True)
     settings_file = settings_dir / "settings.json"

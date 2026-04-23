@@ -3,6 +3,13 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.9.3] — 2026-04-23
+
+### Changed
+- **Runtime files auto-update on upgrade** — `AGENTS.md` and `CLAUDE.md` in `~/.central-mcp/` are now overwritten on every `cmcp` launch when the packaged content differs from what is on disk. Previously these files were copied only once (if missing), so upgrades never reflected updated orchestrator instructions without manually deleting the files. No manual deletion needed going forward.
+
+---
+
 ## [0.9.2] — 2026-04-23
 
 ### Changed
