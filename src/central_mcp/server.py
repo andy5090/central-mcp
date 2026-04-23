@@ -219,6 +219,14 @@ instead:
                              one-shot switch — after that dispatch the
                              agent's own "resume latest" keeps using
                              that session without restating the id.
+  - get_user_preferences   — read ~/.central-mcp/user.md (the user's
+                             persistent preferences file).
+  - update_user_preferences — write a preference to a named section of
+                             user.md. Call this whenever the user
+                             expresses a PERSISTENT preference (language,
+                             reporting style, routing hint, process rule).
+                             Call get_user_preferences first to read the
+                             current state, then pass the merged content.
 
 dispatch is NON-BLOCKING. It spawns the agent as a subprocess and
 returns a dispatch_id instantly (<100ms). To get the result:
@@ -1235,6 +1243,107 @@ def list_project_sessions(
         "pinned": project.session_id,
         "count": len(sessions),
         "sessions": [s.to_dict() for s in sessions],
+    })
+
+
+# ---------- user preferences ----------
+
+_USER_MD_SECTIONS = frozenset({
+    "Reporting style",
+    "Routing hints",
+    "Process management rules",
+    "Other preferences",
+})
+
+
+def _user_md_path() -> Path:
+    return paths.central_mcp_home() / "user.md"
+
+
+def _read_user_md() -> str:
+    path = _user_md_path()
+    if not path.exists():
+        return ""
+    return path.read_text(encoding="utf-8")
+
+
+def _write_user_md_section(section: str, content: str) -> None:
+    """Replace the content of `## section` in user.md (or append it)."""
+    path = _user_md_path()
+    text = _read_user_md()
+    lines = text.splitlines()
+    target = f"## {section}"
+
+    start_idx = None
+    for i, line in enumerate(lines):
+        if line.rstrip() == target:
+            start_idx = i
+            break
+
+    content_lines = content.rstrip().splitlines()
+
+    if start_idx is None:
+        while lines and not lines[-1].strip():
+            lines.pop()
+        new_lines = lines + ["", target, ""] + content_lines + [""]
+    else:
+        end_idx = len(lines)
+        for i in range(start_idx + 1, len(lines)):
+            if lines[i].startswith("## "):
+                end_idx = i
+                break
+        new_lines = lines[: start_idx + 1] + [""] + content_lines + [""] + lines[end_idx:]
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+
+
+@mcp.tool()
+def get_user_preferences() -> dict[str, Any]:
+    """Return the current content of ~/.central-mcp/user.md.
+
+    Call this before update_user_preferences to see existing settings
+    and build the merged content.
+    """
+    content = _read_user_md()
+    return _with_completed({"ok": True, "content": content or "(empty)"})
+
+
+@mcp.tool()
+def update_user_preferences(section: str, content: str) -> dict[str, Any]:
+    """Persist a user preference to ~/.central-mcp/user.md.
+
+    Call this when the user expresses a PERSISTENT preference — reporting style,
+    language, routing hints, or process rules. Applied every future session.
+    NOT for one-off turn instructions; those need no persistence.
+
+    section — one of:
+      "Reporting style"          how to format and present responses
+      "Routing hints"            which agents/projects to prefer for task types
+      "Process management rules" concurrency or approval constraints
+      "Other preferences"        anything else
+
+    content — new full text for that section (replaces its existing content;
+    other sections are untouched). Plain language, bullet points recommended:
+      "- 한국어로 답변할 것."
+      "- Prefer claude for architecture.\\n- Use codex for shell scripting."
+
+    Tip: call get_user_preferences() first so you can merge old and new content.
+    """
+    if section not in _USER_MD_SECTIONS:
+        return {
+            "ok": False,
+            "error": f"unknown section {section!r}. Valid: {sorted(_USER_MD_SECTIONS)}",
+        }
+    try:
+        _write_user_md_section(section, content)
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+    return _with_completed({
+        "ok": True,
+        "section": section,
+        "written": content,
+        "path": str(_user_md_path()),
     })
 
 
