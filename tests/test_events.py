@@ -75,3 +75,66 @@ class TestLogEvent:
         # ISO 8601 with millisecond precision, e.g. 2026-04-18T05:12:34.567+00:00
         assert "T" in ts
         assert "." in ts  # millisecond separator
+
+
+class TestLogTimelineConcurrency:
+    """Guard against the original race that prompted the flock/Lock fix.
+
+    Without locking, ts-generation and file write are separated by a
+    thread-schedulable gap, so the file's line order can diverge from
+    ts order. Monitor's reverse-scan `break-at-midnight` optimization
+    relies on the invariant that file order matches ts order.
+    """
+
+    def test_file_order_matches_ts_order_under_contention(
+        self, fake_home: Path
+    ) -> None:
+        import threading as _th
+
+        n_threads, n_per = 10, 50
+        tag = "concurrency-test"     # filter key: leaked writes from daemon
+                                     # threads in earlier dispatch tests may
+                                     # share the same timeline file.
+        errors: list[BaseException] = []
+
+        def writer() -> None:
+            try:
+                for _ in range(n_per):
+                    events.log_timeline("d", tag, "dispatched")
+            except BaseException as e:   # pragma: no cover
+                errors.append(e)
+
+        threads = [_th.Thread(target=writer) for _ in range(n_threads)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=10)
+
+        assert not errors
+        assert all(not t.is_alive() for t in threads)
+
+        records = [
+            r for r in _read_jsonl(events.timeline_path())
+            if r.get("project") == tag
+        ]
+        assert len(records) == n_threads * n_per
+
+        ts_list = [r["ts"] for r in records]
+        # File order must equal ts order (non-decreasing).
+        assert ts_list == sorted(ts_list), (
+            "timeline.jsonl line order diverged from ts order — "
+            "locking regression in log_timeline"
+        )
+
+    def test_single_write_is_one_full_line(self, fake_home: Path) -> None:
+        tag = "single-write-test"
+        events.log_timeline("d", tag, "dispatched", extra="x")
+        text = events.timeline_path().read_text()
+        assert text.endswith("\n")
+        mine = [
+            r for r in _read_jsonl(events.timeline_path())
+            if r.get("project") == tag
+        ]
+        assert len(mine) == 1
+        assert mine[0]["event"] == "dispatched"
+        assert mine[0]["extra"] == "x"

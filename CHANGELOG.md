@@ -16,7 +16,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Token counts in `timeline.jsonl`** — `log_timeline()` now records the parsed `tokens` dict (when the agent reported one), so the monitor and `orchestration_history` can aggregate portfolio-wide token usage without re-parsing stdout.
 - **`per_project.tokens_total` in `orchestration_history`** — daily token totals per project are now exposed in the MCP response alongside `dispatched` / `succeeded` / `failed` / `cancelled`.
 
+### Fixed
+- **`log_timeline()` concurrency** — writes to `~/.central-mcp/timeline.jsonl` now go through a `threading.Lock` + `fcntl.flock` (POSIX) so ts-generation and file append are atomic as a pair. Previously, the MCP handler thread and `_run_bg` daemon threads could race between `datetime.now()` and `f.write()`, letting the file's line order diverge from ts order — which would have broken monitor's reverse-scan early-break under concurrent writes. Windows native (no `fcntl`) falls back to `threading.Lock` only.
 
+---
+
+## [0.9.5] — 2026-04-23
 
 ### Added
 - **`get_user_preferences` MCP tool** — returns the current content of `~/.central-mcp/user.md` so orchestrators can read existing preferences before merging in new ones.
