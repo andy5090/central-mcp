@@ -272,7 +272,33 @@ If the user mentions a project path that is not yet registered
 to drop to a shell.
 """
 
-mcp = FastMCP("central-mcp", instructions=_MCP_INSTRUCTIONS)
+
+def _build_mcp_instructions() -> str:
+    """Append user.md to the base instructions when it contains active content.
+
+    Called once at server start. user.md lands in the MCP system prompt
+    (not in regular context), so it persists across context compression.
+    """
+    try:
+        user_md = (paths.central_mcp_home() / "user.md").read_text(encoding="utf-8")
+        active = [
+            ln for ln in user_md.splitlines()
+            if ln.strip() and not ln.strip().startswith("<!--")
+        ]
+        if active:
+            return (
+                _MCP_INSTRUCTIONS
+                + "\n\n## Your persistent preferences"
+                + " (from ~/.central-mcp/user.md)\n\n"
+                + user_md.rstrip()
+                + "\n"
+            )
+    except Exception:
+        pass
+    return _MCP_INSTRUCTIONS
+
+
+mcp = FastMCP("central-mcp", instructions=_build_mcp_instructions())
 
 # ---------- background dispatch state ----------
 _dispatches: dict[str, dict[str, Any]] = {}
@@ -1343,7 +1369,9 @@ def update_user_preferences(section: str, content: str) -> dict[str, Any]:
         "ok": True,
         "section": section,
         "written": content,
+        "updated_preferences": _read_user_md(),
         "path": str(_user_md_path()),
+        "note": "Apply updated_preferences immediately for the rest of this session.",
     })
 
 

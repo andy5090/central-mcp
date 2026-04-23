@@ -7,8 +7,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - **`get_user_preferences` MCP tool** — returns the current content of `~/.central-mcp/user.md` so orchestrators can read existing preferences before merging in new ones.
-- **`update_user_preferences(section, content)` MCP tool** — writes a named section of `user.md` atomically. Sections: `"Reporting style"`, `"Routing hints"`, `"Process management rules"`, `"Other preferences"`. Other sections are left untouched; the file is created if missing.
+- **`update_user_preferences(section, content)` MCP tool** — writes a named section of `user.md` atomically. Sections: `"Reporting style"`, `"Routing hints"`, `"Process management rules"`, `"Other preferences"`. Other sections are left untouched; the file is created if missing. Response includes `updated_preferences` (full updated content) so the orchestrator applies changes immediately without session restart.
+- **user.md injected into MCP system prompt** — `user.md` content is now included in the MCP server's `instructions` field at startup, so it lives in the system prompt and is never lost to context compression. Previously, orchestrators had to re-read the file manually.
 - **Orchestrators instructed to auto-persist preferences** — `AGENTS.md` / `CLAUDE.md` now tell the orchestrator: when the user expresses a persistent preference (language, reporting style, routing hint, process rule), call `get_user_preferences` + `update_user_preferences` immediately and confirm to the user that it was saved.
+
+### Changed
+- README / `pyproject.toml`: description updated from "Orchestrator-agnostic" to "Coding agent-agnostic" — more accurate since the hub works regardless of which coding agent CLI is used on either side (orchestrator or dispatch target).
 
 ---
 

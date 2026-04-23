@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "central-mcp"
 version = "0.9.5"
-description = "Orchestrator-agnostic MCP hub for managing and dispatching to multiple coding agents."
+description = "Coding agent-agnostic MCP hub for managing multiple coding agents."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }

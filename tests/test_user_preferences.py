@@ -40,6 +40,8 @@ class TestUpdateUserPreferences:
         text = (fake_home / "user.md").read_text()
         assert "## Reporting style" in text
         assert "한국어로 답변할 것." in text
+        # updated_preferences carries the full file for mid-session re-apply
+        assert "한국어로 답변할 것." in result["updated_preferences"]
 
     def test_replaces_existing_section(self, fake_home: Path) -> None:
         _write(

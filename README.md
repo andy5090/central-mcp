@@ -8,7 +8,7 @@
 [![Python](https://img.shields.io/pypi/pyversions/central-mcp)](https://pypi.org/project/central-mcp/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Orchestrator-agnostic MCP hub for dispatching to multiple coding agents.**
+**Coding agent-agnostic MCP hub for managing multiple coding agents.**
 
 > **Never stop. Run agents across every project in parallel — 10×, 100× your throughput.**
 
@@ -29,7 +29,7 @@ Every dispatch is a fresh subprocess in the project's cwd (e.g. `claude -p "..."
 
 ## Design principles
 
-1. **Orchestrator-agnostic.** MCP tools are the canonical surface. Any MCP client can be the orchestrator.
+1. **Coding agent-agnostic.** MCP tools are the canonical surface. Any MCP-capable client can be the orchestrator; any supported coding agent CLI can be the dispatch target.
 2. **Non-blocking dispatch.** `dispatch` returns a `dispatch_id` in <100ms. Results arrive asynchronously. The conversation never freezes.
 3. **Dispatch-router preamble.** The orchestrator is instructed to be a pure router — parse the project name, call `dispatch`, move on. This minimizes LLM reasoning latency to ~1-2 seconds per turn.
 4. **File-based state.** `registry.yaml` is the single source of truth.
