@@ -1436,15 +1436,19 @@ def orchestration_history(
     else:
         filtered = timeline
 
+    # Registered project names — always filter to these so stale test entries
+    # in the timeline don't bleed into per_project / recent output.
+    all_registered_names = {p.name for p in load_registry()}
+
     # Resolve workspace filter set once.
     ws_project_names: set[str] | None = None
     if workspace is not None:
         ws_project_names = {p.name for p in projects_in_workspace(workspace)}
 
-    if ws_project_names is not None:
-        recent_candidates = [r for r in filtered if r.get("project") in ws_project_names]
-    else:
-        recent_candidates = filtered
+    # Active filter: workspace subset when given, otherwise all registered.
+    active_filter: set[str] = ws_project_names if ws_project_names is not None else all_registered_names
+
+    recent_candidates = [r for r in filtered if r.get("project") in active_filter]
     recent = recent_candidates[:n]
 
     # Per-project aggregation (count terminal events by outcome).
@@ -1452,7 +1456,7 @@ def orchestration_history(
     last_ts_by_project: dict[str, str] = {}
     for r in filtered:
         proj = r.get("project", "?")
-        if ws_project_names is not None and proj not in ws_project_names:
+        if proj not in active_filter:
             continue
         stats = per_project.setdefault(proj, {
             "dispatched": 0, "succeeded": 0, "failed": 0, "cancelled": 0,
