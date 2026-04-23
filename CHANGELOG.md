@@ -3,6 +3,13 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.10.2] — 2026-04-24
+
+### Added
+- **Arrow-key interactive picker** — when `central-mcp run` or `central-mcp up` needs to choose between multiple installed coding agents / multiplexers, it now renders an arrow-key navigable list (↑/↓ or k/j, Enter to select, Esc/q to cancel) instead of the legacy numbered input. Non-TTY environments (piped stdin, Windows without termios) transparently fall back to the number-prompt path — same contract, same defaults. Shared `_arrow_select` helper drives both pickers.
+
+---
+
 ## [0.10.1] — 2026-04-24
 
 ### Fixed

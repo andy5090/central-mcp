@@ -187,22 +187,107 @@ def _detect_multiplexers() -> list[tuple[str, str]]:
     return [(name, binary) for name, binary in MULTIPLEXERS if shutil.which(binary)]
 
 
+def _arrow_select(
+    prompt: str,
+    labels: list[str],
+    default: int = 0,
+) -> int:
+    """Interactive arrow-key picker. Returns the chosen index.
+
+    Uses termios cbreak on POSIX TTYs so the user can navigate with
+    ↑/↓ (or k/j), commit with Enter, and cancel with Esc/q (returns
+    `default`). Falls back to the legacy numbered-input flow when
+    stdin/stdout aren't interactive or termios isn't available
+    (Windows native, piped input).
+    """
+    import sys
+    # Fallback path: non-TTY environments or platforms without termios.
+    try:
+        import termios  # noqa: F401  (POSIX only — ImportError on Windows)
+        import tty
+        tty_ok = sys.stdin.isatty() and sys.stdout.isatty()
+    except ImportError:
+        tty_ok = False
+
+    if not tty_ok:
+        print(prompt)
+        for i, label in enumerate(labels, 1):
+            print(f"  {i}. {label}")
+        while True:
+            raw = input(
+                f"Pick one [1-{len(labels)}] (default {default + 1}): "
+            ).strip()
+            if not raw:
+                return default
+            try:
+                idx = int(raw) - 1
+            except ValueError:
+                print("enter a number")
+                continue
+            if 0 <= idx < len(labels):
+                return idx
+            print("out of range")
+
+    # Interactive cbreak path.
+    fd = sys.stdin.fileno()
+    old = termios.tcgetattr(fd)
+    print(prompt)
+    print("(↑/↓ to move, Enter to select, Esc/q to cancel)")
+    selected = default
+    first = True
+    try:
+        tty.setcbreak(fd)
+        sys.stdout.write("\x1b[?25l")   # hide cursor
+        while True:
+            if not first:
+                # Move cursor up N lines to repaint the list.
+                sys.stdout.write(f"\x1b[{len(labels)}A")
+            first = False
+            for i, label in enumerate(labels):
+                marker = "›" if i == selected else " "
+                line = f" {marker} {label}"
+                # \x1b[K clears the rest of the line in case the
+                # previous frame had a longer label at this index.
+                if i == selected:
+                    sys.stdout.write(f"\r\x1b[K\x1b[1m{line}\x1b[0m\n")
+                else:
+                    sys.stdout.write(f"\r\x1b[K{line}\n")
+            sys.stdout.flush()
+
+            ch = sys.stdin.read(1)
+            if ch == "\x1b":
+                # Could be ESC alone or the start of an arrow sequence.
+                ch2 = sys.stdin.read(1)
+                if ch2 == "[":
+                    ch3 = sys.stdin.read(1)
+                    if ch3 == "A" and selected > 0:
+                        selected -= 1
+                    elif ch3 == "B" and selected < len(labels) - 1:
+                        selected += 1
+                else:
+                    return default
+            elif ch in ("\r", "\n"):
+                return selected
+            elif ch in ("k",) and selected > 0:
+                selected -= 1
+            elif ch in ("j",) and selected < len(labels) - 1:
+                selected += 1
+            elif ch in ("q", "Q", "\x03"):   # Ctrl-C also lands here
+                return default
+    except KeyboardInterrupt:
+        return default
+    finally:
+        sys.stdout.write("\x1b[?25h")   # show cursor
+        sys.stdout.flush()
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+
+
 def _pick_multiplexer_interactive(installed: list[tuple[str, str]]) -> str:
-    print("Multiple multiplexers detected — which should `central-mcp up` use?")
-    for i, (name, _bin) in enumerate(installed, 1):
-        print(f"  {i}. {name}")
-    while True:
-        raw = input(f"Pick one [1-{len(installed)}] (default 1): ").strip()
-        if not raw:
-            return installed[0][0]
-        try:
-            idx = int(raw) - 1
-        except ValueError:
-            print("enter a number")
-            continue
-        if 0 <= idx < len(installed):
-            return installed[idx][0]
-        print("out of range")
+    idx = _arrow_select(
+        "Multiple multiplexers detected — which should `central-mcp up` use?",
+        [name for name, _bin in installed],
+    )
+    return installed[idx][0]
 
 
 def _resolve_multiplexer_for_up() -> str | None:
@@ -833,21 +918,11 @@ def _maybe_auto_install() -> None:
 
 
 def _prompt_choice(installed: list[tuple[str, str, str]]) -> tuple[str, str, str]:
-    print("Multiple coding agents detected — which should central-mcp launch?")
-    for i, (_key, binary, label) in enumerate(installed, 1):
-        print(f"  {i}. {label} ({binary})")
-    while True:
-        raw = input(f"Pick one [1-{len(installed)}] (default 1): ").strip()
-        if not raw:
-            return installed[0]
-        try:
-            idx = int(raw) - 1
-        except ValueError:
-            print("enter a number")
-            continue
-        if 0 <= idx < len(installed):
-            return installed[idx]
-        print("out of range")
+    idx = _arrow_select(
+        "Multiple coding agents detected — which should central-mcp launch?",
+        [f"{label} ({binary})" for _key, binary, label in installed],
+    )
+    return installed[idx]
 
 
 def cmd_run(args: argparse.Namespace) -> int:
