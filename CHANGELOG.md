@@ -3,6 +3,13 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.10.5] — 2026-04-24
+
+### Added
+- **opencode orchestrator-session backfill** — `orch_session.sync_orchestrator("opencode")` now reads opencode's sessions and populates `tokens.db` with `source='orchestrator'` rows alongside the existing Claude Code + Codex support. Hybrid strategy: a 3-column read from opencode's SQLite session table for discovery (stable schema), then `opencode export <id>` CLI for the per-turn token content (public contract). `agents.AGENTS["opencode"].has_session_reader` flipped to True; drift-guard tests confirm the implementation is wired up.
+
+---
+
 ## [0.10.4] — 2026-04-24
 
 ### Added

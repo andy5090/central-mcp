@@ -61,8 +61,7 @@ AGENTS: dict[str, AgentCapabilities] = {
         can_orchestrate=True,        # fix for historical drift in ORCHESTRATORS
         mcp_installable=True,
         has_quota_api=False,
-        # Planned: opencode session reader via `opencode export` CLI.
-        has_session_reader=False,
+        has_session_reader=True,     # SQLite discovery + `opencode export` CLI
     ),
     "droid": AgentCapabilities(
         name="droid", binary="droid", label="Factory Droid",

@@ -135,23 +135,105 @@ def _iter_codex_turns(path: Path) -> Iterator[dict[str, Any]]:
         return
 
 
+def _iter_opencode_turns(path: Path) -> Iterator[dict[str, Any]]:
+    """Yield one dict per `step-finish` part in an opencode session.
+
+    Hybrid strategy per project policy: SQLite for *discovery only*
+    (a 3-column read from the stable `session` table — just to get
+    session id/directory/timestamp), then `opencode export <id>` CLI
+    for the actual content. This honors "use the public contract for
+    content" while avoiding a per-project cwd scan just to find which
+    session is current.
+
+    `path` is the opencode SQLite DB location (so this reader plugs
+    into `_recent_session_path("opencode")` like the others).
+    """
+    import sqlite3
+    import subprocess
+    try:
+        with sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=2.0) as conn:
+            row = conn.execute(
+                "SELECT id, directory FROM session ORDER BY time_updated DESC LIMIT 1"
+            ).fetchone()
+    except Exception:
+        return
+    if not row:
+        return
+    session_id, directory = row
+
+    try:
+        result = subprocess.run(
+            ["opencode", "export", session_id],
+            capture_output=True, text=True, timeout=30,
+            cwd=directory or None,
+        )
+    except Exception:
+        return
+    if result.returncode != 0:
+        return
+
+    # `opencode export` prefaces the JSON with a "Exporting session: …"
+    # status line; find the first `{` to skip it.
+    start = result.stdout.find("{")
+    if start < 0:
+        return
+    try:
+        doc = json.loads(result.stdout[start:])
+    except Exception:
+        return
+
+    info = doc.get("info") or {}
+    cwd = info.get("directory") or directory or ""
+
+    for msg in doc.get("messages", []) or []:
+        msg_info = msg.get("info") or {}
+        time_block = msg_info.get("time") or {}
+        ts = str(time_block.get("completed") or time_block.get("created") or "")
+        for part in (msg.get("parts") or []):
+            if part.get("type") != "step-finish":
+                continue
+            tokens = part.get("tokens") or {}
+            if not tokens:
+                continue
+            cache = tokens.get("cache") or {}
+            yield {
+                "ts":         ts,
+                "session_id": session_id,
+                "request_id": part.get("id") or "",
+                "cwd":        cwd,
+                "input":      int(tokens.get("input")  or 0),
+                "output":     int(tokens.get("output") or 0),
+                "total":      int(tokens.get("total")  or 0),
+                "cache_read":  int(cache.get("read")  or 0),
+                "cache_write": int(cache.get("write") or 0),
+            }
+
+
 _READERS: dict[str, Any] = {
-    "claude": _iter_claude_turns,
-    "codex":  _iter_codex_turns,
+    "claude":   _iter_claude_turns,
+    "codex":    _iter_codex_turns,
+    "opencode": _iter_opencode_turns,
     # gemini: no session store → skip
-    # opencode: SQLite → follow-up
 }
 
 
 # ── session-file discovery ───────────────────────────────────────────────────
 
 def _recent_session_path(agent: str) -> Path | None:
-    """Most recently modified session file for the orchestrator agent."""
+    """Most recently modified session file for the orchestrator agent.
+
+    For opencode the returned path points at the SQLite DB (a file,
+    not a directory full of jsonl shards) — the `_iter_opencode_turns`
+    reader knows how to interpret that.
+    """
     home = Path.home()
     if agent == "claude":
         base = home / ".claude" / "projects"
     elif agent == "codex":
         base = home / ".codex" / "sessions"
+    elif agent == "opencode":
+        db = home / ".local" / "share" / "opencode" / "opencode.db"
+        return db if db.exists() else None
     else:
         return None
     if not base.is_dir():

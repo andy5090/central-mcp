@@ -147,6 +147,95 @@ class TestProjectForCwd:
 
 # ── sync_orchestrator integration ────────────────────────────────────────────
 
+class TestOpencodeReader:
+    """opencode's reader is hybrid: SQLite peek (3 stable columns) for
+    discovery, then `opencode export` subprocess for the content. We
+    stub both so the test doesn't need an opencode install.
+    """
+
+    def _make_db(self, tmp_path: Path, session_id: str, directory: str) -> Path:
+        import sqlite3
+        db = tmp_path / "opencode.db"
+        with sqlite3.connect(str(db)) as conn:
+            conn.execute("""
+                CREATE TABLE session (
+                    id text PRIMARY KEY,
+                    directory text NOT NULL,
+                    time_updated integer NOT NULL
+                )
+            """)
+            conn.execute(
+                "INSERT INTO session VALUES (?, ?, ?)",
+                (session_id, directory, 1770000000000),
+            )
+        return db
+
+    def _export_payload(self, session_id: str, directory: str) -> str:
+        return "Exporting session: abc\n" + json.dumps({
+            "info": {"id": session_id, "directory": directory},
+            "messages": [
+                {
+                    "info": {"role": "assistant", "id": "msg_1",
+                             "time": {"completed": "2026-04-24T10:00:00Z"}},
+                    "parts": [
+                        {"type": "text", "text": "Hi"},
+                        {"type": "step-finish", "id": "prt_1",
+                         "tokens": {"total": 150, "input": 100, "output": 50,
+                                    "cache": {"read": 20, "write": 0}}},
+                    ],
+                },
+                {
+                    "info": {"role": "assistant", "id": "msg_2",
+                             "time": {"completed": "2026-04-24T10:05:00Z"}},
+                    "parts": [
+                        {"type": "step-finish", "id": "prt_2",
+                         "tokens": {"total": 230, "input": 200, "output": 30}},
+                    ],
+                },
+            ],
+        })
+
+    def test_extracts_step_finish_tokens(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        db = self._make_db(tmp_path, "ses_1", "/proj")
+        payload = self._export_payload("ses_1", "/proj")
+
+        class _R:
+            def __init__(self, stdout, rc=0):
+                self.stdout, self.returncode = stdout, rc
+        monkeypatch.setattr(
+            orch_session.__dict__.setdefault("subprocess", __import__("subprocess")),
+            "run", lambda *a, **kw: _R(payload),
+        )
+        # Easier: patch the subprocess module reference inside orch_session.
+        import subprocess as _sp
+        monkeypatch.setattr(_sp, "run", lambda *a, **kw: _R(payload))
+
+        turns = list(orch_session._iter_opencode_turns(db))
+        assert len(turns) == 2
+        assert turns[0]["total"] == 150
+        assert turns[0]["input"] == 100
+        assert turns[0]["cache_read"] == 20
+        assert turns[0]["session_id"] == "ses_1"
+        assert turns[0]["cwd"] == "/proj"
+        assert turns[1]["total"] == 230
+
+    def test_missing_db_returns_nothing(self, tmp_path: Path) -> None:
+        assert list(orch_session._iter_opencode_turns(tmp_path / "no.db")) == []
+
+    def test_export_failure_returns_nothing(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        db = self._make_db(tmp_path, "ses_x", "/x")
+        class _R:
+            stdout = ""
+            returncode = 1
+        import subprocess as _sp
+        monkeypatch.setattr(_sp, "run", lambda *a, **kw: _R())
+        assert list(orch_session._iter_opencode_turns(db)) == []
+
+
 class TestSyncOrchestrator:
     def test_unsupported_agent_is_noop(self, fake_home: Path) -> None:
         assert orch_session.sync_orchestrator("gemini") == 0

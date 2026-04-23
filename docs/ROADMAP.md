@@ -150,12 +150,23 @@ Design spec: [`docs/architecture/workspaces.md`](architecture/workspaces.md)
 ✅ **Arrow-key interactive pickers** (shipped 0.10.2)
 - `central-mcp run` (orchestrator choice) and `central-mcp up` (multiplexer choice) use ↑/↓ (or k/j) navigation with a bold highlight + cursor-hide during selection. Non-TTY environments (piped stdin, Windows native) transparently fall back to the legacy numbered prompt.
 
-📋 **Token budget + alerting** (Phase 4.1, next)
-- Running cumulative token / cost tracker per project and per workspace (configurable cap). tokens.db + `token_usage` tool provide the primitives; budget policy + UI alerts still to land.
-- Watch mode shows cumulative consumption alongside elapsed time.
+✅ **`central_mcp.agents` capability registry** (shipped 0.10.3)
+- Single source of truth: one `AGENTS` dict of `AgentCapabilities` (can_dispatch / can_orchestrate / mcp_installable / has_quota_api / has_session_reader) replaces the previously-scattered `ORCHESTRATORS` / `VALID_AGENTS` / `SUPPORTED_CLIENTS` declarations. Legacy names are re-exported so pre-existing imports keep working.
+- Consistency tests enforce the registry ↔ implementation contract both ways — flipping a capability flag without wiring up the module / adapter / installer fails the suite.
+- Drift fix: **opencode now appears in the `cmcp run` picker** (it had been in VALID_AGENTS + SUPPORTED_CLIENTS but missing from ORCHESTRATORS).
 
-📋 **opencode orchestrator-session backfill** (Phase 4.1)
-- `orch_session` currently supports claude + codex via filesystem JSONL. opencode stores sessions in SQLite internally, but its public contract is the `opencode session list` + `opencode export <id>` CLI pair (tokens are present in the export JSON). The missing reader is a thin CLI wrapper — same contract-over-implementation philosophy as the other adapters. Direct SQLite access was considered and rejected (schema risk with no speed gain at realistic session counts).
+✅ **Orchestrator fallback chain with quota-aware skip** (shipped 0.10.4)
+- `cmcp run` walks `preferred → config.toml [orchestrator].fallback (optional hint) → remaining installed orchestrator-capable agents` instead of hard-launching the saved preference. Entries whose provider quota meets/exceeds the configured threshold (default 95% / 90% for 5h / weekly) are skipped with a one-line notice.
+- `config.toml [orchestrator].fallback_enabled`, `[orchestrator].fallback`, `[orchestrator.quota_threshold]` all honor sensible defaults.
+- Agents without a quota API (gemini, opencode, droid) are never skipped on quota grounds — nothing to base a decision on.
+
+✅ **opencode orchestrator-session backfill** (shipped 0.10.5)
+- `orch_session.sync_orchestrator("opencode")` now populates `tokens.db` with `source='orchestrator'` rows alongside Claude Code + Codex. Hybrid strategy — SQLite discovery (3 stable columns from `session` table) + `opencode export <id>` CLI for the per-turn token content — honors "public contract for content" while keeping discovery tractable.
+
+📋 **Token budget + alerting** (Phase 4.1 remaining)
+- Running cumulative token / cost tracker per project and per workspace (configurable cap). `tokens.db` + `token_usage` tool provide the primitives; budget policy + UI alerts + cross-project aggregation are still to land.
+- Watch mode shows cumulative consumption alongside elapsed time.
+- Budget-triggered agent fallback during dispatch (reuses the existing fallback chain).
 
 💭 **Open questions**
 - Full syntax highlighting (`pygments`/`rich`) or extend current heuristics?
