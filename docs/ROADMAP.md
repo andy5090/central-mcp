@@ -155,7 +155,7 @@ Design spec: [`docs/architecture/workspaces.md`](architecture/workspaces.md)
 - Watch mode shows cumulative consumption alongside elapsed time.
 
 📋 **opencode orchestrator-session backfill** (Phase 4.1)
-- `orch_session` currently supports claude + codex via filesystem JSONL; opencode's SQLite-backed sessions need a dedicated reader.
+- `orch_session` currently supports claude + codex via filesystem JSONL. opencode stores sessions in SQLite internally, but its public contract is the `opencode session list` + `opencode export <id>` CLI pair (tokens are present in the export JSON). The missing reader is a thin CLI wrapper — same contract-over-implementation philosophy as the other adapters. Direct SQLite access was considered and rejected (schema risk with no speed gain at realistic session counts).
 
 💭 **Open questions**
 - Full syntax highlighting (`pygments`/`rich`) or extend current heuristics?
