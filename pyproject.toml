@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "central-mcp"
-version = "0.10.5"
+version = "0.10.6"
 description = "Coding agent-agnostic MCP hub for managing multiple coding agents."
 readme = "README.md"
 requires-python = ">=3.10"

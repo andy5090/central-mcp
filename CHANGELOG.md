@@ -3,6 +3,21 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.10.6] — 2026-04-24
+
+### Fixed
+- **`token_usage` now advertised in orchestrator instructions.** The tool shipped in 0.10.0 but was missing from the MCP `_MCP_INSTRUCTIONS` string and from `src/central_mcp/data/{CLAUDE,AGENTS}.md`, so orchestrators kept falling back to the legacy "read `timeline.jsonl` / call `orchestration_history()` for token counts" path even though both are wrong now (timeline has no `tokens` field; orchestration_history deliberately dropped it in 0.10.0). Also added explicit "DOES NOT carry token counts — call `token_usage`" to the `orchestration_history` blurb so the wrong path stops being tried.
+- **`list_project_sessions` added to the AGENTS.md tool table** (was missing despite shipping since 0.9.x).
+
+### Notes for existing installs
+- Runtime doc copies at `~/.central-mcp/CLAUDE.md` / `~/.central-mcp/AGENTS.md` are written on **first launch** and not overwritten by upgrades. To pick up this update, remove those two files before the next orchestrator launch:
+  ```bash
+  rm ~/.central-mcp/CLAUDE.md ~/.central-mcp/AGENTS.md
+  ```
+  The shipped `_MCP_INSTRUCTIONS` string (injected at MCP server startup) updates automatically — restart your MCP client to reload it.
+
+---
+
 ## [0.10.5] — 2026-04-24
 
 ### Added

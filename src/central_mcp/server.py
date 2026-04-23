@@ -153,17 +153,32 @@ instead:
   - cancel_dispatch        — abort a running dispatch
   - dispatch_history       — last N dispatches for one project
   - orchestration_history  — portfolio-wide snapshot: in-flight +
-                             recent milestones + per-project stats.
-                             Use this when the user asks "overall status?"
-                             or "how is everything going?" — a single call
-                             gives the orchestrator everything it needs to
-                             write a multi-project summary. Each recent
-                             milestone carries `prompt_preview` (first
-                             120 chars of the prompt) and `output_preview`
-                             (tail 300 chars of the agent's stdout) so the
-                             orchestrator can group by project and show
-                             *what was done + what came out of it* without
-                             opening per-project logs.
+                             recent milestones + per-project stats
+                             (dispatched / succeeded / failed / cancelled
+                             counts). Use this when the user asks
+                             "overall status?" or "how is everything
+                             going?" — a single call gives the
+                             orchestrator everything it needs to write a
+                             multi-project summary. Each recent milestone
+                             carries `prompt_preview` (first 120 chars of
+                             the prompt) and `output_preview` (tail 300
+                             chars of the agent's stdout).
+                             DOES NOT carry token counts — call
+                             `token_usage` for those.
+  - token_usage            — portfolio-wide token aggregation from
+                             tokens.db. Use this (not timeline.jsonl,
+                             not orchestration_history) for any question
+                             about how many tokens were used.
+                             Params: period=today|week|month|all,
+                             project=<name>, workspace=<name>,
+                             group_by=project|agent|source. Response
+                             has `breakdown` and `total`, each carrying
+                             {dispatch, orchestrator, total, input,
+                             output}. Source='orchestrator' rows are
+                             backfilled from the orchestrator's own
+                             session file on every dispatch; source=
+                             'dispatch' rows come from subprocess
+                             agent stdout.
   - add_project            — register a new project; pass workspace= to
                              also add it to a workspace on creation.
   - remove_project         — unregister a project

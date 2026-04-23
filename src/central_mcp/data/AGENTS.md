@@ -30,6 +30,9 @@ One-off instructions ("just this time", "for this dispatch only") do NOT need pe
 | `remove_project` | Unregister. |
 | `update_project` | Update project metadata such as agent, session, or language. |
 | `project_status` | Registry metadata for one project. |
+| `list_project_sessions` | Enumerate resumable conversation sessions for a project. |
+| `orchestration_history` | Portfolio snapshot (in-flight + recent + per-project stats). Does NOT carry token counts — use `token_usage` for those. |
+| `token_usage` | Portfolio token aggregation from `tokens.db`. Use this for any "how many tokens?" question — NOT `orchestration_history`, NOT reading `timeline.jsonl` directly. Params: `period` (today/week/month/all), `project`, `workspace`, `group_by` (project/agent/source). Returns `breakdown` + `total` with {dispatch, orchestrator, total, input, output}. Orchestrator-side tokens auto-backfilled from session files on every dispatch. |
 
 ## For every request
 

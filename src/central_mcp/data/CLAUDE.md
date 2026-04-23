@@ -29,6 +29,7 @@ One-off instructions ("just this time", "for this dispatch only") do NOT need pe
 - `remove_project(name)` — unregister
 - `project_status(name)` — metadata lookup
 - `update_project(name, ...)` — change agent, permission_mode, session_id, fallback, etc.
+- `token_usage(period=..., project=..., workspace=..., group_by=...)` — portfolio token usage from `tokens.db`. Use this (NOT `orchestration_history`, NOT reading `timeline.jsonl`) whenever the user asks "how many tokens?" / "얼마나 썼어?". `period` is today|week|month|all; `group_by` is project|agent|source. Each row carries dispatch + orchestrator + total counts. orchestrator-side tokens are auto-backfilled from session files on every dispatch, so this answer is always current.
 
 ## Your workflow for EVERY user request
 
