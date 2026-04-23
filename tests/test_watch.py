@@ -241,37 +241,3 @@ class TestAgentNoise:
         assert "Here is the fixed code:" in out
 
 
-class TestTokenExtraction:
-    def test_claude_format(self) -> None:
-        from central_mcp.server import _extract_token_usage
-        out = "Tokens: 2,341 input · 234 output\nDone."
-        result = _extract_token_usage(out)
-        assert result == {"input": 2341, "output": 234, "total": 2575}
-
-    def test_claude_comma_separator(self) -> None:
-        from central_mcp.server import _extract_token_usage
-        out = "Tokens: 1000 input, 500 output"
-        result = _extract_token_usage(out)
-        assert result == {"input": 1000, "output": 500, "total": 1500}
-
-    def test_generic_tokens_format(self) -> None:
-        from central_mcp.server import _extract_token_usage
-        out = "Used 800 input tokens, 200 output tokens."
-        result = _extract_token_usage(out)
-        assert result == {"input": 800, "output": 200, "total": 1000}
-
-    def test_total_only(self) -> None:
-        from central_mcp.server import _extract_token_usage
-        out = "Total tokens: 1500"
-        result = _extract_token_usage(out)
-        assert result == {"total": 1500}
-
-    def test_no_match_returns_none(self) -> None:
-        from central_mcp.server import _extract_token_usage
-        result = _extract_token_usage("No token info here.")
-        assert result is None
-
-    def test_empty_returns_none(self) -> None:
-        from central_mcp.server import _extract_token_usage
-        assert _extract_token_usage("") is None
-        assert _extract_token_usage(None) is None  # type: ignore[arg-type]

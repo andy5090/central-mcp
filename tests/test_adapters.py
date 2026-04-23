@@ -22,11 +22,11 @@ class TestAdapterRegistry:
 class TestClaude:
     def test_basic(self) -> None:
         argv = get_adapter("claude").exec_argv("do stuff")
-        assert argv == ["claude", "-p", "do stuff", "--continue"]
+        assert argv == ["claude", "-p", "do stuff", "--output-format", "json", "--continue"]
 
     def test_no_resume(self) -> None:
         argv = get_adapter("claude").exec_argv("do stuff", resume=False)
-        assert argv == ["claude", "-p", "do stuff"]
+        assert argv == ["claude", "-p", "do stuff", "--output-format", "json"]
         assert "--continue" not in argv
 
     def test_bypass(self) -> None:
@@ -66,13 +66,13 @@ class TestClaude:
 
 class TestCodex:
     def test_basic(self) -> None:
-        # resume=True (default) uses `codex exec resume --last`
+        # resume=True (default) uses `codex exec --json resume --last`
         argv = get_adapter("codex").exec_argv("fix bug")
-        assert argv == ["codex", "exec", "resume", "--last", "fix bug"]
+        assert argv == ["codex", "exec", "--json", "resume", "--last", "fix bug"]
 
     def test_no_resume(self) -> None:
         argv = get_adapter("codex").exec_argv("fix bug", resume=False)
-        assert argv == ["codex", "exec", "fix bug"]
+        assert argv == ["codex", "exec", "--json", "fix bug"]
         assert "resume" not in argv
         assert "--last" not in argv
 
@@ -82,7 +82,7 @@ class TestCodex:
 
     def test_bypass_and_resume(self) -> None:
         argv = get_adapter("codex").exec_argv("fix bug", resume=True, permission_mode="bypass")
-        assert argv[:4] == ["codex", "exec", "resume", "--last"]
+        assert argv[:5] == ["codex", "exec", "--json", "resume", "--last"]
         assert "--dangerously-bypass-approvals-and-sandbox" in argv
 
     def test_session_id_replaces_last(self) -> None:
@@ -91,18 +91,18 @@ class TestCodex:
         )
         # session_id supplants --last: specific id takes its slot.
         assert "--last" not in argv
-        assert argv[:4] == ["codex", "exec", "resume", "abc-session"]
+        assert argv[:5] == ["codex", "exec", "--json", "resume", "abc-session"]
 
 
 class TestGemini:
     def test_basic(self) -> None:
         # resume=True (default) adds --resume latest
         argv = get_adapter("gemini").exec_argv("analyze code")
-        assert argv == ["gemini", "-p", "analyze code", "--resume", "latest"]
+        assert argv == ["gemini", "-p", "analyze code", "-o", "json", "--resume", "latest"]
 
     def test_no_resume(self) -> None:
         argv = get_adapter("gemini").exec_argv("analyze code", resume=False)
-        assert argv == ["gemini", "-p", "analyze code"]
+        assert argv == ["gemini", "-p", "analyze code", "-o", "json"]
         assert "--resume" not in argv
 
     def test_bypass(self) -> None:
@@ -129,7 +129,7 @@ class TestGemini:
 class TestDroid:
     def test_basic(self) -> None:
         argv = get_adapter("droid").exec_argv("refactor")
-        assert argv == ["droid", "exec", "refactor"]
+        assert argv == ["droid", "exec", "-o", "json", "refactor"]
 
     def test_resume_is_noop(self) -> None:
         # droid exec has no session-resume flag — `-r` is
@@ -168,7 +168,7 @@ class TestDroid:
 class TestOpenCode:
     def test_basic(self) -> None:
         argv = get_adapter("opencode").exec_argv("fix tests")
-        assert argv == ["opencode", "run", "fix tests", "--continue"]
+        assert argv == ["opencode", "run", "--format", "json", "fix tests", "--continue"]
 
     def test_no_resume(self) -> None:
         argv = get_adapter("opencode").exec_argv("fix tests", resume=False)
@@ -355,3 +355,85 @@ class TestFallbackAdapter:
 
     def test_has_exec_false(self) -> None:
         assert get_adapter("shell").has_exec is False
+
+
+class TestParseOutput:
+    """Each adapter's `parse_output` normalizes that agent's JSON/JSONL
+    output into `(display_text, {input, output, total})`. Fixtures are
+    minimal excerpts of real output shapes captured from each CLI.
+    """
+
+    def test_claude_single_json(self) -> None:
+        import json as _j
+        stdout = _j.dumps({
+            "type": "result", "result": "Hi",
+            "usage": {"input_tokens": 6, "output_tokens": 7},
+        })
+        display, tokens = get_adapter("claude").parse_output(stdout)
+        assert display == "Hi"
+        assert tokens == {"input": 6, "output": 7, "total": 13}
+
+    def test_claude_malformed_passes_through(self) -> None:
+        display, tokens = get_adapter("claude").parse_output("not json")
+        assert display == "not json"
+        assert tokens is None
+
+    def test_codex_jsonl_stream(self) -> None:
+        stdout = "\n".join([
+            '{"type":"thread.started","thread_id":"x"}',
+            '{"type":"turn.started"}',
+            '{"type":"item.completed","item":{"id":"i0","type":"agent_message","text":"Hi"}}',
+            '{"type":"turn.completed","usage":{"input_tokens":23098,"cached_input_tokens":5504,"output_tokens":21}}',
+        ])
+        display, tokens = get_adapter("codex").parse_output(stdout)
+        assert display == "Hi"
+        assert tokens == {"input": 23098, "output": 21, "total": 23119}
+
+    def test_gemini_multi_model_sum(self) -> None:
+        import json as _j
+        stdout = _j.dumps({
+            "response": "Hi.",
+            "stats": {"models": {
+                "gemini-lite":   {"tokens": {"input": 100, "candidates": 20, "total": 120}},
+                "gemini-main":   {"tokens": {"input": 900, "candidates": 10, "total": 910}},
+            }},
+        })
+        display, tokens = get_adapter("gemini").parse_output(stdout)
+        assert display == "Hi."
+        assert tokens == {"input": 1000, "output": 30, "total": 1030}
+
+    def test_gemini_strips_yolo_preamble(self) -> None:
+        stdout = (
+            "YOLO mode is enabled.\n"
+            'YOLO mode is enabled.\n'
+            '{"response":"Hi","stats":{"models":{"m":{"tokens":{"input":1,"candidates":2,"total":3}}}}}'
+        )
+        display, tokens = get_adapter("gemini").parse_output(stdout)
+        assert display == "Hi"
+        assert tokens == {"input": 1, "output": 2, "total": 3}
+
+    def test_droid_single_json(self) -> None:
+        import json as _j
+        stdout = _j.dumps({
+            "type": "result", "result": "Hi",
+            "usage": {"input_tokens": 17283, "output_tokens": 26, "thinking_tokens": 19},
+        })
+        display, tokens = get_adapter("droid").parse_output(stdout)
+        assert display == "Hi"
+        assert tokens == {"input": 17283, "output": 26, "total": 17309}
+
+    def test_opencode_jsonl_concatenates_text(self) -> None:
+        stdout = "\n".join([
+            '{"type":"step_start","timestamp":1,"part":{}}',
+            '{"type":"text","timestamp":2,"part":{"text":"Hi"}}',
+            '{"type":"text","timestamp":3,"part":{"text":"!"}}',
+            '{"type":"step_finish","timestamp":4,"part":{"tokens":{"total":78144,"input":75261,"output":3}}}',
+        ])
+        display, tokens = get_adapter("opencode").parse_output(stdout)
+        assert display == "Hi!"
+        assert tokens == {"input": 75261, "output": 3, "total": 78144}
+
+    def test_fallback_adapter_is_identity(self) -> None:
+        display, tokens = get_adapter("shell").parse_output("hello world")
+        assert display == "hello world"
+        assert tokens is None

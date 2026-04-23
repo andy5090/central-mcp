@@ -16,7 +16,6 @@ critical path and can be absent entirely.
 from __future__ import annotations
 
 import json
-import re
 import subprocess
 import threading
 import time
@@ -47,45 +46,6 @@ from central_mcp.registry import (
 from central_mcp.scrub import scrub
 
 DEFAULT_PERMISSION_MODE = "bypass"
-
-# Token-usage extraction — regex patterns tried in order.
-# Returns {"input": int, "output": int, "total": int} or {"total": int} or None.
-_TOKEN_PATTERNS: list[tuple[re.Pattern[str], str]] = [
-    # Claude Code: "Tokens: 2,341 input · 234 output" or ", 234 output"
-    (re.compile(r"[Tt]okens?\s*:\s*([\d,]+)\s+input\s*[·,]\s*([\d,]+)\s+output"), "in_out"),
-    # Generic: "1234 input tokens, 567 output tokens"
-    (re.compile(r"([\d,]+)\s+input\s+tokens?\s*[,;·]\s*([\d,]+)\s+output\s+tokens?"), "in_out"),
-    # Gemini-style: "Input tokens: 1234 … Output tokens: 567"
-    (
-        re.compile(
-            r"[Ii]nput\s+tokens?\s*:\s*([\d,]+).*?[Oo]utput\s+tokens?\s*:\s*([\d,]+)",
-            re.DOTALL,
-        ),
-        "in_out",
-    ),
-    # Codex: "tokens used\n18,910"
-    (re.compile(r"tokens\s+used\s*\n\s*([\d,]+)", re.IGNORECASE), "total"),
-    # Total-only fallback: "Total tokens: 1234" / "total_tokens: 1234"
-    (re.compile(r"[Tt]otal[\s_]tokens?\s*[=:]\s*([\d,]+)"), "total"),
-]
-
-
-def _extract_token_usage(output: str, agent: str = "") -> dict[str, int] | None:
-    """Try to parse token counts from agent stdout. Returns None when not found."""
-    if not output:
-        return None
-    for pat, kind in _TOKEN_PATTERNS:
-        m = pat.search(output)
-        if not m:
-            continue
-        if kind == "in_out":
-            inp = int(m.group(1).replace(",", ""))
-            out = int(m.group(2).replace(",", ""))
-            return {"input": inp, "output": out, "total": inp + out}
-        if kind == "total":
-            total = int(m.group(1).replace(",", ""))
-            return {"total": total}
-    return None
 
 
 # How many chars of dispatch stdout to keep on each terminal event so
@@ -760,12 +720,23 @@ def _launch_dispatch(
                 }
                 if last.get("timeout"):
                     final_status = "timeout"
-                tokens = _extract_token_usage(
-                    final_result.get("output", ""),
-                    agent=final_result.get("agent_used") or "",
-                )
-                if tokens:
-                    final_result["tokens"] = tokens
+                # Hand structured-output parsing off to the adapter — each
+                # CLI's `--output-format json` / `--json` surface is different,
+                # but the adapter normalizes to (display, {input,output,total}).
+                agent_used = final_result.get("agent_used") or ""
+                if agent_used:
+                    try:
+                        parsed_display, parsed_tokens = (
+                            get_adapter(agent_used).parse_output(
+                                final_result.get("output", "")
+                            )
+                        )
+                        if parsed_display:
+                            final_result["output"] = parsed_display
+                        if parsed_tokens:
+                            final_result["tokens"] = parsed_tokens
+                    except Exception:
+                        pass
         except Exception as exc:
             final_status = "error"
             final_result = {

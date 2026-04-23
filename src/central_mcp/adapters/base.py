@@ -95,6 +95,20 @@ class Adapter:
     ) -> list[str] | None:
         return None
 
+    def parse_output(
+        self, stdout: str
+    ) -> tuple[str, dict[str, int] | None]:
+        """Extract (display_text, tokens) from captured dispatch stdout.
+
+        Agent-specific overrides parse the agent's structured output
+        (JSON or JSONL from its `--output-format`/`--json` modes) and
+        return a clean display string plus a {input, output, total}
+        token dict. The base implementation is a no-op so adapters
+        without a structured mode (or unknown agents) pass stdout
+        through unchanged with no tokens.
+        """
+        return stdout, None
+
     def list_sessions(
         self,
         cwd: str | Path,
@@ -307,7 +321,7 @@ class _Claude(Adapter):
         permission_mode: str = "restricted",
         session_id: str | None = None,
     ) -> list[str] | None:
-        argv = ["claude", "-p", prompt]
+        argv = ["claude", "-p", prompt, "--output-format", "json"]
         if session_id:
             argv += ["-r", session_id]
         elif resume:
@@ -317,6 +331,28 @@ class _Claude(Adapter):
         elif permission_mode == "auto":
             argv.extend(["--enable-auto-mode", "--permission-mode", "auto"])
         return argv
+
+    def parse_output(
+        self, stdout: str
+    ) -> tuple[str, dict[str, int] | None]:
+        """Claude Code's `--output-format json` returns one object with
+        `result` (display) and `usage.input_tokens` / `usage.output_tokens`."""
+        try:
+            doc = json.loads(stdout.strip())
+        except Exception:
+            return stdout, None
+        display = doc.get("result") or stdout
+        usage = doc.get("usage") or {}
+        inp = usage.get("input_tokens")
+        out = usage.get("output_tokens")
+        if inp is None and out is None:
+            return display, None
+        tokens = {
+            "input":  int(inp or 0),
+            "output": int(out or 0),
+            "total":  int(inp or 0) + int(out or 0),
+        }
+        return display, tokens
 
     def list_sessions(self, cwd: str | Path, limit: int = 20) -> list[SessionInfo]:
         project_dir = Path.home() / ".claude" / "projects" / _slug_cwd(cwd)
@@ -332,15 +368,52 @@ class _Codex(Adapter):
         permission_mode: str = "restricted",
         session_id: str | None = None,
     ) -> list[str] | None:
+        # `--json` attaches to `codex exec`; place it before the optional
+        # `resume` subcommand so argparse routing is unambiguous.
         if session_id:
-            argv = ["codex", "exec", "resume", session_id, prompt]
+            argv = ["codex", "exec", "--json", "resume", session_id, prompt]
         elif resume:
-            argv = ["codex", "exec", "resume", "--last", prompt]
+            argv = ["codex", "exec", "--json", "resume", "--last", prompt]
         else:
-            argv = ["codex", "exec", prompt]
+            argv = ["codex", "exec", "--json", prompt]
         if permission_mode == "bypass":
             argv.append("--dangerously-bypass-approvals-and-sandbox")
         return argv
+
+    def parse_output(
+        self, stdout: str
+    ) -> tuple[str, dict[str, int] | None]:
+        """Codex `--json` streams JSONL events. The assistant's reply arrives
+        as `item.completed` records (type=agent_message); the final
+        `turn.completed` carries `usage`."""
+        display_parts: list[str] = []
+        tokens: dict[str, int] | None = None
+        for ln in stdout.splitlines():
+            line = ln.strip()
+            if not line:
+                continue
+            try:
+                r = json.loads(line)
+            except Exception:
+                continue
+            rtype = r.get("type")
+            if rtype == "item.completed":
+                item = r.get("item") or {}
+                if item.get("type") == "agent_message":
+                    txt = item.get("text")
+                    if txt:
+                        display_parts.append(str(txt))
+            elif rtype == "turn.completed":
+                usage = r.get("usage") or {}
+                inp = usage.get("input_tokens")
+                out = usage.get("output_tokens")
+                tokens = {
+                    "input":  int(inp or 0),
+                    "output": int(out or 0),
+                    "total":  int(inp or 0) + int(out or 0),
+                }
+        display = "\n".join(display_parts).strip() or stdout
+        return display, tokens
 
     def list_sessions(self, cwd: str | Path, limit: int = 20) -> list[SessionInfo]:
         """Filter `~/.codex/sessions/**/*.jsonl` by session_meta's cwd.
@@ -418,7 +491,7 @@ class _Gemini(Adapter):
         permission_mode: str = "restricted",
         session_id: str | None = None,
     ) -> list[str] | None:
-        argv = ["gemini", "-p", prompt]
+        argv = ["gemini", "-p", prompt, "-o", "json"]
         if session_id:
             argv += ["--resume", session_id]
         elif resume:
@@ -426,6 +499,37 @@ class _Gemini(Adapter):
         if permission_mode == "bypass":
             argv.append("--yolo")
         return argv
+
+    def parse_output(
+        self, stdout: str
+    ) -> tuple[str, dict[str, int] | None]:
+        """Gemini `-o json` returns `{response, stats: {models: {<name>: {tokens}}}}`
+        with possibly multiple models per request (router + main). Sum
+        tokens across all models for the invoice-level total."""
+        # Strip any leading non-JSON preamble (YOLO warnings etc).
+        start = stdout.find("{")
+        if start < 0:
+            return stdout, None
+        try:
+            doc = json.loads(stdout[start:])
+        except Exception:
+            return stdout, None
+        display = doc.get("response") or stdout
+        models = ((doc.get("stats") or {}).get("models") or {})
+        total_input = sum(int((m.get("tokens") or {}).get("input", 0) or 0)
+                          for m in models.values())
+        total_output = sum(int((m.get("tokens") or {}).get("candidates", 0) or 0)
+                           for m in models.values())
+        total_total = sum(int((m.get("tokens") or {}).get("total", 0) or 0)
+                          for m in models.values())
+        if not (total_input or total_output or total_total):
+            return display, None
+        tokens = {
+            "input":  total_input,
+            "output": total_output,
+            "total":  total_total or (total_input + total_output),
+        }
+        return display, tokens
 
     def list_sessions(self, cwd: str | Path, limit: int = 20) -> list[SessionInfo]:
         """Parse `gemini --list-sessions` output run from `cwd`.
@@ -478,12 +582,34 @@ class _Droid(Adapter):
         # explicit session_id is provided. `resume=True` without a
         # session_id is therefore a no-op, matching the current
         # behavior.
-        argv = ["droid", "exec", prompt]
+        argv = ["droid", "exec", "-o", "json", prompt]
         if session_id:
             argv += ["-s", session_id]
         if permission_mode == "bypass":
             argv.append("--skip-permissions-unsafe")
         return argv
+
+    def parse_output(
+        self, stdout: str
+    ) -> tuple[str, dict[str, int] | None]:
+        """Droid `-o json` emits one JSON object with `result` and `usage`
+        (shape parallels Claude's JSON mode)."""
+        try:
+            doc = json.loads(stdout.strip())
+        except Exception:
+            return stdout, None
+        display = doc.get("result") or stdout
+        usage = doc.get("usage") or {}
+        inp = usage.get("input_tokens")
+        out = usage.get("output_tokens")
+        if inp is None and out is None:
+            return display, None
+        tokens = {
+            "input":  int(inp or 0),
+            "output": int(out or 0),
+            "total":  int(inp or 0) + int(out or 0),
+        }
+        return display, tokens
 
     def list_sessions(self, cwd: str | Path, limit: int = 20) -> list[SessionInfo]:
         project_dir = Path.home() / ".factory" / "sessions" / _slug_cwd(cwd)
@@ -499,7 +625,7 @@ class _OpenCode(Adapter):
         permission_mode: str = "restricted",
         session_id: str | None = None,
     ) -> list[str] | None:
-        argv = ["opencode", "run", prompt]
+        argv = ["opencode", "run", "--format", "json", prompt]
         if session_id:
             argv += ["-s", session_id]
         elif resume:
@@ -507,6 +633,43 @@ class _OpenCode(Adapter):
         if permission_mode == "bypass":
             argv.append("--dangerously-skip-permissions")
         return argv
+
+    def parse_output(
+        self, stdout: str
+    ) -> tuple[str, dict[str, int] | None]:
+        """OpenCode `run --format json` streams JSONL events: `text` chunks
+        carry the reply, a final `step_finish` carries `tokens`."""
+        display_parts: list[str] = []
+        tokens: dict[str, int] | None = None
+        for ln in stdout.splitlines():
+            line = ln.strip()
+            if not line:
+                continue
+            try:
+                r = json.loads(line)
+            except Exception:
+                continue
+            rtype = r.get("type")
+            if rtype == "text":
+                part = r.get("part") or {}
+                txt = part.get("text")
+                if txt:
+                    display_parts.append(str(txt))
+            elif rtype == "step_finish":
+                part = r.get("part") or {}
+                t = part.get("tokens") or {}
+                inp = t.get("input")
+                out = t.get("output")
+                tot = t.get("total")
+                if inp is not None or out is not None or tot is not None:
+                    tokens = {
+                        "input":  int(inp or 0),
+                        "output": int(out or 0),
+                        "total":  int(tot) if tot is not None
+                                  else int(inp or 0) + int(out or 0),
+                    }
+        display = "".join(display_parts) or stdout
+        return display, tokens
 
     def list_sessions(self, cwd: str | Path, limit: int = 20) -> list[SessionInfo]:
         """Parse `opencode session list`. NOT cwd-scoped — opencode's
