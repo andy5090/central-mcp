@@ -62,6 +62,8 @@ _TOKEN_PATTERNS: list[tuple[re.Pattern[str], str]] = [
         ),
         "in_out",
     ),
+    # Codex: "tokens used\n18,910"
+    (re.compile(r"tokens\s+used\s*\n\s*([\d,]+)", re.IGNORECASE), "total"),
     # Total-only fallback: "Total tokens: 1234" / "total_tokens: 1234"
     (re.compile(r"[Tt]otal[\s_]tokens?\s*[=:]\s*([\d,]+)"), "total"),
 ]

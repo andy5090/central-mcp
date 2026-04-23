@@ -50,25 +50,60 @@ def _fmt_ts(ts: str) -> str:
     return ts[11:19] if "T" in ts else ts[:8]
 
 
-# Lines that are visual noise: spinners, progress bars, bare percentages.
-_NOISE_RE = re.compile(
+# Spinner / progress-bar lines to skip entirely — not content.
+# Conservative: only Unicode braille spinners and explicit bracket progress bars.
+# ASCII-only patterns (----, |, /) are excluded — too many false positives
+# (codex uses "--------" separators; pipes appear in tables and code).
+_SPINNER_RE = re.compile(
     r"^\s*(?:"
-    r"[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏⣾⣽⣻⢿⡿⣟⣯⣷|/\\-]"
-    r"|[▏▎▍▌▋▊▉█=\-#>. ]+\s*(?:\d+%)?"
-    r"|\d+%"
-    r"|\.{3,}"
+    r"[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏⣾⣽⣻⢿⡿⣟⣯⣷][⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏⣾⣽⣻⢿⡿⣟⣯⣷\s]*"  # braille spinners
+    r"|\[[\s=#>·\-\.]+\]\s*(?:\d+%)?"  # [####   ] bracket progress
+    r"|\d+%"  # bare percentage
     r")\s*$"
 )
 
 # Opening ``` / ~~~ fences.
 _FENCE_RE = re.compile(r"^(`{3,}|~{3,})")
 
+# Agent-specific metadata patterns — rendered DIM (informational, not agent output).
+# Codex header block that appears before actual response: workdir, model, provider, session id.
+_CODEX_META_RE = re.compile(
+    r"^\s*(?:workdir|model|provider|session\s+id)\s*:", re.IGNORECASE
+)
+# Codex "--------" separator lines (not spinners, but structural dividers).
+_CODEX_SEP_RE = re.compile(r"^\s*-{4,}\s*$")
 
-def _is_noise(line: str) -> bool:
+# Gemini status lines printed to stdout before/after the model response.
+_GEMINI_META_RE = re.compile(
+    r"^\s*(?:"
+    r"\[WARN\]"              # Gemini warning prefix
+    r"|YOLO mode is enabled" # permission mode banner
+    r"|Gemini\s+\S+\s+\(model:"  # version banner e.g. "Gemini 2.5 (model: gemini-..."
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _is_spinner(line: str) -> bool:
     stripped = line.strip()
     if not stripped:
-        return True
-    return bool(_NOISE_RE.match(stripped))
+        return False  # blank lines are intentional spacing, not noise
+    return bool(_SPINNER_RE.match(stripped))
+
+
+def _agent_noise(line: str, agent: str) -> str | None:
+    """Return 'dim' if this line is agent-specific metadata noise, else None."""
+    stripped = line.strip()
+    if not stripped:
+        return None
+    a = agent.lower()
+    if "codex" in a:
+        if _CODEX_META_RE.match(stripped) or _CODEX_SEP_RE.match(stripped):
+            return "dim"
+    elif "gemini" in a:
+        if _GEMINI_META_RE.match(stripped):
+            return "dim"
+    return None
 
 
 @dataclass
@@ -76,6 +111,7 @@ class _DispatchState:
     started_at: float = 0.0
     in_code_block: bool = False
     done: bool = False
+    agent: str = ""
 
 
 def _render(
@@ -96,6 +132,7 @@ def _render(
         state.started_at = time.time()
         state.in_code_block = False
         state.done = False
+        state.agent = agent
         header = BOLD(CYAN(f"── {ts} [{did}] start ──"))
         out.write(f"\n{header}\n")
         if agent:
@@ -130,10 +167,14 @@ def _render(
             out.write(prefix + RED(chunk) + "\n")
         elif state.in_code_block:
             out.write(prefix + MAGENTA(chunk) + "\n")
-        elif _is_noise(chunk):
-            out.write(DIM(prefix + chunk) + "\n")
+        elif _is_spinner(chunk):
+            return  # skip spinners and progress bars silently
         else:
-            out.write(prefix + chunk + "\n")
+            noise = _agent_noise(chunk, state.agent)
+            if noise == "dim":
+                out.write(prefix + DIM(chunk) + "\n")
+            else:
+                out.write(prefix + chunk + "\n")
 
     elif event == "complete":
         state.done = True

@@ -130,22 +130,21 @@ class TestRender:
         assert "fallback" in out
         assert "↻" in out
 
-    def test_output_noise_is_present(self) -> None:
-        # Spinner / blank lines should still appear (as dim text) so stream is intact.
+    def test_output_spinner_is_skipped(self) -> None:
         out = _render({
             "ts": "2026-04-18T10:23:46.000+00:00",
             "id": "x", "event": "output",
             "stream": "stdout", "chunk": "⠋",
         })
-        assert "⠋" in out
+        assert out == ""  # spinner lines produce no output
 
-    def test_output_blank_line_present(self) -> None:
+    def test_output_blank_line_is_kept(self) -> None:
         out = _render({
             "ts": "2026-04-18T10:23:46.000+00:00",
             "id": "x", "event": "output",
             "stream": "stdout", "chunk": "",
         })
-        # Empty chunk still produces a newline.
+        # Blank lines are intentional spacing — kept.
         assert "\n" in out
 
     def test_complete_shows_tokens_when_present(self) -> None:
@@ -172,6 +171,74 @@ class TestRender:
         _render({"id": "x", "event": "start", "ts": "", "agent": "claude", "prompt": "", "chain": ["claude"]}, states)
         _render({"id": "x", "event": "complete", "ts": "", "ok": True, "status": "complete"}, states)
         assert states["x"].done is True
+
+    def test_state_stores_agent_on_start(self) -> None:
+        states: dict = {}
+        _render({"id": "x", "event": "start", "ts": "", "agent": "codex", "prompt": "", "chain": ["codex"]}, states)
+        assert states["x"].agent == "codex"
+
+
+class TestAgentNoise:
+    """Agent-specific metadata lines are DIM-colored, not skipped."""
+
+    def _render_output(self, chunk: str, agent: str) -> str:
+        """Simulate: start → output for a given agent."""
+        states: dict = {}
+        buf = io.StringIO()
+        watch._render({"id": "x", "event": "start", "ts": "", "agent": agent, "prompt": "", "chain": [agent]}, buf, states)
+        watch._render({"id": "x", "event": "output", "ts": "", "stream": "stdout", "chunk": chunk}, buf, states)
+        return buf.getvalue()
+
+    def test_codex_workdir_line_is_dimmed(self, monkeypatch) -> None:
+        monkeypatch.setattr(watch, "_IS_TTY", True)
+        monkeypatch.setattr(watch, "DIM", lambda s: f"[DIM]{s}[/DIM]")
+        out = self._render_output("workdir: /Users/andy/Projects/myapp", "codex")
+        assert "[DIM]workdir: /Users/andy/Projects/myapp[/DIM]" in out
+
+    def test_codex_model_line_is_dimmed(self, monkeypatch) -> None:
+        monkeypatch.setattr(watch, "_IS_TTY", True)
+        monkeypatch.setattr(watch, "DIM", lambda s: f"[DIM]{s}[/DIM]")
+        out = self._render_output("model: o4-mini", "codex")
+        assert "[DIM]model: o4-mini[/DIM]" in out
+
+    def test_codex_separator_is_dimmed(self, monkeypatch) -> None:
+        monkeypatch.setattr(watch, "_IS_TTY", True)
+        monkeypatch.setattr(watch, "DIM", lambda s: f"[DIM]{s}[/DIM]")
+        out = self._render_output("--------", "codex")
+        assert "[DIM]--------[/DIM]" in out
+
+    def test_codex_separator_not_skipped(self, monkeypatch) -> None:
+        """Codex separator appears (dimmed), unlike a spinner which produces no output."""
+        monkeypatch.setattr(watch, "_IS_TTY", False)
+        out = self._render_output("--------", "codex")
+        assert "--------" in out
+
+    def test_gemini_warn_line_is_dimmed(self, monkeypatch) -> None:
+        monkeypatch.setattr(watch, "_IS_TTY", True)
+        monkeypatch.setattr(watch, "DIM", lambda s: f"[DIM]{s}[/DIM]")
+        out = self._render_output("[WARN] some warning message", "gemini")
+        assert "[DIM][WARN] some warning message[/DIM]" in out
+
+    def test_gemini_yolo_line_is_dimmed(self, monkeypatch) -> None:
+        monkeypatch.setattr(watch, "_IS_TTY", True)
+        monkeypatch.setattr(watch, "DIM", lambda s: f"[DIM]{s}[/DIM]")
+        out = self._render_output("YOLO mode is enabled.", "gemini")
+        assert "[DIM]YOLO mode is enabled.[/DIM]" in out
+
+    def test_claude_separator_not_dimmed(self, monkeypatch) -> None:
+        """Codex-specific separator is NOT dimmed for claude agent."""
+        monkeypatch.setattr(watch, "_IS_TTY", True)
+        monkeypatch.setattr(watch, "DIM", lambda s: f"[DIM]{s}[/DIM]")
+        out = self._render_output("--------", "claude")
+        assert "[DIM]--------[/DIM]" not in out
+        assert "--------" in out
+
+    def test_normal_content_not_dimmed_for_codex(self, monkeypatch) -> None:
+        monkeypatch.setattr(watch, "_IS_TTY", True)
+        monkeypatch.setattr(watch, "DIM", lambda s: f"[DIM]{s}[/DIM]")
+        out = self._render_output("Here is the fixed code:", "codex")
+        assert "[DIM]Here is the fixed code:[/DIM]" not in out
+        assert "Here is the fixed code:" in out
 
 
 class TestTokenExtraction:
