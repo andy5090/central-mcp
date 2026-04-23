@@ -93,6 +93,42 @@ def orchestrator_default() -> str | None:
     return str(val) if val else None
 
 
+def orchestrator_fallback_enabled() -> bool:
+    """Whether `central-mcp run` should automatically try other installed
+    orchestrators when the primary is over quota. Default: True.
+    """
+    orch = _read().get("orchestrator") or {}
+    v = orch.get("fallback_enabled")
+    return True if v is None else bool(v)
+
+
+def orchestrator_fallback() -> list[str]:
+    """Optional user-supplied fallback order. Empty list means "auto"
+    (every other installed orchestrator-capable agent, discovery order).
+    """
+    orch = _read().get("orchestrator") or {}
+    val = orch.get("fallback")
+    if isinstance(val, list):
+        return [str(x) for x in val]
+    return []
+
+
+_QUOTA_DEFAULTS = {"five_hour": 95, "seven_day": 90}
+
+
+def quota_threshold() -> dict[str, int]:
+    """`five_hour` / `seven_day` percent thresholds. An orchestrator
+    whose current provider-reported utilization meets or exceeds either
+    threshold is skipped by the fallback chain.
+    """
+    orch = _read().get("orchestrator") or {}
+    cfg = orch.get("quota_threshold") or {}
+    return {
+        "five_hour": int(cfg.get("five_hour") or _QUOTA_DEFAULTS["five_hour"]),
+        "seven_day": int(cfg.get("seven_day") or _QUOTA_DEFAULTS["seven_day"]),
+    }
+
+
 def user_timezone() -> str:
     """Return the user's configured timezone; fall back to system, then UTC."""
     user = _read().get("user") or {}

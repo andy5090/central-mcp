@@ -821,6 +821,87 @@ def _detect_installed() -> list[tuple[str, str, str]]:
     return [(k, b, label) for k, b, label in ORCHESTRATORS if shutil.which(b)]
 
 
+def _orchestrator_over_quota(agent: str) -> bool:
+    """True if the orchestrator's provider-reported quota is at/above
+    the configured fallback threshold. Agents without a quota API
+    (`has_quota_api=False`) always return False — we have nothing to
+    base a skip decision on.
+    """
+    from central_mcp import agents as _agents
+    cap = _agents.get(agent)
+    if cap is None or not cap.has_quota_api:
+        return False
+
+    th = user_config.quota_threshold()
+    try:
+        if agent == "claude":
+            from central_mcp.quota import claude as _claude
+            q = _claude.fetch()
+            if q.get("mode") != "pro":
+                return False   # API key users have no subscription quota
+            raw = q.get("raw") or {}
+            fh_pct = (raw.get("five_hour") or {}).get("utilization", 0) * 100
+            wd_pct = (raw.get("seven_day") or {}).get("utilization", 0) * 100
+            return fh_pct >= th["five_hour"] or wd_pct >= th["seven_day"]
+
+        if agent == "codex":
+            from central_mcp.quota import codex as _codex
+            q = _codex.fetch()
+            if q is None or q.get("mode") != "chatgpt":
+                return False
+            raw = q.get("raw") or {}
+            rl = raw.get("rate_limit") or {}
+            pw_pct = (rl.get("primary_window") or {}).get("used_percent", 0)
+            sw_pct = (rl.get("secondary_window") or {}).get("used_percent", 0)
+            return pw_pct >= th["five_hour"] or sw_pct >= th["seven_day"]
+    except Exception:
+        return False
+    return False
+
+
+def _resolve_orchestrator_chain(
+    preferred: str | None,
+) -> list[tuple[tuple[str, str, str], str]]:
+    """Return an ordered list of (entry, skip_reason_or_empty) for every
+    orchestrator candidate, honoring this priority:
+
+      1. `preferred` (user preference or explicit default)
+      2. `config.toml [orchestrator].fallback` list, in order
+      3. remaining installed orchestrator-capable agents
+
+    Uninstalled agents are dropped silently. Over-quota agents stay in
+    the list with a skip_reason so the caller can surface "tried X,
+    skipped due to Y" context.
+    """
+    from central_mcp import agents as _agents
+    seen: set[str] = set()
+    order: list[str] = []
+    candidates = [preferred] if preferred else []
+    candidates += user_config.orchestrator_fallback()
+    candidates += [a.name for a in _agents.installed(lambda a: a.can_orchestrate)]
+    for name in candidates:
+        if not name or name in seen:
+            continue
+        cap = _agents.get(name)
+        if cap is None or not cap.can_orchestrate:
+            continue
+        if not shutil.which(cap.binary):
+            continue
+        order.append(name)
+        seen.add(name)
+
+    result: list[tuple[tuple[str, str, str], str]] = []
+    for name in order:
+        cap = _agents.AGENTS[name]
+        entry = (cap.name, cap.binary, cap.label)
+        skip = ""
+        if _orchestrator_over_quota(name):
+            th = user_config.quota_threshold()
+            skip = f"quota ≥ {th['five_hour']}%/{th['seven_day']}%"
+        result.append((entry, skip))
+    return result
+
+
 def _load_preference() -> str | None:
     if not paths.config_file().exists():
         return None
@@ -968,11 +1049,44 @@ def cmd_run(args: argparse.Namespace) -> int:
     else:
         pref = _load_preference()
         if pref:
-            for entry in installed:
-                if entry[0] == pref:
+            # Fallback-aware resolution: walk the chain (preferred →
+            # user-configured fallback → remaining installed
+            # orchestrators), skipping any entry whose provider quota
+            # is at/above the configured threshold.
+            fallback_on = user_config.orchestrator_fallback_enabled()
+            chain = _resolve_orchestrator_chain(pref)
+            chain_names = [e[0][0] for e in chain]
+            if fallback_on:
+                for entry, skip_reason in chain:
+                    if skip_reason:
+                        print(
+                            f"ℹ  skipping {entry[0]} ({skip_reason})",
+                            file=sys.stderr,
+                        )
+                        continue
                     choice = entry
-                    source = "saved preference"
+                    if entry[0] != pref:
+                        source = f"fallback (primary {pref!r} unavailable)"
+                    else:
+                        source = "saved preference"
                     break
+                if choice is None:
+                    print(
+                        f"warning: all orchestrators in chain are over quota — "
+                        f"falling back to raw preference {pref!r}",
+                        file=sys.stderr,
+                    )
+                    for entry in installed:
+                        if entry[0] == pref:
+                            choice = entry
+                            source = "saved preference (quota ignored)"
+                            break
+            else:
+                for entry in installed:
+                    if entry[0] == pref:
+                        choice = entry
+                        source = "saved preference"
+                        break
             if choice is None:
                 print(
                     f"warning: saved preference {pref!r} no longer on PATH — re-picking",

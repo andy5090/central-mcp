@@ -3,6 +3,23 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.10.4] — 2026-04-24
+
+### Added
+- **Orchestrator fallback with quota awareness** — `central-mcp run` now walks a chain instead of hard-launching the saved preference. The chain is: `preferred → config.toml [orchestrator].fallback (optional hint) → remaining installed orchestrator-capable agents`. Any entry whose provider-reported 5h or weekly quota meets/exceeds the configured threshold (default 95% / 90%) is skipped with a one-line notice to stderr, and the next candidate is tried. Configure with:
+  ```toml
+  [orchestrator]
+  fallback_enabled = true           # default true; set false to disable entirely
+  # fallback = ["codex", "gemini"]  # optional: explicit order hint
+  [orchestrator.quota_threshold]
+  five_hour = 95
+  seven_day = 90
+  ```
+- `config.orchestrator_fallback_enabled()`, `config.orchestrator_fallback()`, `config.quota_threshold()` helpers — all respect `config.toml` with sensible defaults.
+- 17 tests covering the quota-skip heuristic, chain ordering with user hints, uninstalled/non-orchestratable agent exclusion, and custom thresholds.
+
+---
+
 ## [0.10.3] — 2026-04-24
 
 ### Added
