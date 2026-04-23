@@ -33,7 +33,8 @@ def _say(msg: str) -> None:
     print(msg)
 
 
-SUPPORTED_CLIENTS: list[str] = ["claude", "codex", "gemini", "opencode"]
+# Canonical source is `central_mcp.agents.AGENTS[*].mcp_installable`.
+from central_mcp.agents import SUPPORTED_CLIENTS   # noqa: E402
 
 
 def _installer_for(client: str):

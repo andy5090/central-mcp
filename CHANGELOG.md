@@ -3,6 +3,16 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.10.3] — 2026-04-24
+
+### Added
+- **`central_mcp.agents` — capability registry** (single source of truth) with an `AGENTS` dict of `AgentCapabilities` (can_dispatch / can_orchestrate / mcp_installable / has_quota_api / has_session_reader) plus helpers (`get`, `filter_by`, `installed`, `is_installed`). Legacy `ORCHESTRATORS` / `VALID_AGENTS` / `SUPPORTED_CLIENTS` are re-exported from here so pre-existing imports keep working. Consistency tests in `tests/test_agents.py` catch future drift (declared capability with no implementation, or vice versa).
+
+### Fixed
+- **opencode now appears in the `central-mcp run` picker** — it was added to dispatch (`VALID_AGENTS`) and MCP install (`SUPPORTED_CLIENTS`) in earlier releases but `ORCHESTRATORS` was never updated alongside, so the interactive picker showed only claude/codex/gemini. The new `agents` registry is the single source of truth, so this kind of drift can't silently happen again.
+
+---
+
 ## [0.10.2] — 2026-04-24
 
 ### Added

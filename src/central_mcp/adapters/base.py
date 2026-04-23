@@ -747,7 +747,8 @@ _ADAPTERS: dict[str, Adapter] = {
 
 _FALLBACK_ADAPTER = Adapter("(unknown)", launch=(), has_exec=False)
 
-VALID_AGENTS = {"claude", "codex", "gemini", "droid", "opencode"}
+# Canonical source is `central_mcp.agents.AGENTS[*].can_dispatch`.
+from central_mcp.agents import VALID_AGENTS   # noqa: E402
 
 
 def get_adapter(name: str) -> Adapter:

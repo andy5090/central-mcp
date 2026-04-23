@@ -54,11 +54,9 @@ def _read_packaged(name: str) -> str:
 
 
 # Supported orchestrators for `central-mcp run`, in picker order.
-ORCHESTRATORS: list[tuple[str, str, str]] = [
-    ("claude", "claude", "Claude Code"),
-    ("codex", "codex", "Codex CLI"),
-    ("gemini", "gemini", "Gemini CLI"),
-]
+# Canonical source is `central_mcp.agents.AGENTS[*].can_orchestrate` —
+# this re-export keeps legacy imports working.
+from central_mcp.agents import ORCHESTRATORS   # noqa: E402
 
 # Per-(agent, mode) argv suffix for the orchestrator launcher.
 # `auto` is claude-only (Team/Enterprise/API + Sonnet/Opus 4.6). Agents
