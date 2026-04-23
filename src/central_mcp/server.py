@@ -138,8 +138,11 @@ When the user asks anything about "my projects", status, or dispatching
 work, call these MCP tools — do not read files or run shell commands
 instead:
 
-  - list_projects          — enumerate the registry; pass workspace= to
-                             filter to a specific workspace.
+  - list_projects          — projects in the CURRENT workspace by
+                             default. Pass workspace="<name>" for a
+                             specific workspace, or workspace="__all__"
+                             to list every registered project across
+                             workspaces.
   - project_status         — registry info for one project
   - dispatch               — run a one-shot agent in the project's cwd.
                              NON-BLOCKING: returns a dispatch_id immediately.
@@ -373,17 +376,26 @@ def _require_project(name: str) -> tuple[Project | None, dict[str, Any] | None]:
     return project, None
 
 
+_ALL_WORKSPACES_SENTINELS = {"__all__", "*"}
+
+
 @mcp.tool()
 def list_projects(workspace: str | None = None) -> list[dict[str, Any]] | dict[str, Any]:
-    """List registered projects, optionally filtered to a workspace.
+    """List registered projects. Defaults to the current workspace.
 
-    Pass workspace='default' to list only unassigned/default projects,
-    or any other workspace name to list its members.
+    **workspace**:
+      - None (default) → projects in the **current** workspace
+        (`config.toml [user].current_workspace`). This matches the
+        orchestrator's "what am I working on right now" expectation.
+      - `"__all__"` (or `"*"`) → every registered project across all
+        workspaces
+      - any other name → that workspace's members
     """
-    if workspace is not None:
-        all_projects = projects_in_workspace(workspace)
-    else:
+    if workspace in _ALL_WORKSPACES_SENTINELS:
         all_projects = load_registry()
+    else:
+        ws = workspace if workspace is not None else user_config.current_workspace()
+        all_projects = projects_in_workspace(ws)
     return _with_completed([p.to_dict() for p in all_projects])
 
 

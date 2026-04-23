@@ -56,13 +56,42 @@ def _make_project(tmp_path: Path, name: str, agent: str = "stub") -> str:
 # ---------- list_projects(workspace=...) ----------
 
 
-def test_list_projects_no_workspace_returns_all(fake_home: Path, tmp_path: Path) -> None:
-    _make_project(tmp_path, "alpha")
-    _make_project(tmp_path, "beta")
+def test_list_projects_no_workspace_defaults_to_current(
+    fake_home: Path, tmp_path: Path
+) -> None:
+    """Without an explicit workspace, list_projects returns only the
+    current workspace — NOT all projects across workspaces."""
+    from central_mcp import config as _cfg
+    _make_project(tmp_path, "in-current")
+    _make_project(tmp_path, "in-other")
+    registry.add_workspace("other")
+    registry.add_to_workspace("in-other", "other")
+    # Current workspace is "default" (orphan + default-assigned only).
+    _cfg.set_current_workspace("default")
+
     result = server.list_projects()
     names = [p["name"] for p in (result if isinstance(result, list) else result["results"])]
-    assert "alpha" in names
-    assert "beta" in names
+    assert "in-current" in names
+    assert "in-other" not in names
+
+    # Switching current workspace flips the listing.
+    _cfg.set_current_workspace("other")
+    result2 = server.list_projects()
+    names2 = [p["name"] for p in (result2 if isinstance(result2, list) else result2["results"])]
+    assert names2 == ["in-other"]
+
+
+def test_list_projects_all_sentinels_return_all(fake_home: Path, tmp_path: Path) -> None:
+    """`__all__` (canonical) and `*` both act as the cross-workspace escape."""
+    _make_project(tmp_path, "a")
+    _make_project(tmp_path, "b")
+    registry.add_workspace("ws")
+    registry.add_to_workspace("b", "ws")
+
+    for sentinel in ("__all__", "*"):
+        result = server.list_projects(workspace=sentinel)
+        names = [p["name"] for p in (result if isinstance(result, list) else result["results"])]
+        assert set(names) == {"a", "b"}, f"sentinel {sentinel!r} should return all"
 
 
 def test_list_projects_workspace_filter(fake_home: Path, tmp_path: Path) -> None:

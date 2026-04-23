@@ -3,6 +3,13 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.10.1] — 2026-04-24
+
+### Fixed
+- **`list_projects()` (no args) now scopes to the current workspace.** The default was "all registered projects across every workspace" — which misled orchestrators into replying with the whole portfolio when the user was only working in one workspace. Now `list_projects()` returns projects in `config.toml [user].current_workspace`; pass `workspace="<name>"` for a specific workspace, or `workspace="__all__"` (alias: `"*"`) for the old global listing. This matches the existing `__all__` convention already documented in `data/CLAUDE.md` / `data/AGENTS.md`.
+
+---
+
 ## [0.10.0] — 2026-04-24
 
 ### Added
