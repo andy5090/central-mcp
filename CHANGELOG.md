@@ -3,6 +3,20 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.10.8] — 2026-04-24
+
+### Changed
+- **Background-poll interval reduced from 30s → 3s** in orchestrator guidance. The 30s figure was a conservative placeholder from v0.2.0; analysis of ~170 real dispatches across all five agents shows a median duration of ~80s and a minimum of ~6s (codex), so 30s polls meant users sometimes waited 30+ seconds past completion before being told. 3s puts the average completion-to-report gap under 1.5s while keeping the total tool-call rate reasonable for the typical 80s dispatch (~25 polls). `check_dispatch` is an in-memory lookup — cheap enough that aggressive polling doesn't matter server-side. Guidance updated in `_MCP_INSTRUCTIONS`, `data/CLAUDE.md`, `data/AGENTS.md`.
+
+### Notes for existing installs
+- Runtime doc copies at `~/.central-mcp/{CLAUDE,AGENTS}.md` are written on first launch and not overwritten by upgrades. To pick up the new poll cadence:
+  ```bash
+  rm ~/.central-mcp/CLAUDE.md ~/.central-mcp/AGENTS.md
+  ```
+  The shipped `_MCP_INSTRUCTIONS` string reloads automatically on MCP client restart.
+
+---
+
 ## [0.10.7] — 2026-04-24
 
 ### Added

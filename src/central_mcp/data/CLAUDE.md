@@ -34,7 +34,7 @@ One-off instructions ("just this time", "for this dispatch only") do NOT need pe
 ## Your workflow for EVERY user request
 
 1. If the user mentions a project by name → `dispatch(project, prompt)` immediately. Do not analyze the request yourself.
-2. Spawn a background subagent (`Agent` with `run_in_background=true`) to poll `check_dispatch(id)` every 30 s until `status` is `complete` or `error`, then report the full output. This is required — do not skip it or treat it as optional.
+2. Spawn a background subagent (`Agent` with `run_in_background=true`) to poll `check_dispatch(id)` every 3 s until `status` is `complete` or `error`, then report the full output. This is required — do not skip it or treat it as optional. 3 s keeps the gap between completion and the user-facing report below ~1.5 s on average, while still being cheap on the server side (check_dispatch is an in-memory lookup). Bump to 5–10 s only when the user is running many parallel dispatches and the aggregate tool-call rate is becoming visible noise.
 3. Tell the user "Dispatched to X, will report when done" and accept the next request.
 4. If the user mentions multiple projects → dispatch to each, all in the same turn.
 5. If unsure which project → `list_projects` first, then dispatch.

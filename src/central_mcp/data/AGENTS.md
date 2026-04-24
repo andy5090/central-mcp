@@ -40,8 +40,8 @@ One-off instructions ("just this time", "for this dispatch only") do NOT need pe
 2. Call `dispatch(project, prompt)` — do NOT analyze or process the request yourself.
 3. **Always report results proactively — never make the user ask "status?".**
    Choose the path your environment supports:
-   - **Claude Code** (`Agent` tool): `Agent(run_in_background=True, prompt="poll check_dispatch(<id>) every 30s until status is complete or error, then report the full output to the user")`. You can accept other requests while it runs.
-   - **Codex** (`spawn_agent` tool): `spawn_agent(message="poll mcp__central__check_dispatch with dispatch_id=<id> every 30s until status is complete or error, then report the full output back to me")`. The sub-agent runs in the background; you can continue the conversation.
+   - **Claude Code** (`Agent` tool): `Agent(run_in_background=True, prompt="poll check_dispatch(<id>) every 3s until status is complete or error, then report the full output to the user")`. You can accept other requests while it runs.
+   - **Codex** (`spawn_agent` tool): `spawn_agent(message="poll mcp__central__check_dispatch with dispatch_id=<id> every 3s until status is complete or error, then report the full output back to me")`. The sub-agent runs in the background; you can continue the conversation.
    - **Gemini / other** (no background-agent tool): poll synchronously — call `check_dispatch(id)` in a loop until done, then report. Inform the user the dispatch is in progress.
 4. **If the user asks about results** before polling finishes, call `check_dispatch(id)` immediately and report whatever is available.
 

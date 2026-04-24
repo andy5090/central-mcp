@@ -214,7 +214,11 @@ returns a dispatch_id instantly (<100ms). To get the result:
 
   1. Call dispatch(name, prompt) → returns dispatch_id.
   2. Spawn a background sub-agent to poll check_dispatch(dispatch_id)
-     every 30 s until status is "complete" or "error", then report:
+     every 3 s until status is "complete" or "error", then report
+     (3 s keeps the gap between completion and user-facing report
+     below ~1.5 s on average; observed median dispatch is ~80 s,
+     minimum ~6 s, so 3 s polls work out to ~25 tool calls for a
+     typical dispatch — cheap):
      - Claude Code: Agent(run_in_background=True, prompt="poll …")
      - Codex: spawn_agent(message="poll mcp__central__check_dispatch …")
      - Gemini/other: poll synchronously in a loop, then report.
