@@ -163,6 +163,15 @@ Design spec: [`docs/architecture/workspaces.md`](architecture/workspaces.md)
 ✅ **opencode orchestrator-session backfill** (shipped 0.10.5)
 - `orch_session.sync_orchestrator("opencode")` now populates `tokens.db` with `source='orchestrator'` rows alongside Claude Code + Codex. Hybrid strategy — SQLite discovery (3 stable columns from `session` table) + `opencode export <id>` CLI for the per-turn token content — honors "public contract for content" while keeping discovery tractable.
 
+✅ **Startup upgrade probe** (shipped 0.10.7, tuned 0.10.10)
+- `central-mcp run` probes PyPI at launch (at most once per `[user].upgrade_check_interval_hours`) and offers an interactive Y/n upgrade when a newer release is available. Every failure path is silent — never blocks startup on flaky networks / non-TTY shells / source installs. Default interval lowered from 24h → 4h in 0.10.10 to track the current release cadence.
+
+✅ **Installed-version banner at startup** (shipped 0.10.10)
+- Prints `central-mcp  : X.Y.Z` above the orchestrator summary so the launched build is always visible. Shows `source` for editable installs.
+
+✅ **Background-poll cadence — data-driven retune** (shipped 0.10.8)
+- Orchestrator guidance for `check_dispatch` polling dropped 30s → 3s after analyzing ~170 real dispatches across all five agents (median ~80s, minimum ~6s codex). Keeps total tool-call volume reasonable for an 80s dispatch (~25 polls) while cutting the completion-to-report gap to <1.5s on average.
+
 📋 **Token budget + alerting** (Phase 4.1 remaining)
 - Running cumulative token / cost tracker per project and per workspace (configurable cap). `tokens.db` + `token_usage` tool provide the primitives; budget policy + UI alerts + cross-project aggregation are still to land.
 - Watch mode shows cumulative consumption alongside elapsed time.
@@ -200,16 +209,27 @@ Design spec: [`docs/architecture/workspaces.md`](architecture/workspaces.md)
 
 **Goal**: let multiple MCP clients share one central-mcp instance and receive dispatch completions via push rather than polling.
 
-💭 **Lazy daemon**
+✅ **Cross-process dispatch state** (shipped 0.10.9 — the first shared-state primitive)
+- `~/.central-mcp/dispatches.db` (SQLite). Every dispatch is mirrored to this store on start and on terminal transition; `check_dispatch` / `list_dispatches` fall through to it when the caller's in-memory `_dispatches` dict doesn't have the record. In-memory state still wins for the originating process (free, no I/O).
+- **Concrete bug this fixed**: when the orchestrator dispatches on its own stdio child and then spawns a sub-agent (e.g. Codex `spawn_agent`) to poll, the sub-agent's central-mcp was a *different* process with an empty dict — so `check_dispatch` returned `"no dispatch with id <X>"` even though the parent had just started it. Now the sub-agent reads the shared store and sees it.
+- **Impact on Phase 6 motivation**: the "daemon is the only way to share state across stdio clients" argument is weaker now — SQLite + jsonl already cover cross-process *state* (not *push*). Push notifications remain the real open problem.
+- **Next milestone**: broaden validation beyond Codex (Claude Code sub-agents, Gemini, opencode) to confirm no regressions.
+
+📋 **Push notifications — blocked on MCP client support**
+- Research (Anthropic forum + Codex issue #16159) confirmed no MCP client currently surfaces server-initiated `notifications/resources/updated` events to the LLM turn. Even with a correctly-implemented server, the data never reaches the model, so "the dispatch finished" cannot be proactively reported in-conversation. Rolling our own push scheme won't help until clients propagate it.
+- Tracking the upstream state in `docs/architecture/` (TBD); revisit when a client publicly commits to forwarding notifications.
+
+💭 **Lazy daemon** (keep as an option, not a prerequisite)
 - First MCP connection spawns a background daemon, holds PID lock at `~/.central-mcp/daemon.pid`.
 - Unix socket at `~/.central-mcp/daemon.sock` (localhost TCP fallback for Windows).
 - stdio `central-mcp serve` auto-detects daemon and proxies — clients keep their current config.
+- With cross-process state already solved by 0.10.9, the remaining daemon wins are (a) fewer Python process launches (fastmcp cold-start is ~150ms), (b) centralized logging, (c) a single place to run pre-work like session scanners.
 
-💭 **MCP resource subscriptions**
+💭 **MCP resource subscriptions** (downstream of push-notification breakthrough)
 - `dispatch://<project>/events` — stream of event objects.
 - `resources/subscribe` support → server pushes `notifications/resources/updated` on completion.
 - Backed by the same jsonl written in Phase 1 (no schema duplication).
-- Eliminates background polling loops in orchestrators; any agent gets completions automatically.
+- Only worth building once at least one MCP client commits to forwarding notifications.
 
 💭 **Commands** (power users only)
 - `central-mcp daemon {start|stop|status|logs|restart}`
