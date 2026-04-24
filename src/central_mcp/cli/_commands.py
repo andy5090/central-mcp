@@ -821,7 +821,7 @@ def _maybe_prompt_upgrade() -> None:
     """Startup-time version probe.
 
     Checks PyPI at most once per `upgrade_check_interval_hours` (default
-    24h), asks the user to upgrade when a newer release is out. Every
+    4h), asks the user to upgrade when a newer release is out. Every
     failure path is silent — this must never block startup on flaky
     networks, non-TTY shells, or missing binaries. Controlled by
     `[user].upgrade_check_enabled` in config.toml.
@@ -1206,7 +1206,10 @@ def cmd_run(args: argparse.Namespace) -> int:
     elif flags:
         argv.extend(flags)
 
+    from central_mcp import upgrade
+    installed_ver = upgrade.installed_version() or "source"
     source_suffix = f"  [{source}]" if source else ""
+    print(f"central-mcp  : {installed_ver}")
     print(f"orchestrator : {label} ({binary}){source_suffix}")
     print(f"launch cwd   : {launch_dir}")
     if len(argv) > 1:

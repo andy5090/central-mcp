@@ -3,6 +3,17 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.10.10] — 2026-04-24
+
+### Added
+- **Installed version printed at startup.** `central-mcp run` now prints a `central-mcp  : X.Y.Z` line above the orchestrator summary so you always know which build you're launching. Shows `source` for editable installs where `importlib.metadata` has no distribution record.
+
+### Changed
+- **Upgrade-probe default interval 24h → 4h.** During the current high-release-cadence period (several patches per day), a 24h gate meant users could miss morning fixes until the next day. 4h catches same-day releases within one or two work-session restarts while still skipping the probe on rapid consecutive launches. Existing installs pick this up automatically — the default lives in code, not in `config.toml`. Users who prefer the old cadence can set `[user].upgrade_check_interval_hours = 24`.
+- **CLI help text updated** for `central-mcp run` and `central-mcp upgrade` to document the startup version banner and the automatic PyPI probe. `run --help` now calls out `[user].upgrade_check_enabled` and `[user].upgrade_check_interval_hours`; `upgrade --help` notes that the auto-probe covers the common path and this subcommand is the out-of-band entry point.
+
+---
+
 ## [0.10.9] — 2026-04-24
 
 ### Fixed

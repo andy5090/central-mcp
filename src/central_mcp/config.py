@@ -108,7 +108,7 @@ def upgrade_check_interval_hours() -> int:
     """Minimum hours between PyPI version probes. Default: 24."""
     user = _read().get("user") or {}
     try:
-        return max(1, int(user.get("upgrade_check_interval_hours") or 24))
+        return max(1, int(user.get("upgrade_check_interval_hours") or 4))
     except (TypeError, ValueError):
         return 24
 

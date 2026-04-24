@@ -61,7 +61,7 @@ class TestConfigHelpers:
         assert _cfg.upgrade_check_enabled() is False
 
     def test_interval_default(self, fake_home: Path) -> None:
-        assert _cfg.upgrade_check_interval_hours() == 24
+        assert _cfg.upgrade_check_interval_hours() == 4
 
     def test_interval_custom(self, fake_home: Path) -> None:
         import tomlkit
@@ -111,7 +111,7 @@ class TestMaybePromptUpgrade:
     def test_skip_when_recently_checked(
         self, fake_home: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # Pretend we checked 1 hour ago with 24h interval.
+        # Pretend we checked 1 hour ago with the default 4h interval.
         fresh = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(
             timespec="seconds"
         )
