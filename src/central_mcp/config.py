@@ -93,6 +93,38 @@ def orchestrator_default() -> str | None:
     return str(val) if val else None
 
 
+def upgrade_check_enabled() -> bool:
+    """Whether `central-mcp run` / `central-mcp up` should probe PyPI on
+    launch for a newer release. Default: True. Turn off with
+    `[user].upgrade_check_enabled = false` in config.toml — e.g. on
+    restricted networks or in CI.
+    """
+    user = _read().get("user") or {}
+    v = user.get("upgrade_check_enabled")
+    return True if v is None else bool(v)
+
+
+def upgrade_check_interval_hours() -> int:
+    """Minimum hours between PyPI version probes. Default: 24."""
+    user = _read().get("user") or {}
+    try:
+        return max(1, int(user.get("upgrade_check_interval_hours") or 24))
+    except (TypeError, ValueError):
+        return 24
+
+
+def upgrade_last_checked_at() -> str | None:
+    user = _read().get("user") or {}
+    val = user.get("upgrade_last_checked_at")
+    return str(val) if val else None
+
+
+def set_upgrade_last_checked_at(ts_iso: str) -> None:
+    doc = _read()
+    _get_table(doc, "user")["upgrade_last_checked_at"] = ts_iso
+    _write(doc)
+
+
 def orchestrator_fallback_enabled() -> bool:
     """Whether `central-mcp run` should automatically try other installed
     orchestrators when the primary is over quota. Default: True.

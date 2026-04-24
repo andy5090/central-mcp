@@ -109,6 +109,27 @@ def _upgrade_command() -> list[str]:
     return [sys.executable, "-m", "pip", "install", "--upgrade", PACKAGE]
 
 
+def check_available_silent(timeout: float = 2.0) -> tuple[str, str] | None:
+    """Non-fatal "is there a newer release?" probe.
+
+    Returns `(current, latest)` when an upgrade is available, `None`
+    otherwise (up-to-date, network error, or running from source so
+    `installed_version()` is None). Swallows every exception — a
+    failed probe must never block startup. The short default timeout
+    keeps `cmcp run` from stalling on flaky networks.
+    """
+    try:
+        cur = installed_version()
+        if not cur:
+            return None
+        latest = latest_version(timeout=timeout)
+        if _parse(cur) >= _parse(latest):
+            return None
+        return cur, latest
+    except Exception:
+        return None
+
+
 def run(check_only: bool = False) -> int:
     cur = installed_version()
     if cur is None:

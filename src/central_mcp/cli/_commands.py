@@ -817,6 +817,80 @@ def cmd_unalias(args: argparse.Namespace) -> int:
 
 # ---------- run / orchestrator picker ----------
 
+def _maybe_prompt_upgrade() -> None:
+    """Startup-time version probe.
+
+    Checks PyPI at most once per `upgrade_check_interval_hours` (default
+    24h), asks the user to upgrade when a newer release is out. Every
+    failure path is silent — this must never block startup on flaky
+    networks, non-TTY shells, or missing binaries. Controlled by
+    `[user].upgrade_check_enabled` in config.toml.
+    """
+    if not user_config.upgrade_check_enabled():
+        return
+    # Only prompt in interactive shells — scripted runs should not
+    # block on Y/n.
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        return
+
+    from datetime import datetime, timezone, timedelta
+    last = user_config.upgrade_last_checked_at()
+    if last:
+        try:
+            last_dt = datetime.fromisoformat(last.replace("Z", "+00:00"))
+            interval = timedelta(hours=user_config.upgrade_check_interval_hours())
+            if datetime.now(timezone.utc) - last_dt < interval:
+                return           # checked recently; skip
+        except Exception:
+            pass   # unparseable timestamp → treat as never-checked
+
+    from central_mcp import upgrade
+    result = upgrade.check_available_silent(timeout=2.0)
+
+    # Record the attempt (success or up-to-date) so we don't probe
+    # again this interval.
+    try:
+        user_config.set_upgrade_last_checked_at(
+            datetime.now(timezone.utc).isoformat(timespec="seconds")
+        )
+    except Exception:
+        pass
+
+    if result is None:
+        return                    # up to date, or offline, or pre-install
+    cur, latest = result
+
+    print(
+        f"\ncentral-mcp {latest} is available (you have {cur}).",
+        file=sys.stderr,
+    )
+    print(
+        "Upgrade now? [Y/n] (Enter = yes, 'n' to skip, edit "
+        "`config.toml [user].upgrade_check_enabled = false` to silence)",
+        end="",
+        file=sys.stderr,
+    )
+    try:
+        raw = input().strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print(file=sys.stderr)
+        return
+    if raw and raw not in ("y", "yes", ""):
+        return                    # declined — skip
+
+    print(file=sys.stderr)
+    # Hand off to the existing upgrade flow. It spawns `uv tool install`
+    # (or pip) synchronously; on success the user should re-run
+    # `cmcp run` on the new binary, so we exit after.
+    rc = upgrade.run(check_only=False)
+    if rc == 0:
+        print(
+            "\nupgrade complete — please re-run your command on the new version.",
+            file=sys.stderr,
+        )
+        raise SystemExit(0)
+
+
 def _detect_installed() -> list[tuple[str, str, str]]:
     return [(k, b, label) for k, b, label in ORCHESTRATORS if shutil.which(b)]
 
@@ -1007,6 +1081,7 @@ def _prompt_choice(installed: list[tuple[str, str, str]]) -> tuple[str, str, str
 def cmd_run(args: argparse.Namespace) -> int:
     _ensure_default_registry()
     user_config.ensure_initialized()
+    _maybe_prompt_upgrade()
     _maybe_auto_install()
     installed = _detect_installed()
     if not installed:

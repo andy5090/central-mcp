@@ -3,6 +3,19 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.10.7] — 2026-04-24
+
+### Added
+- **Startup upgrade probe** — `central-mcp run` now probes PyPI at launch (at most once per 24h) and, when a newer release is out, offers to upgrade interactively with a simple Y/n prompt. Declined prompts are remembered for the interval window so users aren't nagged every invocation. Every failure path (network error, non-TTY shell, not-yet-installed from source) is silent — this never blocks startup. Controlled by:
+  ```toml
+  [user]
+  upgrade_check_enabled         = true    # default true; set false to disable
+  upgrade_check_interval_hours  = 24      # default 24
+  ```
+- `upgrade.check_available_silent(timeout)` helper for reuse (short-timeout, exception-swallowing probe that returns `(current, latest)` or `None`).
+
+---
+
 ## [0.10.6] — 2026-04-24
 
 ### Fixed
