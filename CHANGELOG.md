@@ -3,6 +3,22 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.10.9] — 2026-04-24
+
+### Fixed
+- **Sub-agent polling no longer reports "no dispatch with id"** when the orchestrator dispatches from one central-mcp stdio session and then spawns a sub-agent (e.g. Codex `spawn_agent`) to poll on its behalf. Until now each MCP stdio connection got its own central-mcp process with a private in-memory `_dispatches` dict, so the sub-agent's central-mcp had no record of the dispatch even though the parent's did. The real-world symptom was `check_dispatch("abc12345") → "no dispatch with id 'abc12345'"` from the polling sub-agent even though the parent had just started it. This broke the sub-agent-based "non-blocking wait" pattern Codex users rely on.
+
+### Added
+- `central_mcp.dispatches_db` — shared dispatch state at `~/.central-mcp/dispatches.db` (SQLite). One row per dispatch, overwritten on each state transition (`running → complete/error/cancelled/timeout`). Writes are best-effort (swallowed on failure); in-memory state still wins for the originating process (free, no I/O) and the DB serves as the authoritative cross-process fallback. `check_dispatch` and `list_dispatches` now consult it automatically when the record isn't in the caller's in-memory dict.
+
+### Scope
+- Intentionally Codex-first: every dispatch created by any agent is mirrored to the DB (the store is agent-agnostic), but the explicit motivation is the Codex `spawn_agent` polling pattern that surfaced this bug. Other agents (Claude Code, Gemini, opencode) already work fine via in-memory state when the same central-mcp handles both the dispatch and the polls; they inherit the new cross-process read-through for free and won't regress. Broader testing across agents is the next milestone.
+
+### Notes for existing installs
+- No runtime-doc changes (no need to remove `~/.central-mcp/{CLAUDE,AGENTS}.md`). The DB file at `~/.central-mcp/dispatches.db` is created lazily on first dispatch; delete it any time to reset shared state.
+
+---
+
 ## [0.10.8] — 2026-04-24
 
 ### Changed

@@ -27,7 +27,7 @@ from typing import Any
 from fastmcp import FastMCP
 
 from central_mcp import config as user_config
-from central_mcp import events, paths, tokens_db
+from central_mcp import dispatches_db, events, paths, tokens_db
 from central_mcp.adapters import get_adapter
 from central_mcp.adapters.base import VALID_AGENTS, VALID_PERMISSION_MODES
 from central_mcp.registry import (
@@ -779,6 +779,10 @@ def _launch_dispatch(
         with _dispatch_lock:
             entry["status"] = final_status
             entry["result"] = final_result
+        # Persist the terminal state so other central-mcp processes
+        # (notably sub-agents the orchestrator spawned for polling) see
+        # the completion.
+        dispatches_db.upsert_finished(dispatch_id, final_status, final_result)
 
         # Condense the final stdout into a tail preview that rides on
         # both the terminal event and the timeline milestone. This is
@@ -836,6 +840,10 @@ def _launch_dispatch(
 
     with _dispatch_lock:
         _dispatches[dispatch_id] = entry
+    # Mirror to the cross-process shared state so sub-agents spawned by
+    # the orchestrator (which get their own central-mcp stdio process)
+    # can see this dispatch via `check_dispatch`.
+    dispatches_db.upsert_started(entry)
 
     events.log_event(
         project.name, dispatch_id, "start",
@@ -970,6 +978,11 @@ def check_dispatch(dispatch_id: str) -> dict[str, Any]:
     """
     with _dispatch_lock:
         entry = _dispatches.get(dispatch_id)
+    # Cross-process fallback: if this central-mcp instance didn't start
+    # the dispatch (e.g. a sub-agent spawned by the orchestrator has
+    # its own stdio child), look the id up in the shared SQLite store.
+    if entry is None:
+        entry = dispatches_db.get(dispatch_id)
     if entry is None:
         return {"ok": False, "error": f"no dispatch with id {dispatch_id!r}"}
     if entry["status"] == "running":
@@ -991,18 +1004,35 @@ def check_dispatch(dispatch_id: str) -> dict[str, Any]:
 
 @mcp.tool()
 def list_dispatches() -> list[dict[str, Any]]:
-    """List all active and recently completed background dispatches."""
+    """List all active and recently completed background dispatches,
+    including those started by other central-mcp processes (shared
+    state via `~/.central-mcp/dispatches.db`).
+    """
+    seen: set[str] = set()
+    result: list[dict[str, Any]] = []
+    # In-memory entries first (owning process — has freshest state).
     with _dispatch_lock:
-        return [
-            {
+        for e in _dispatches.values():
+            seen.add(e["id"])
+            result.append({
                 "dispatch_id": e["id"],
                 "project": e["project"],
                 "agent": e["agent"],
                 "status": e["status"],
                 "elapsed_sec": round(time.time() - e["started"], 1),
-            }
-            for e in _dispatches.values()
-        ]
+            })
+    # Then shared-state entries we don't already have locally.
+    for e in dispatches_db.list_all(limit=200):
+        if e["id"] in seen:
+            continue
+        result.append({
+            "dispatch_id": e["id"],
+            "project": e["project"],
+            "agent": e["agent"],
+            "status": e["status"],
+            "elapsed_sec": round(time.time() - e["started"], 1),
+        })
+    return result
 
 
 @mcp.tool()
