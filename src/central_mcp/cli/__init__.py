@@ -171,11 +171,12 @@ def build_parser() -> argparse.ArgumentParser:
         "upgrade",
         help="check PyPI for a newer central-mcp and upgrade via uv (or pip fallback)",
         description=(
-            "Manual upgrade entry point. `central-mcp run` already probes PyPI "
-            "at startup (every 4h by default) and offers an interactive Y/n "
-            "prompt; use this subcommand when you want to check or upgrade "
-            "out-of-band. Uses `uv tool install` when available, falling back "
-            "to `pip install --upgrade`."
+            "Manual upgrade entry point. `central-mcp run` already probes "
+            "PyPI on every launch and offers a picker when a newer release "
+            "is available; use this subcommand when you want to check or "
+            "upgrade out-of-band, or when you've silenced the auto-probe. "
+            "Uses `uv tool install` when available, falling back to `pip "
+            "install --upgrade`."
         ),
     )
     p_upgrade.add_argument(
@@ -444,10 +445,10 @@ def build_parser() -> argparse.ArgumentParser:
         description=(
             "Launch a coding-agent CLI (claude / codex / gemini / opencode) as "
             "the orchestrator. On startup, central-mcp prints its own version "
-            "above the orchestrator summary and, at most once every "
-            "[user].upgrade_check_interval_hours (default 4h), probes PyPI for "
-            "a newer release and offers an interactive Y/n upgrade. Silence the "
-            "probe with `[user].upgrade_check_enabled = false` in config.toml."
+            "above the orchestrator summary and probes PyPI for a newer "
+            "release on every launch (interactive picker, 2s timeout, silent "
+            "on failure). Silence the probe with "
+            "`[user].upgrade_check_enabled = false` in config.toml."
         ),
     )
     p_run.add_argument(

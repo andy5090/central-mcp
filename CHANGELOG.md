@@ -3,6 +3,23 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.10.13] — 2026-04-25
+
+### Changed
+- **Upgrade prompt is now an arrow-key picker, not a `[Y/n]` text input.** When a newer release is available at startup, `central-mcp run` shows a two-option picker (`Upgrade now` / `Skip`) using the same `_arrow_select` flow that powers `--pick`. ↑/↓ to move, Enter to select, Esc/q to cancel — no typed answer required.
+- **The config-silence guidance moved off the prompt line into a description sub-line.** `Set [user].upgrade_check_enabled = false in config.toml to silence this prompt.` is now rendered in dim style under the prompt — informational, not part of the action vocabulary.
+- **Probe runs on every interactive launch.** The 4-hour interval gate (introduced in 0.10.10) is gone. The probe is bounded by a 2s timeout and silent on failure, so the per-launch cost is negligible. Catching a same-session release is more valuable than the saved network call. Removed `[user].upgrade_check_interval_hours` and `[user].upgrade_last_checked_at` from config.toml — both are obsolete.
+
+### Added
+- **ANSI color in every picker.** `_arrow_select` (used by the orchestrator picker, the multiplexer picker, and the new upgrade picker) now renders the prompt in bold, the description / key-hint in dim, and the selected option in bold cyan. Color is suppressed when stdout is not a TTY or when the de-facto `NO_COLOR` env var is set, so piped output and CI logs stay clean.
+- `description` keyword argument on `_arrow_select` for the dim sub-line use case.
+- `_color_enabled()` helper + `_Palette` class for any other CLI surface that wants to opt into the same color rules later.
+
+### Notes for existing installs
+- If you had `upgrade_check_interval_hours = 6` (or similar) in `~/.central-mcp/config.toml`, it is now ignored — leave it for forward compatibility or remove it. `upgrade_check_enabled = false` still works exactly as before for users who want to disable the probe entirely.
+
+---
+
 ## [0.10.12] — 2026-04-25
 
 ### Fixed

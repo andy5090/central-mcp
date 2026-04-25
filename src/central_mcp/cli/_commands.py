@@ -186,10 +186,35 @@ def _detect_multiplexers() -> list[tuple[str, str]]:
     return [(name, binary) for name, binary in MULTIPLEXERS if shutil.which(binary)]
 
 
+def _color_enabled() -> bool:
+    """Whether to emit ANSI color escapes.
+
+    Off when stdout is not a TTY (piped output, CI logs) or when the
+    user has set NO_COLOR (the de-facto opt-out, see no-color.org).
+    """
+    if os.environ.get("NO_COLOR"):
+        return False
+    return sys.stdout.isatty()
+
+
+# Module-level so callers (and tests) can read the same palette helpers
+# without re-deriving the truthy/empty strings every call.
+class _Palette:
+    __slots__ = ("bold", "dim", "cyan", "reset")
+
+    def __init__(self, enabled: bool) -> None:
+        self.bold  = "\x1b[1m"  if enabled else ""
+        self.dim   = "\x1b[2m"  if enabled else ""
+        self.cyan  = "\x1b[36m" if enabled else ""
+        self.reset = "\x1b[0m"  if enabled else ""
+
+
 def _arrow_select(
     prompt: str,
     labels: list[str],
     default: int = 0,
+    *,
+    description: str | None = None,
 ) -> int:
     """Interactive arrow-key picker. Returns the chosen index.
 
@@ -198,8 +223,16 @@ def _arrow_select(
     `default`). Falls back to the legacy numbered-input flow when
     stdin/stdout aren't interactive or termios isn't available
     (Windows native, piped input).
+
+    `description` (optional): a sub-line printed under the prompt in
+    dim style — use it for non-actionable hints like "set X in
+    config.toml to silence this".
+
+    Renders with ANSI color when stdout is a TTY and NO_COLOR isn't
+    set: prompt is bold, description and key hint are dim, the
+    selected option is bold-cyan. Codes are silently dropped on
+    non-color terminals.
     """
-    import sys
     # Fallback path: non-TTY environments or platforms without termios.
     try:
         import termios  # noqa: F401  (POSIX only — ImportError on Windows)
@@ -208,8 +241,12 @@ def _arrow_select(
     except ImportError:
         tty_ok = False
 
+    pal = _Palette(_color_enabled())
+
     if not tty_ok:
-        print(prompt)
+        print(f"{pal.bold}{prompt}{pal.reset}")
+        if description:
+            print(f"{pal.dim}{description}{pal.reset}")
         for i, label in enumerate(labels, 1):
             print(f"  {i}. {label}")
         while True:
@@ -230,8 +267,10 @@ def _arrow_select(
     # Interactive cbreak path.
     fd = sys.stdin.fileno()
     old = termios.tcgetattr(fd)
-    print(prompt)
-    print("(↑/↓ to move, Enter to select, Esc/q to cancel)")
+    print(f"{pal.bold}{prompt}{pal.reset}")
+    if description:
+        print(f"{pal.dim}{description}{pal.reset}")
+    print(f"{pal.dim}(↑/↓ to move, Enter to select, Esc/q to cancel){pal.reset}")
     selected = default
     first = True
     try:
@@ -239,7 +278,9 @@ def _arrow_select(
         sys.stdout.write("\x1b[?25l")   # hide cursor
         while True:
             if not first:
-                # Move cursor up N lines to repaint the list.
+                # Move cursor up N lines to repaint the list. Header lines
+                # (prompt / description / hint) are printed once and stay
+                # above the redraw window.
                 sys.stdout.write(f"\x1b[{len(labels)}A")
             first = False
             for i, label in enumerate(labels):
@@ -248,7 +289,9 @@ def _arrow_select(
                 # \x1b[K clears the rest of the line in case the
                 # previous frame had a longer label at this index.
                 if i == selected:
-                    sys.stdout.write(f"\r\x1b[K\x1b[1m{line}\x1b[0m\n")
+                    sys.stdout.write(
+                        f"\r\x1b[K{pal.bold}{pal.cyan}{line}{pal.reset}\n"
+                    )
                 else:
                     sys.stdout.write(f"\r\x1b[K{line}\n")
             sys.stdout.flush()
@@ -819,67 +862,44 @@ def cmd_unalias(args: argparse.Namespace) -> int:
 # ---------- run / orchestrator picker ----------
 
 def _maybe_prompt_upgrade() -> None:
-    """Startup-time version probe.
+    """Startup-time version probe — runs on every interactive launch.
 
-    Checks PyPI at most once per `upgrade_check_interval_hours` (default
-    4h), asks the user to upgrade when a newer release is out. Every
-    failure path is silent — this must never block startup on flaky
-    networks, non-TTY shells, or missing binaries. Controlled by
-    `[user].upgrade_check_enabled` in config.toml.
+    Probes PyPI on every `central-mcp run`. The check is bounded by a
+    short timeout (2s) and silent on every failure path (network down,
+    non-TTY shell, not yet installed from source) so startup is never
+    blocked. The picker is only shown when a newer release is actually
+    available. Controlled by `[user].upgrade_check_enabled` in
+    config.toml — set to false to disable entirely.
     """
     if not user_config.upgrade_check_enabled():
         return
     # Only prompt in interactive shells — scripted runs should not
-    # block on Y/n.
+    # block on a picker.
     if not (sys.stdin.isatty() and sys.stdout.isatty()):
         return
 
-    from datetime import datetime, timezone, timedelta
-    last = user_config.upgrade_last_checked_at()
-    if last:
-        try:
-            last_dt = datetime.fromisoformat(last.replace("Z", "+00:00"))
-            interval = timedelta(hours=user_config.upgrade_check_interval_hours())
-            if datetime.now(timezone.utc) - last_dt < interval:
-                return           # checked recently; skip
-        except Exception:
-            pass   # unparseable timestamp → treat as never-checked
-
     from central_mcp import upgrade
     result = upgrade.check_available_silent(timeout=2.0)
-
-    # Record the attempt (success or up-to-date) so we don't probe
-    # again this interval.
-    try:
-        user_config.set_upgrade_last_checked_at(
-            datetime.now(timezone.utc).isoformat(timespec="seconds")
-        )
-    except Exception:
-        pass
-
     if result is None:
         return                    # up to date, or offline, or pre-install
     cur, latest = result
 
-    print(
-        f"\ncentral-mcp {latest} is available (you have {cur}).",
-        file=sys.stderr,
-    )
-    print(
-        "Upgrade now? [Y/n] (Enter = yes, 'n' to skip, edit "
-        "`config.toml [user].upgrade_check_enabled = false` to silence)",
-        end="",
-        file=sys.stderr,
-    )
+    print(file=sys.stderr)        # spacer above the picker
     try:
-        raw = input().strip().lower()
+        choice = _arrow_select(
+            prompt=f"central-mcp {latest} is available (you have {cur}).",
+            description=(
+                "Set `[user].upgrade_check_enabled = false` in config.toml "
+                "to silence this prompt."
+            ),
+            labels=["Upgrade now", "Skip"],
+            default=0,
+        )
     except (EOFError, KeyboardInterrupt):
         print(file=sys.stderr)
         return
-    if raw and raw not in ("y", "yes", ""):
+    if choice != 0:
         return                    # declined — skip
-
-    print(file=sys.stderr)
     # Hand off to the existing upgrade flow. It spawns `uv tool install`
     # (or pip) synchronously; on success the user should re-run
     # `cmcp run` on the new binary, so we exit after.
