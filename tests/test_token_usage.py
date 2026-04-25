@@ -109,6 +109,34 @@ class TestTokenUsageTool:
         r = server.token_usage(period="all", workspace="w1")
         assert set(r["breakdown"].keys()) == {"p2"}
 
+    def test_orchestrator_session_tokens_use_ORCHESTRATOR_key(
+        self, fake_home: Path
+    ) -> None:
+        """Tokens with NULL project (orchestrator-side usage) surface
+        under the explicit `ORCHESTRATOR` key, always first in the
+        breakdown for stable rendering order."""
+        _cfg.set_user_timezone("UTC")
+        # Mix of project-attached and orchestrator-only rows.
+        tokens_db.record(ts=_utc_now_iso(), project="zproj", agent="claude",
+                         source="dispatch", dispatch_id="dx",
+                         total_tokens=100)
+        tokens_db.record(ts=_utc_now_iso(), project=None, agent="claude",
+                         source="orchestrator",
+                         session_id="s1", request_id="r1",
+                         total_tokens=999)
+        tokens_db.record(ts=_utc_now_iso(), project="aproj", agent="claude",
+                         source="dispatch", dispatch_id="d1",
+                         total_tokens=50)
+
+        r = server.token_usage(period="all", include_quota=False)
+        # ORCHESTRATOR key replaces the legacy empty-string bucket.
+        assert "ORCHESTRATOR" in r["breakdown"]
+        assert "" not in r["breakdown"]
+        assert r["breakdown"]["ORCHESTRATOR"]["orchestrator"] == 999
+        # And it's emitted first so dict-iteration order is the
+        # stable rendering hint.
+        assert next(iter(r["breakdown"])) == "ORCHESTRATOR"
+
     def test_orchestration_history_no_longer_returns_tokens(
         self, seed: Path
     ) -> None:

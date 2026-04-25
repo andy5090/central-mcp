@@ -3,6 +3,21 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.10.15] — 2026-04-26
+
+### Fixed
+- **Claude Code subscription quota now detected on macOS.** Recent Claude Code CLI versions stash OAuth credentials in the macOS user keychain (`Claude Code-credentials`) instead of `~/.claude/.credentials.json`. Our quota probe only read the file, so subscription users on macOS always saw `mode: "api_key"` and "no subscription quota" — completely missing their 5h / 7d windows. We now fall back to `security find-generic-password -s "Claude Code-credentials" -w` whenever the file is absent, transparently. Linux/Windows behavior is unchanged.
+- **Codex quota: `id_token` is tried first, falling back to `access_token` on auth failure.** The `chatgpt.com/api/codex/usage` endpoint accepts the OAuth `id_token` as the bearer credential in current Codex CLI versions; older builds used the access token. Forcing access-only meant ChatGPT-mode users started getting `HTTP 403 Forbidden` after Codex CLI updates and saw "quota probe failed HTTP 403" with no actionable hint. The new flow tries `id_token` → `access_token` → falls through to the legacy access-only behavior, and surfaces a friendlier message when both fail (`tokens may be expired; run codex login to refresh`).
+
+### Changed
+- **Orchestrator-session tokens get an explicit `ORCHESTRATOR` bucket.** When `group_by="project"`, tokens with no associated project (orchestrator-side usage from things like the central-mcp orchestrator session itself) used to land under the empty-string key in `breakdown`. Consumers like the orchestrator LLM had no good label for it and surfaced rows like `orchestrator/unclassified` to the user. The aggregator now emits this bucket as `"ORCHESTRATOR"` (uppercase, distinct from any real project name) and inserts it first in the breakdown, so dict-iteration order is the rendering hint. Runtime guidance in `data/CLAUDE.md` / `data/AGENTS.md` updated to tell the orchestrator to render this row at the top of project lists with the literal label.
+
+### Notes for existing installs
+- Runtime docs (`~/.central-mcp/{CLAUDE,AGENTS}.md`) auto-sync on next `central-mcp run`.
+- macOS users who previously saw "API key mode — no subscription quota" should now see real `five_hour` / `seven_day` numbers in `token_usage` after upgrading.
+
+---
+
 ## [0.10.14] — 2026-04-25
 
 ### Added

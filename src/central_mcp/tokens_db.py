@@ -265,6 +265,12 @@ def aggregate(
     breakdown: dict[str, dict[str, int]] = {}
     for r in rows:
         key = r["grp"]
+        # Orchestrator-session tokens have NULL project (COALESCEd to '');
+        # surface them under an explicit, capitalized key so consumers
+        # don't have to guess what the empty string means and can render
+        # the row distinctly from real project names.
+        if group_by == "project" and key == "":
+            key = "ORCHESTRATOR"
         entry = breakdown.setdefault(key, {
             "dispatch": 0, "orchestrator": 0, "total": 0,
             "input": 0, "output": 0,
@@ -274,6 +280,17 @@ def aggregate(
         entry["output"] += int(r["output_sum"] or 0)
     for v in breakdown.values():
         v["total"] = v["dispatch"] + v["orchestrator"]
+
+    # Pin ORCHESTRATOR to the top of the breakdown — Python dicts
+    # preserve insertion order so this is the rendering hint to clients.
+    if "ORCHESTRATOR" in breakdown:
+        ordered: dict[str, dict[str, int]] = {
+            "ORCHESTRATOR": breakdown["ORCHESTRATOR"],
+        }
+        for k, v in breakdown.items():
+            if k != "ORCHESTRATOR":
+                ordered[k] = v
+        breakdown = ordered
 
     total: dict[str, int] = {"dispatch": 0, "orchestrator": 0, "total": 0,
                              "input": 0, "output": 0}

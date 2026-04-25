@@ -24,7 +24,27 @@ class TestClaudeFetch:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(claude_q, "_cred_path", lambda: tmp_path / "missing.json")
+        # Disable keychain fallback too — on macOS dev machines the real
+        # keychain may carry a token, which would defeat this test.
+        monkeypatch.setattr(claude_q, "_read_token_from_keychain", lambda: None)
         assert claude_q.fetch() == {"mode": "api_key"}
+
+    def test_keychain_fallback_when_file_missing(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """File missing → keychain returns a token → call goes out."""
+        monkeypatch.setattr(claude_q, "_cred_path", lambda: tmp_path / "missing.json")
+        monkeypatch.setattr(
+            claude_q, "_read_token_from_keychain",
+            lambda: "tok-from-keychain",
+        )
+        # Block the HTTP call — we just want to verify the token path.
+        def _boom(*_a, **_k):
+            raise RuntimeError("network disabled in tests")
+        monkeypatch.setattr(claude_q.urllib.request, "urlopen", _boom)
+        result = claude_q.fetch()
+        assert result["mode"] == "pro"
+        assert "error" in result
 
     def test_returns_error_on_malformed_credentials(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -100,7 +120,91 @@ class TestCodexFetch:
         monkeypatch.setattr(codex_q, "_auth_path", lambda: auth)
         result = codex_q.fetch()
         assert result["mode"] == "chatgpt"
-        assert "no access token" in result["error"]
+        assert "no token" in result["error"]
+
+    def test_id_token_used_first_when_present(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        auth = tmp_path / "auth.json"
+        auth.write_text(json.dumps({
+            "auth_mode": "chatgpt",
+            "tokens": {
+                "id_token": "ID-TOKEN",
+                "access_token": "ACCESS-TOKEN",
+                "account_id": "acc-123",
+            },
+        }), encoding="utf-8")
+        monkeypatch.setattr(codex_q, "_auth_path", lambda: auth)
+
+        seen_tokens: list[str] = []
+        def _fake_call(token, account_id):
+            seen_tokens.append(token)
+            return {"plan_type": "plus"}, None
+        monkeypatch.setattr(codex_q, "_try_call", _fake_call)
+
+        result = codex_q.fetch()
+        assert result["mode"] == "chatgpt"
+        # id_token should be tried first; success means we never reach access_token.
+        assert seen_tokens == ["ID-TOKEN"]
+
+    def test_falls_back_to_access_token_on_403(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import urllib.error
+        auth = tmp_path / "auth.json"
+        auth.write_text(json.dumps({
+            "auth_mode": "chatgpt",
+            "tokens": {
+                "id_token": "ID-TOKEN",
+                "access_token": "ACCESS-TOKEN",
+                "account_id": "acc-123",
+            },
+        }), encoding="utf-8")
+        monkeypatch.setattr(codex_q, "_auth_path", lambda: auth)
+
+        seen_tokens: list[str] = []
+        def _fake_call(token, account_id):
+            seen_tokens.append(token)
+            if token == "ID-TOKEN":
+                err = urllib.error.HTTPError(
+                    "https://chatgpt.com/api/codex/usage",
+                    403, "Forbidden", {}, None,
+                )
+                return None, err
+            return {"plan_type": "plus"}, None
+        monkeypatch.setattr(codex_q, "_try_call", _fake_call)
+
+        result = codex_q.fetch()
+        assert result["mode"] == "chatgpt"
+        assert seen_tokens == ["ID-TOKEN", "ACCESS-TOKEN"]
+        assert "raw" in result
+
+    def test_both_403_returns_helpful_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import urllib.error
+        auth = tmp_path / "auth.json"
+        auth.write_text(json.dumps({
+            "auth_mode": "chatgpt",
+            "tokens": {
+                "id_token": "ID-TOKEN",
+                "access_token": "ACCESS-TOKEN",
+                "account_id": "acc-123",
+            },
+        }), encoding="utf-8")
+        monkeypatch.setattr(codex_q, "_auth_path", lambda: auth)
+
+        def _always_403(token, account_id):
+            err = urllib.error.HTTPError(
+                "https://chatgpt.com/api/codex/usage",
+                403, "Forbidden", {}, None,
+            )
+            return None, err
+        monkeypatch.setattr(codex_q, "_try_call", _always_403)
+
+        result = codex_q.fetch()
+        assert result["mode"] == "chatgpt"
+        assert "codex login" in result["error"]
 
 
 # ── gemini ────────────────────────────────────────────────────────────────────

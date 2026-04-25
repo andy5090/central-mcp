@@ -1677,6 +1677,14 @@ def token_usage(
         "window": {"start": ISO, "end": ISO} | {"start": null, "end": null},
         "group_by": "project",
         "breakdown": { key: {dispatch, orchestrator, total, input, output} },
+                                                # When group_by="project",
+                                                # tokens that aren't tied to
+                                                # any registered project
+                                                # (orchestrator-session usage)
+                                                # are bucketed under the
+                                                # special key "ORCHESTRATOR",
+                                                # always emitted first in the
+                                                # breakdown.
         "total": {dispatch, orchestrator, total, input, output},
         "quota": {                              # only when include_quota=True
           "claude": {"mode": "pro",  "five_hour": {"used_pct", "resets_in"},
