@@ -41,16 +41,65 @@ from central_mcp.cli._commands import (
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="central-mcp",
-        description="Orchestrator-agnostic MCP hub for coding agents.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=(
+            "Orchestrator-agnostic MCP hub for coding agents.\n"
+            "\n"
+            "Two entry points — same binary, different roles:\n"
+            "  central-mcp run     launch a coding-agent CLI as the orchestrator\n"
+            "                      (claude / codex / gemini / opencode) with the\n"
+            "                      central-mcp MCP tools auto-loaded. Bare\n"
+            "                      `central-mcp` (no args) is shorthand for this.\n"
+            "  central-mcp serve   run the MCP server on stdio. This is what an\n"
+            "                      MCP client (claude, codex, gemini, opencode)\n"
+            "                      invokes after `central-mcp install <client>`.\n"
+            "\n"
+            "`cmcp` is the default short alias (created by `central-mcp init` or\n"
+            "`central-mcp alias`). All subcommands work under either name."
+        ),
+        epilog=(
+            "Quick-start:\n"
+            "  central-mcp init              # one-time: scaffold registry + alias\n"
+            "  central-mcp install all       # register with every detected MCP client\n"
+            "  cmcp add my-app /path/to/app --agent claude\n"
+            "  cmcp                          # launch orchestrator (= `cmcp run`)\n"
+            "\n"
+            "Observation panes (optional):\n"
+            "  cmcp tmux                     # tmux session: orchestrator + per-project watch\n"
+            "  cmcp zellij                   # same, on zellij\n"
+            "  cmcp watch <project>          # standalone log tail\n"
+            "\n"
+            "Run `central-mcp <subcommand> --help` for subcommand-specific options."
+        ),
     )
     sub = parser.add_subparsers(dest="command")
 
-    p_serve = sub.add_parser("serve", help="run the MCP server on stdio")
+    p_serve = sub.add_parser(
+        "serve",
+        help="run the MCP server on stdio (called by MCP clients, not by hand)",
+        description=(
+            "Run central-mcp as an MCP server on stdio. This is the entry "
+            "point that registered MCP clients (claude / codex / gemini / "
+            "opencode) invoke after `central-mcp install <client>`. You "
+            "don't normally run this by hand — use `central-mcp run` to "
+            "launch an orchestrator session that auto-loads the MCP tools."
+        ),
+    )
     p_serve.set_defaults(func=cmd_serve)
 
     p_up = sub.add_parser(
         "up",
-        help="create the optional tmux observation session (orchestrator + one pane per project)",
+        help="create the tmux observation session (orchestrator + one pane per project)",
+        description=(
+            "Create the tmux observation session for the current workspace "
+            "(`cmcp-<workspace>`). Pane 0 launches the saved orchestrator "
+            "(unless --no-orchestrator); the remaining panes each tail a "
+            "project's dispatch.jsonl via `central-mcp watch <project>`. "
+            "Non-interactive — uses the saved orchestrator preference, no "
+            "picker. For zellij, use `central-mcp zellij` instead. To "
+            "attach interactively (creating the session if needed) use "
+            "`central-mcp tmux`."
+        ),
     )
     p_up.add_argument(
         "--no-orchestrator",
@@ -83,7 +132,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_watch = sub.add_parser(
         "watch",
-        help="stream a project's dispatch event log (used by tmux panes)",
+        help="tail a project's dispatch event log (jsonl)",
+        description=(
+            "Stream events from "
+            "`~/.central-mcp/logs/<project>/dispatch.jsonl` as a "
+            "human-readable summary. Used by observation panes "
+            "(tmux / zellij / cmux), but also useful standalone — "
+            "open a terminal and run it directly to watch a project's "
+            "dispatch activity."
+        ),
     )
     p_watch.add_argument("name", help="project name (must exist in registry)")
     p_watch.add_argument(
@@ -95,7 +152,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_monitor = sub.add_parser(
         "monitor",
-        help="portfolio-wide dashboard: per-agent subscription quota + today's dispatch stats",
+        help="portfolio dashboard: per-agent subscription quota + today's dispatch stats",
+        description=(
+            "Single-screen overview across all registered projects:\n"
+            "  - per-agent subscription quota where central-mcp can\n"
+            "    introspect it (claude only at this time)\n"
+            "  - today's dispatch counts per project\n"
+            "    (success / failure / cancelled)\n"
+            "  - registry summary (orchestrator, project count)\n"
+            "\n"
+            "Read-only snapshot — does not start observation panes."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p_monitor.set_defaults(func=cmd_monitor)
 
@@ -117,7 +185,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_upgrade.set_defaults(func=cmd_upgrade)
 
-    p_down = sub.add_parser("down", help="kill the observation tmux session")
+    p_down = sub.add_parser(
+        "down",
+        help="tear down the observation session(s) (tmux + zellij)",
+        description=(
+            "Tear down all `cmcp-*` observation sessions on both tmux "
+            "and zellij and clear the active-session stamp. Reports each "
+            "backend's outcome so a partially-live state is visible."
+        ),
+    )
     p_down.set_defaults(func=cmd_down)
 
     p_tmux = sub.add_parser(
@@ -184,22 +260,57 @@ def build_parser() -> argparse.ArgumentParser:
                           help="create sessions for all workspaces")
     p_zellij.set_defaults(func=cmd_zellij)
 
-    p_list = sub.add_parser("list", help="print the registry")
+    p_list = sub.add_parser(
+        "list",
+        help="print the registry (project name → agent → path)",
+        description=(
+            "Print every registered project as `name  agent=<adapter>  "
+            "<path>`, in the order the orchestrator sees them. To change "
+            "the order, use `central-mcp reorder`."
+        ),
+    )
     p_list.set_defaults(func=cmd_list)
 
-    p_brief = sub.add_parser("brief", help="print the orchestrator brief")
+    p_brief = sub.add_parser(
+        "brief",
+        help="print the orchestrator brief (markdown summary the orchestrator sees)",
+        description=(
+            "Print the markdown-formatted project brief that the "
+            "orchestrator session opens with — same content as the "
+            "SessionStart hook in `~/.central-mcp/CLAUDE.md` / "
+            "`AGENTS.md`. Useful for previewing what context the "
+            "orchestrator will receive without launching it."
+        ),
+    )
     p_brief.set_defaults(func=cmd_brief)
 
-    p_add = sub.add_parser("add", help="register a new project")
-    p_add.add_argument("name", help="short project identifier")
-    p_add.add_argument("path", help="absolute project path")
+    p_add = sub.add_parser(
+        "add",
+        help="register a new project in the registry",
+        description=(
+            "Add a project to `~/.central-mcp/registry.yaml` so it shows "
+            "up in `list_projects`, observation panes, and dispatches. "
+            "The agent flag picks the coding-agent CLI used when "
+            "central-mcp dispatches work into this project."
+        ),
+    )
+    p_add.add_argument("name", help="short project identifier (used by all MCP tools)")
+    p_add.add_argument("path", help="absolute project path (must exist)")
     p_add.add_argument(
         "--agent",
         default="claude",
-        help="adapter name (claude|codex|gemini|droid|opencode)",
+        help="adapter name: claude | codex | gemini | droid | opencode (default: claude)",
     )
-    p_add.add_argument("--description", default="")
-    p_add.add_argument("--tag", action="append")
+    p_add.add_argument(
+        "--description",
+        default="",
+        help="optional one-line description shown in `list_projects`",
+    )
+    p_add.add_argument(
+        "--tag",
+        action="append",
+        help="optional tag (repeatable) — surfaced in registry queries",
+    )
     p_add.set_defaults(func=cmd_add)
 
     p_remove = sub.add_parser("remove", help="unregister a project")
@@ -251,13 +362,25 @@ def build_parser() -> argparse.ArgumentParser:
     p_install = sub.add_parser(
         "install",
         help="register central-mcp with an MCP client (use `all` to detect + install everywhere)",
+        description=(
+            "Add `central-mcp serve` to the target MCP client's "
+            "configuration so the client auto-spawns it on launch and "
+            "can call its tools (dispatch, list_projects, …). Backs up "
+            "the client config before writing. Use `all` to detect every "
+            "supported client on PATH and install in each. Re-running "
+            "for an already-installed client is a no-op."
+        ),
     )
     p_install.add_argument(
         "client",
         choices=["claude", "codex", "gemini", "opencode", "all"],
         help="target client, or `all` to auto-detect every supported client on PATH",
     )
-    p_install.add_argument("--dry-run", action="store_true")
+    p_install.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="print the planned config edits without writing them",
+    )
     p_install.set_defaults(func=cmd_install)
 
     p_alias = sub.add_parser(
@@ -274,7 +397,26 @@ def build_parser() -> argparse.ArgumentParser:
     p_unalias.add_argument("name", nargs="?", default="cmcp")
     p_unalias.set_defaults(func=cmd_unalias)
 
-    p_ws = sub.add_parser("workspace", help="manage project workspaces")
+    p_ws = sub.add_parser(
+        "workspace",
+        help="manage project workspaces (group projects under named scopes)",
+        description=(
+            "Workspaces are named project groups. The orchestrator\n"
+            "sees only the active workspace's projects by default —\n"
+            "switching workspace re-scopes `list_projects`, observation\n"
+            "panes, and the brief. Each workspace gets its own\n"
+            "`cmcp-<workspace>` tmux/zellij session.\n"
+            "\n"
+            "Subcommands:\n"
+            "  list     show every workspace with project counts\n"
+            "  current  print the active workspace name\n"
+            "  new      create a new empty workspace\n"
+            "  use      switch the active workspace\n"
+            "  add      add a project to a workspace\n"
+            "  remove   remove a project from a workspace"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     ws_sub = p_ws.add_subparsers(dest="workspace_sub")
 
     ws_sub.add_parser("list", help="list workspaces with project counts and active marker")
