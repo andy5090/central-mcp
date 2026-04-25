@@ -13,11 +13,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `token_usage` signature gained `include_quota: bool = True` (opt out for high-frequency polling). Existing callers are forward-compatible — older clients that ignore the new field see no change in behavior.
 
 ### Notes for existing installs
-- Runtime docs (`~/.central-mcp/{CLAUDE,AGENTS}.md`) gained the new `quota` description in the `token_usage` row. Existing installs need to remove their copies to pick up the new bundle:
-  ```bash
-  rm ~/.central-mcp/CLAUDE.md ~/.central-mcp/AGENTS.md
-  ```
-  Without this, the orchestrator won't know about the new `quota` field even though the MCP tool itself returns it.
+- Runtime docs (`~/.central-mcp/{CLAUDE,AGENTS}.md`) gained the new `quota` description in the `token_usage` row. **Auto-synced** — `central-mcp run` / `central-mcp up` overwrites these files when their content differs from the wheel's bundle (since 0.9.3), so the next launch picks up the new guidance with no manual step. (`user.md` is the only file with "scaffold once, never overwrite" semantics; see `_ensure_launch_dir`.)
 - Subscription-quota fetchers reuse existing OAuth credentials at `~/.claude/.credentials.json` and `~/.codex/auth.json`; API-Key users see `mode: "api_key"` (with a `note` explaining no subscription quota applies) and Gemini's entry stays auth-only since Gemini exposes no quota API. No new disk state.
 
 ---
