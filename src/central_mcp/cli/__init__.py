@@ -426,8 +426,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_ws_new = ws_sub.add_parser("new", help="create a new empty workspace")
     p_ws_new.add_argument("ws_name", metavar="NAME")
 
-    p_ws_use = ws_sub.add_parser("use", help="switch the active workspace")
-    p_ws_use.add_argument("ws_name", metavar="NAME")
+    p_ws_use = ws_sub.add_parser(
+        "use",
+        help="switch the active workspace (interactive picker if NAME omitted)",
+    )
+    p_ws_use.add_argument("ws_name", metavar="NAME", nargs="?", default=None)
 
     p_ws_add = ws_sub.add_parser("add", help="add a project to a workspace")
     p_ws_add.add_argument("project", metavar="PROJECT")

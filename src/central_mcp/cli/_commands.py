@@ -1346,7 +1346,12 @@ def _ws_new(name: str) -> int:
         return 1
 
 
-def _ws_use(name: str) -> int:
+def _ws_use(name: str | None) -> int:
+    if name is None:
+        picked = _pick_workspace_interactive()
+        if picked is None:
+            return 1
+        name = picked
     try:
         set_current_workspace(name)
         print(f"switched to workspace: {name}")
@@ -1354,6 +1359,38 @@ def _ws_use(name: str) -> int:
     except ValueError as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
+
+
+def _pick_workspace_interactive() -> str | None:
+    """Show an arrow-key picker over registered workspaces. Returns the
+    chosen name, or None on no workspaces / cancelled selection. The
+    active workspace is marked and pre-selected so plain Enter is a
+    no-op switch.
+    """
+    ws_map = load_workspaces() or {"default": []}
+    active = current_workspace()
+    names = sorted(ws_map.keys())
+    if not names:
+        print("error: no workspaces registered", file=sys.stderr)
+        return None
+
+    # Enriched labels: name + project count + active marker.
+    label_width = max(len(n) for n in names)
+    labels: list[str] = []
+    for n in names:
+        count = len(projects_in_workspace(n))
+        plural = "" if count == 1 else "s"
+        tag = "  [current]" if n == active else ""
+        labels.append(f"{n.ljust(label_width)}  ({count} project{plural}){tag}")
+
+    default_idx = names.index(active) if active in names else 0
+    idx = _arrow_select(
+        prompt="Switch workspace",
+        description="Selecting the active workspace re-scopes list_projects, observation panes, and the brief.",
+        labels=labels,
+        default=default_idx,
+    )
+    return names[idx]
 
 
 def _ws_add_project(project: str, workspace: str) -> int:

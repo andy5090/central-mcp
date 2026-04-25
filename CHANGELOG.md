@@ -3,6 +3,16 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.10.14] — 2026-04-25
+
+### Added
+- **`central-mcp workspace use` (no NAME) opens an arrow-key picker.** Listing workspaces in your head and typing the name was the only path before; now invoking `cmcp workspace use` with no argument shows every registered workspace with its project count and a `[current]` marker on the active one. Picker is the same `_arrow_select` flow the orchestrator / multiplexer / upgrade pickers use, so it inherits the ANSI color treatment from 0.10.13. Pre-selection lands on the active workspace so plain Enter is a no-op switch.
+
+### Notes for existing installs
+- Explicit `cmcp workspace use NAME` still works exactly as before — picker only fires when NAME is omitted. Non-TTY environments fall back to the legacy numbered-input prompt automatically (same fallback path as the other pickers).
+
+---
+
 ## [0.10.13] — 2026-04-25
 
 ### Changed
