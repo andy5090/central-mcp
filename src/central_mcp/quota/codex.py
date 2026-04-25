@@ -14,7 +14,13 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-_USAGE_URL = "https://chatgpt.com/api/codex/usage"
+# Codex CLI's Rust binary calls /backend-api/api/codex/usage on
+# chatgpt.com (verified by `strings` against the shipped binary,
+# 0.125.0). Earlier central-mcp versions targeted
+# https://chatgpt.com/api/codex/usage — that path is missing the
+# `/backend-api` prefix and always returns 403, regardless of token
+# type, even for fully-logged-in ChatGPT-mode users.
+_USAGE_URL = "https://chatgpt.com/backend-api/api/codex/usage"
 
 
 def _auth_path() -> Path:
@@ -35,21 +41,40 @@ def _read_auth() -> dict[str, Any] | None:
 
 def _try_call(token: str, account_id: str) -> tuple[dict[str, Any] | None, Exception | None]:
     """Hit the usage API with the given bearer token. Returns (json, None)
-    on success, (None, exception) on failure. The 403 case is the
-    common "wrong-token-type" signal we use to drive the id-token
-    fallback in `fetch()`.
+    on success, (None, exception) on failure.
+
+    HTTP 401/403 errors keep the response body (decoded as utf-8 best
+    effort) glued onto the exception's args so the caller can surface
+    a concrete reason ("Forbidden" alone is not actionable). 403 is
+    also the signal `fetch()` uses to drive the id-token / access-token
+    fallback chain.
     """
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
     }
     if account_id:
-        headers["chatgpt-account-id"] = account_id
+        # Header name matches the codex CLI's Rust binary
+        # (`ChatGPT-Account-Id`) verified by `strings` against shipped
+        # builds. HTTP headers are case-insensitive, but matching the
+        # canonical casing avoids subtle proxy / WAF surprises.
+        headers["ChatGPT-Account-Id"] = account_id
     try:
         req = urllib.request.Request(_USAGE_URL, headers=headers)
         ctx = ssl.create_default_context()
         with urllib.request.urlopen(req, timeout=8, context=ctx) as resp:
             return json.loads(resp.read()), None
+    except urllib.error.HTTPError as exc:
+        # Capture the response body so the caller can show *why* the
+        # server rejected the request, not just the status code. Body
+        # is short (a few hundred chars) for these error responses.
+        try:
+            body = exc.read().decode("utf-8", errors="replace").strip()
+        except Exception:
+            body = ""
+        if body:
+            exc.args = (f"HTTP {exc.code} {exc.reason}: {body[:300]}",)
+        return None, exc
     except Exception as exc:
         return None, exc
 

@@ -3,6 +3,17 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.10.16] — 2026-04-26
+
+### Fixed
+- **Codex quota: actual root cause of the 403s identified and fixed.** 0.10.15 added an `id_token` → `access_token` fallback after `HTTP 403 Forbidden`, but logged-in ChatGPT-mode users still saw 403 on both attempts. Diagnosed against the shipped Codex CLI 0.125.0 binary (`strings` against the Rust core) — the canonical endpoint is `https://chatgpt.com/backend-api/api/codex/usage`, while we were hitting `https://chatgpt.com/api/codex/usage`. The missing `/backend-api` prefix is what produced the 403, regardless of which token was sent. Path is now corrected; both the `id_token`-first flow and the `access_token` fallback go through the right URL. Header capitalization also normalized from `chatgpt-account-id` to the canonical `ChatGPT-Account-Id` to match the binary's exact wire format and avoid subtle proxy / WAF surprises.
+- **HTTP error responses now carry the server's body in the message.** When the usage API rejects a request, the error string previously read just `HTTP Error 403: Forbidden`. The new `_try_call` catches `HTTPError`, reads its body (best-effort utf-8, capped at 300 chars), and attaches it to the exception so the surfaced error reads `HTTP 403 Forbidden: {"detail":"...real reason..."}`. Makes future regressions self-explaining without needing to instrument `quota/codex.py` again.
+
+### Notes for existing installs
+- Codex ChatGPT-auth users should now see real `primary` / `secondary` window utilization in `token_usage`, no more "quota probe failed HTTP 403". No re-login needed — the existing `~/.codex/auth.json` tokens were always valid; only the URL was wrong on our side.
+
+---
+
 ## [0.10.15] — 2026-04-26
 
 ### Fixed
