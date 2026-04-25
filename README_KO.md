@@ -4,6 +4,10 @@
   <img src="https://raw.githubusercontent.com/andy5090/central-mcp/main/docs/logo.png?v=0.10.0" alt="central-mcp logo" width="280"/>
 </p>
 
+<p align="center">
+  <a href="README.md">English</a> · <strong>한국어</strong>
+</p>
+
 **여러 코딩 에이전트를 관리하는, 코딩 에이전트 비종속 MCP 허브.**
 
 > **멈추지 마세요. 프로젝트마다 에이전트를 병렬로 돌려 처리량을 10배, 100배로 키우세요.**

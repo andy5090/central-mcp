@@ -4,6 +4,10 @@
   <img src="https://raw.githubusercontent.com/andy5090/central-mcp/main/docs/logo.png?v=0.10.0" alt="central-mcp logo" width="280"/>
 </p>
 
+<p align="center">
+  <strong>English</strong> · <a href="README_KO.md">한국어</a>
+</p>
+
 [![PyPI version](https://img.shields.io/pypi/v/central-mcp)](https://pypi.org/project/central-mcp/)
 [![Python](https://img.shields.io/pypi/pyversions/central-mcp)](https://pypi.org/project/central-mcp/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
