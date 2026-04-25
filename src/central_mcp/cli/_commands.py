@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import shutil
 import sys
@@ -1007,15 +1008,47 @@ def _ensure_launch_dir(target: Path) -> None:
         content = _read_packaged(fname)
         if not dest.exists() or dest.read_text() != content:
             dest.write_text(content)
-    # user.md is user-authored — scaffold once, never overwrite.
+    # user.md is no longer scaffolded. The MCP server reads it only
+    # when the user has actually written something via
+    # `update_user_preferences`, so prior installs that still hold the
+    # 0.10.11- template-with-examples are migrated away here:
+    # if the file exists but is essentially template-only (header +
+    # section markers + HTML comment blocks, no real user content),
+    # delete it so the new "user-authored only" model takes effect.
     user_md = target / "user.md"
-    if not user_md.exists():
-        user_md.write_text(_read_packaged("user.md"))
+    if user_md.exists():
+        try:
+            if _is_pristine_user_md(user_md.read_text(encoding="utf-8")):
+                user_md.unlink()
+        except Exception:
+            pass
     settings_dir = target / ".claude"
     settings_dir.mkdir(exist_ok=True)
     settings_file = settings_dir / "settings.json"
     if not settings_file.exists():
         settings_file.write_text(_SETTINGS_JSON)
+
+
+# SHA256 of the user.md template shipped through 0.10.11. Used only by
+# `_is_pristine_user_md` to detect installs that still hold the unedited
+# template so we can clean it up. Once 0.10.12 has been out for several
+# releases, drop this constant and the migration in `_ensure_launch_dir`.
+_USER_MD_0_10_11_SHA256 = (
+    "e9b14b568cdf63c74d49342b47463eaf57efa31843cf3b4d155a3732b7a9b265"
+)
+
+
+def _is_pristine_user_md(text: str) -> bool:
+    """Return True if user.md is empty, whitespace-only, or byte-equal
+    to the unedited 0.10.11 template. Used by `_ensure_launch_dir` to
+    migrate legacy installs to the new "user-authored only" model. Any
+    user-edited file (even a single keystroke) fails the byte match and
+    is preserved.
+    """
+    if not text.strip():
+        return True
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    return digest == _USER_MD_0_10_11_SHA256
 
 
 def _ensure_default_registry() -> bool:

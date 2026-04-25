@@ -269,18 +269,18 @@ to drop to a shell.
 
 
 def _build_mcp_instructions() -> str:
-    """Append user.md to the base instructions when it contains active content.
+    """Append user.md to the base instructions when the user has authored content.
 
     Called once at server start. user.md lands in the MCP system prompt
     (not in regular context), so it persists across context compression.
+    Since 0.10.12 user.md is no longer scaffolded with a template — the
+    file contains user-authored rules only, so any non-empty content is
+    treated as live preferences. Missing or whitespace-only files yield
+    the base instructions unchanged.
     """
     try:
         user_md = (paths.central_mcp_home() / "user.md").read_text(encoding="utf-8")
-        active = [
-            ln for ln in user_md.splitlines()
-            if ln.strip() and not ln.strip().startswith("<!--")
-        ]
-        if active:
+        if user_md.strip():
             return (
                 _MCP_INSTRUCTIONS
                 + "\n\n## Your persistent preferences"
@@ -288,6 +288,8 @@ def _build_mcp_instructions() -> str:
                 + user_md.rstrip()
                 + "\n"
             )
+    except FileNotFoundError:
+        pass
     except Exception:
         pass
     return _MCP_INSTRUCTIONS
@@ -933,8 +935,9 @@ def dispatch(
         of a session_id means a fresh session on every droid dispatch.
 
     **language** (optional): one-shot override for the response language.
-      - A non-empty string (e.g. "Korean", "한국어", "ko") → prepend a
-        "Respond to the user in <language>." directive to the prompt.
+      - A non-empty string (e.g. "Korean", "ko", "Français", "fr") →
+        prepend a "Respond to the user in <language>." directive to the
+        prompt.
       - "" (empty string) → suppress the project's saved language for
         this call (fall back to agent default, usually English) without
         mutating the registry.
@@ -1091,9 +1094,9 @@ def add_project(
     refuse to run in that path.
 
     **language** (optional): preferred response language for dispatches
-    (e.g. "Korean", "한국어", "ko"). When set, every future dispatch
-    prepends "Respond to the user in <language>." to the prompt. Omit
-    or leave empty for the agent's own default (English).
+    (e.g. "Korean", "ko", "Français", "fr"). When set, every future
+    dispatch prepends "Respond to the user in <language>." to the
+    prompt. Omit or leave empty for the agent's own default (English).
 
     **workspace** (optional): if given, also add the project to this workspace.
     """
@@ -1209,9 +1212,10 @@ def update_project(
     response `language` for dispatches.
 
     `language` behavior:
-      - A non-empty string (e.g. "Korean", "한국어", "ko") → every future
-        dispatch prepends "Respond to the user in <language>." to the
-        prompt. One-shot `dispatch(language="...")` still overrides.
+      - A non-empty string (e.g. "Korean", "ko", "Français", "fr") →
+        every future dispatch prepends "Respond to the user in
+        <language>." to the prompt. One-shot `dispatch(language="...")`
+        still overrides.
       - `""` (empty string) → clear the saved language; dispatches fall
         back to the agent's own default (English).
       - `None` (omitted) → leave the saved language untouched.
@@ -1354,6 +1358,31 @@ _USER_MD_SECTIONS = frozenset({
 })
 
 
+# Example rules surfaced by `get_user_preferences` so the orchestrator can
+# show "here's the kind of thing you can configure" when the user asks
+# what's available. These NEVER ship to ~/.central-mcp/user.md — that
+# file holds only user-authored content. (Ordered list, not free-form
+# template, so they can't be mistaken for active rules.)
+_USER_MD_EXAMPLES: dict[str, list[str]] = {
+    "Reporting style": [
+        "Always summarize dispatch results in bullet points.",
+        "Show elapsed time and token usage when reporting dispatch results.",
+        "Keep responses under 5 sentences unless I ask for detail.",
+        "Switch to Korean for all responses.",
+    ],
+    "Routing hints": [
+        "Prefer claude for any task involving architecture decisions.",
+        "Use codex for shell-scripting tasks.",
+        "Always dispatch UI work to the my-frontend project.",
+    ],
+    "Process management rules": [
+        "Never dispatch two tasks to the same project simultaneously.",
+        "Ask before dispatching to more than 3 projects at once.",
+    ],
+    "Other preferences": [],
+}
+
+
 def _user_md_path() -> Path:
     return paths.central_mcp_home() / "user.md"
 
@@ -1398,13 +1427,29 @@ def _write_user_md_section(section: str, content: str) -> None:
 
 @mcp.tool()
 def get_user_preferences() -> dict[str, Any]:
-    """Return the current content of ~/.central-mcp/user.md.
+    """Return the current content of ~/.central-mcp/user.md and the
+    available preference sections.
 
-    Call this before update_user_preferences to see existing settings
-    and build the merged content.
+    The file holds only user-authored rules — there is no scaffolded
+    template, so an empty `content` means "no preferences set yet". The
+    response also carries `available_sections` (valid `section` values
+    for `update_user_preferences`) and `examples` (a hint of what the
+    user might want to set, surfaced when the user asks what's
+    configurable). Call this before `update_user_preferences` so you
+    can merge new rules with anything already saved.
     """
     content = _read_user_md()
-    return _with_completed({"ok": True, "content": content or "(empty)"})
+    return _with_completed({
+        "ok": True,
+        "content": content,
+        "is_empty": not content.strip(),
+        "available_sections": sorted(_USER_MD_SECTIONS),
+        "examples": _USER_MD_EXAMPLES,
+        "note": (
+            "Use update_user_preferences(section, content) to persist a rule. "
+            "examples are illustrative only — they are not active rules."
+        ),
+    })
 
 
 @mcp.tool()
@@ -1423,7 +1468,7 @@ def update_user_preferences(section: str, content: str) -> dict[str, Any]:
 
     content — new full text for that section (replaces its existing content;
     other sections are untouched). Plain language, bullet points recommended:
-      "- 한국어로 답변할 것."
+      "- Switch to Korean for all responses."
       "- Prefer claude for architecture.\\n- Use codex for shell scripting."
 
     Tip: call get_user_preferences() first so you can merge old and new content.

@@ -3,6 +3,24 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.10.12] — 2026-04-25
+
+### Fixed
+- **`user.md` no longer leaks example bullets into the MCP system prompt.** The 0.10.11- design scaffolded `~/.central-mcp/user.md` with a template containing commented-out example rules (HTML `<!-- ... -->` blocks). The line-level filter in `_build_mcp_instructions` only suppressed lines that *started* with `<!--`, so the bullets *inside* multi-line comment blocks counted as "active content" and the entire file (including the examples) was injected into the orchestrator's system prompt. The most visible symptom was an example line `Use Korean for all responses ("한국어로 답변해줘").` — fresh installs that never edited `user.md` could see the orchestrator switch to Korean unprompted because the LLM cannot reliably ignore HTML-comment markers in raw text.
+
+### Changed
+- **`user.md` is no longer scaffolded.** `_ensure_launch_dir` no longer copies a template into `~/.central-mcp/user.md`. The file holds *only* user-authored rules now — empty / missing means "no preferences set yet". `update_user_preferences` still creates the file lazily on first write.
+- **`get_user_preferences` reshaped for discoverability.** The response now carries `is_empty`, `available_sections` (the four valid `section` values), and `examples` (illustrative-only rule suggestions surfaced when the user asks "what can I configure?"). Examples never touch disk — they are shown via the tool response only, so they cannot be misread as active rules.
+- **Pristine 0.10.11 templates auto-cleaned on next launch.** `_ensure_launch_dir` SHA-256s the existing `user.md` against the bundled-template fingerprint; byte-equal matches are deleted, anything else (even a single keystroke) is preserved. False positives are impossible.
+- **Korean text purged from shipped artifacts.** `data/CLAUDE.md`, `data/AGENTS.md`, `README.md`, and several docstrings (`dispatch`, `add_project`, `update_project`, `update_user_preferences`) used Korean phrases as example user-triggers; these are now English, with "Korean" referenced as a topic only. central-mcp is a global package and shipped text should be language-neutral. The Korean translation lives in `README_KO.md` (untouched).
+
+### Notes for existing installs
+- Runtime docs (`~/.central-mcp/{CLAUDE,AGENTS}.md`) auto-sync on next `central-mcp run` / `central-mcp up`.
+- If your `~/.central-mcp/user.md` is the unedited 0.10.11 template, the next launch will delete it. If you've added any rule (even one character) the file is preserved as-is — no manual step needed.
+- If you previously inherited the Korean example unintentionally, run `central-mcp run` to pick up clean docs and a clean preferences file.
+
+---
+
 ## [0.10.11] — 2026-04-25
 
 ### Added
