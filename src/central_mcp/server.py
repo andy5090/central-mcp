@@ -220,20 +220,49 @@ instead:
                              current state, then pass the merged content.
 
 dispatch is NON-BLOCKING. It spawns the agent as a subprocess and
-returns a dispatch_id instantly (<100ms). To get the result:
+returns a dispatch_id instantly (<100ms). MANDATORY: every dispatch
+must be paired with a watcher that reports back to the user — if you
+only call dispatch and stop, the user is forced to ask "status?"
+manually, which is a router failure.
 
   1. Call dispatch(name, prompt) → returns dispatch_id.
-  2. Spawn a background sub-agent to poll check_dispatch(dispatch_id)
-     every 3 s until status is "complete" or "error", then report
-     (3 s keeps the gap between completion and user-facing report
-     below ~1.5 s on average; observed median dispatch is ~80 s,
-     minimum ~6 s, so 3 s polls work out to ~25 tool calls for a
-     typical dispatch — cheap):
-     - Claude Code: Agent(run_in_background=True, prompt="poll …")
-     - Codex: spawn_agent(message="poll mcp__central__check_dispatch …")
-     - Gemini/other: poll synchronously in a loop, then report.
+  2. Spawn a background watcher to poll
+     check_dispatch(dispatch_id) every 3 s until status is "complete"
+     or "error", then report the full output. Pick the first option
+     your environment supports:
+     - Claude Code (Agent tool):
+         Agent(run_in_background=True,
+               prompt="poll mcp__central__check_dispatch with
+                      dispatch_id=<id> every 3 s until status is
+                      complete or error, then report the full
+                      output to the user")
+     - Codex (spawn_agent tool):
+         spawn_agent(message="poll mcp__central__check_dispatch
+                              with dispatch_id=<id> every 3 s until
+                              status is complete or error, then
+                              report the full output back to me")
+     - opencode (task tool, or Agent if exposed):
+         task(description="poll central dispatch",
+              prompt="poll mcp__central__check_dispatch with
+                     dispatch_id=<id> every 3 s until status is
+                     complete or error, then report the full output
+                     to the user")
+     - Gemini / no background tool: poll synchronously in this same
+       turn (loop check_dispatch until done), then report.
+     3 s puts the gap between completion and user-facing report under
+     ~1.5 s on average. Observed median dispatch is ~80 s, minimum
+     ~6 s, so 3 s polls work out to ~25 tool calls for a typical
+     dispatch — cheap; check_dispatch is an in-memory lookup.
   3. Tell the user "dispatched to <project>, I'll report when done"
-     and CONTINUE the conversation.
+     and CONTINUE the conversation. Do NOT block this turn waiting
+     for the dispatch to finish unless option 2 forced you into the
+     synchronous fallback.
+
+The "no dispatch with id" error from sub-agent watchers is fixed
+since 0.10.9 — dispatches are persisted in
+~/.central-mcp/dispatches.db so any sub-process can see them. If you
+hit it now, the id you passed is genuinely wrong; double-check before
+giving up.
 
 IMPORTANT: Every MCP tool response may include a `completed_dispatches`
 array with results from previously dispatched work that has finished

@@ -3,6 +3,18 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.10.17] — 2026-04-26
+
+### Changed
+- **Background-poll guidance promoted to a top-level MANDATORY section in `data/AGENTS.md`.** Codex / opencode / Gemini orchestrators were skipping the proactive watcher pattern — they would call `dispatch()` and stop, forcing the user to ask "status?" manually. The instruction was buried at step 3 of the per-request workflow, behind a soft "Always report results proactively" prefix that the LLM could skim past. The new structure puts the requirement first: a dedicated `## MANDATORY: close every dispatch loop` block right after the title that lists concrete invocations per orchestrator (Claude Code `Agent`, Codex `spawn_agent`, opencode `task`, Gemini synchronous fallback) and a hard "manual hand-off" rule for any environment with no background tool (`call check_dispatch on every subsequent turn before responding to anything else`). Equivalent strengthening applied to the in-process MCP `_MCP_INSTRUCTIONS` string in `server.py` so MCP clients see the same guidance even before the runtime docs sync.
+- **opencode added explicitly to the per-orchestrator pattern list.** Used to fall under "Gemini / other" by default, which routed it to the synchronous fallback even though opencode has a `task` tool that supports background execution. Now called out by name with the right invocation.
+
+### Notes for existing installs
+- Runtime docs (`~/.central-mcp/{CLAUDE,AGENTS}.md`) auto-sync on next `central-mcp run` / `central-mcp up`, so the new MANDATORY section ships to the orchestrator without any manual step.
+- No tool / API surface changes. This is a pure runtime-instruction tightening to stop the "dispatched and walked away" failure mode.
+
+---
+
 ## [0.10.16] — 2026-04-26
 
 ### Fixed
