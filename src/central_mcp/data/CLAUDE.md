@@ -29,7 +29,7 @@ One-off instructions ("just this time", "for this dispatch only") do NOT need pe
 - `remove_project(name)` — unregister
 - `project_status(name)` — metadata lookup
 - `update_project(name, ...)` — change agent, permission_mode, session_id, fallback, etc.
-- `token_usage(period=..., project=..., workspace=..., group_by=...)` — portfolio token usage from `tokens.db`. Use this (NOT `orchestration_history`, NOT reading `timeline.jsonl`) whenever the user asks "how many tokens?" / "얼마나 썼어?". `period` is today|week|month|all; `group_by` is project|agent|source. Each row carries dispatch + orchestrator + total counts. orchestrator-side tokens are auto-backfilled from session files on every dispatch, so this answer is always current.
+- `token_usage(period=..., project=..., workspace=..., group_by=..., include_quota=True)` — portfolio token usage from `tokens.db` PLUS per-agent subscription quota windows. Use this (NOT `orchestration_history`, NOT reading `timeline.jsonl`) whenever the user asks "how many tokens?" / "얼마나 썼어?" OR "한도 얼마나 남았어?" / "how much budget is left?". `period` is today|week|month|all; `group_by` is project|agent|source. Each row in `breakdown` carries dispatch + orchestrator + total counts. The response also includes a `quota` block: `claude.five_hour` / `claude.seven_day`, `codex.primary` / `codex.secondary`, and `gemini` (auth-only — Gemini exposes no quota API). Each window entry exposes `used_pct` and `resets_in` (e.g. `"2h31m"`, `"5d12h"`). Orchestrator-side tokens are auto-backfilled from session files on every dispatch, so this answer is always current.
 
 ## Your workflow for EVERY user request
 

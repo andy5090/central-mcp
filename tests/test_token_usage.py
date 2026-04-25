@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from central_mcp import config as _cfg
-from central_mcp import server, tokens_db
+from central_mcp import quota, server, tokens_db
 from central_mcp import registry
 
 
@@ -117,3 +117,43 @@ class TestTokenUsageTool:
             assert "tokens_today" not in entry
             assert "tokens_week" not in entry
             assert "tokens_total" not in entry
+
+
+class TestTokenUsageQuotaInclusion:
+    """`token_usage` must include the per-agent quota snapshot by default."""
+
+    def _stub_fetchers(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(quota._claude, "fetch", lambda: {"mode": "api_key"})
+        monkeypatch.setattr(quota._codex,  "fetch", lambda: None)
+        monkeypatch.setattr(quota._gemini, "fetch", lambda: None)
+        quota._reset_cache_for_tests()
+
+    def test_quota_present_by_default(
+        self, seed: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._stub_fetchers(monkeypatch)
+        r = server.token_usage()
+        assert "quota" in r
+        assert r["quota"]["claude"]["mode"] == "api_key"
+        assert r["quota"]["codex"]["mode"]  == "not_installed"
+        assert r["quota"]["gemini"]["mode"] == "not_installed"
+        assert "fetched_at" in r["quota"]
+
+    def test_include_quota_false_omits_field(
+        self, seed: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._stub_fetchers(monkeypatch)
+        r = server.token_usage(include_quota=False)
+        assert "quota" not in r
+
+    def test_quota_failure_does_not_break_tool(
+        self, seed: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Make the snapshot itself blow up — token tally must still come back.
+        def _explode(**_kw):
+            raise RuntimeError("snapshot failure")
+        monkeypatch.setattr(quota, "snapshot", _explode)
+        r = server.token_usage()
+        assert r["ok"] is True
+        assert "breakdown" in r
+        assert "error" in r["quota"]

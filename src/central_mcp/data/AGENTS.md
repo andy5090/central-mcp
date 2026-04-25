@@ -32,7 +32,7 @@ One-off instructions ("just this time", "for this dispatch only") do NOT need pe
 | `project_status` | Registry metadata for one project. |
 | `list_project_sessions` | Enumerate resumable conversation sessions for a project. |
 | `orchestration_history` | Portfolio snapshot (in-flight + recent + per-project stats). Does NOT carry token counts — use `token_usage` for those. |
-| `token_usage` | Portfolio token aggregation from `tokens.db`. Use this for any "how many tokens?" question — NOT `orchestration_history`, NOT reading `timeline.jsonl` directly. Params: `period` (today/week/month/all), `project`, `workspace`, `group_by` (project/agent/source). Returns `breakdown` + `total` with {dispatch, orchestrator, total, input, output}. Orchestrator-side tokens auto-backfilled from session files on every dispatch. |
+| `token_usage` | Portfolio token aggregation from `tokens.db` PLUS per-agent subscription quota windows. Use this for any "how many tokens?" / "한도 얼마나 남았어?" question — NOT `orchestration_history`, NOT reading `timeline.jsonl` directly. Params: `period` (today/week/month/all), `project`, `workspace`, `group_by` (project/agent/source), `include_quota` (default True). Returns `breakdown` + `total` with {dispatch, orchestrator, total, input, output}, plus a `quota` block (claude five_hour/seven_day, codex primary/secondary, gemini auth-only) carrying `used_pct` and `resets_in` (e.g. `"2h31m"`). Orchestrator-side tokens auto-backfilled from session files on every dispatch. |
 
 ## For every request
 

@@ -166,19 +166,29 @@ instead:
                              DOES NOT carry token counts — call
                              `token_usage` for those.
   - token_usage            — portfolio-wide token aggregation from
-                             tokens.db. Use this (not timeline.jsonl,
-                             not orchestration_history) for any question
-                             about how many tokens were used.
-                             Params: period=today|week|month|all,
+                             tokens.db PLUS per-agent subscription
+                             quota windows. Use this (not
+                             timeline.jsonl, not orchestration_history)
+                             for any question about how many tokens
+                             were used or how close the user is to a
+                             cap. Params: period=today|week|month|all,
                              project=<name>, workspace=<name>,
-                             group_by=project|agent|source. Response
-                             has `breakdown` and `total`, each carrying
-                             {dispatch, orchestrator, total, input,
-                             output}. Source='orchestrator' rows are
-                             backfilled from the orchestrator's own
-                             session file on every dispatch; source=
-                             'dispatch' rows come from subprocess
-                             agent stdout.
+                             group_by=project|agent|source,
+                             include_quota=True (default).
+                             Response has `breakdown` and `total`,
+                             each carrying {dispatch, orchestrator,
+                             total, input, output}; plus a `quota`
+                             section with per-agent windows
+                             (claude five_hour/seven_day, codex
+                             primary/secondary, gemini auth-only),
+                             each entry exposing `used_pct` and
+                             `resets_in` (e.g. "2h31m"). When the
+                             user asks how much budget is left, read
+                             `quota` not `breakdown`. Source=
+                             'orchestrator' rows are backfilled from
+                             the orchestrator's own session file on
+                             every dispatch; source='dispatch' rows
+                             come from subprocess agent stdout.
   - add_project            — register a new project; pass workspace= to
                              also add it to a workspace on creation.
   - remove_project         — unregister a project
@@ -1598,8 +1608,10 @@ def token_usage(
     project: str | None = None,
     workspace: str | None = None,
     group_by: str = "project",
+    include_quota: bool = True,
 ) -> dict[str, Any]:
-    """Portfolio-wide token-usage aggregation (SQL over `tokens.db`).
+    """Portfolio-wide token-usage aggregation (SQL over `tokens.db`) plus
+    a normalized per-agent subscription quota snapshot.
 
     Separated from `orchestration_history` so token monitoring can evolve
     independently of event/dispatch history (and eventually power a live
@@ -1610,6 +1622,8 @@ def token_usage(
       `workspace`; if both are given, `project` wins)
     **workspace**: restrict to projects in a workspace (via registry)
     **group_by**: `project` | `agent` | `source` — how `breakdown` is keyed
+    **include_quota**: include per-agent subscription window utilization
+      (default True). Cached 60s in-process; opt out for fast bulk polling.
 
     Returns:
       {
@@ -1618,7 +1632,15 @@ def token_usage(
         "window": {"start": ISO, "end": ISO} | {"start": null, "end": null},
         "group_by": "project",
         "breakdown": { key: {dispatch, orchestrator, total, input, output} },
-        "total": {dispatch, orchestrator, total, input, output}
+        "total": {dispatch, orchestrator, total, input, output},
+        "quota": {                              # only when include_quota=True
+          "claude": {"mode": "pro",  "five_hour": {"used_pct", "resets_in"},
+                                      "seven_day": {"used_pct", "resets_in"}},
+          "codex":  {"mode": "chatgpt", "primary": {...}, "secondary": {...}},
+          "gemini": {"mode": "auth_only", "auth_type": ..., "note": ...},
+          "fetched_at": ISO,
+          "cached": bool,
+        }
       }
     """
     if period not in ("today", "week", "month", "all"):
@@ -1642,7 +1664,7 @@ def token_usage(
         project_filter=project_filter,
         group_by=group_by,
     )
-    return _with_completed({
+    result: dict[str, Any] = {
         "ok": True,
         "period": period,
         "timezone": tz,
@@ -1650,7 +1672,16 @@ def token_usage(
         "group_by": group_by,
         "breakdown": agg["breakdown"],
         "total": agg["total"],
-    })
+    }
+    if include_quota:
+        try:
+            from central_mcp import quota as _quota
+            result["quota"] = _quota.snapshot()
+        except Exception as exc:
+            # Snapshot already isolates per-fetcher errors, but guard the
+            # whole tool against any unexpected import/threading failure.
+            result["quota"] = {"error": f"snapshot failed: {exc}"}
+    return _with_completed(result)
 
 
 def main() -> None:

@@ -3,6 +3,25 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.10.11] — 2026-04-25
+
+### Added
+- **`token_usage` now returns subscription-quota info alongside the raw token tally.** Previously the tool reported only `dispatch / orchestrator / total / input / output` byte counts — useful for accounting but not for budget-aware decisions ("am I close to my 5h Claude cap? to my Codex daily window?"). The response now carries a `quota` field with normalized per-agent windows (Claude `five_hour` + `seven_day`, Codex `primary` + `secondary`, Gemini auth-only) using the same fetchers `central-mcp monitor` already uses. Each entry exposes `used_pct` and `resets_in` (e.g. `"2h31m"`, `"5d12h"`) so the orchestrator can act on it without touching the raw shape. Off by default? No — default is **on**: `include_quota=True`.
+- `central_mcp.quota.snapshot()` — module-level helper that fans out to `quota.{claude,codex,gemini}.fetch()`, normalizes each response into a stable LLM-friendly shape, and caches the combined snapshot for 60 seconds. Per-fetcher exceptions are isolated (one provider failing never blocks the others), and a top-level `cached: true|false` flag tells the caller whether the data is fresh from upstream or served from cache.
+
+### Changed
+- `token_usage` signature gained `include_quota: bool = True` (opt out for high-frequency polling). Existing callers are forward-compatible — older clients that ignore the new field see no change in behavior.
+
+### Notes for existing installs
+- Runtime docs (`~/.central-mcp/{CLAUDE,AGENTS}.md`) gained the new `quota` description in the `token_usage` row. Existing installs need to remove their copies to pick up the new bundle:
+  ```bash
+  rm ~/.central-mcp/CLAUDE.md ~/.central-mcp/AGENTS.md
+  ```
+  Without this, the orchestrator won't know about the new `quota` field even though the MCP tool itself returns it.
+- Subscription-quota fetchers reuse existing OAuth credentials at `~/.claude/.credentials.json` and `~/.codex/auth.json`; API-Key users see `mode: "api_key"` (with a `note` explaining no subscription quota applies) and Gemini's entry stays auth-only since Gemini exposes no quota API. No new disk state.
+
+---
+
 ## [0.10.10] — 2026-04-24
 
 ### Added
