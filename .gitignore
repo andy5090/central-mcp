@@ -5,6 +5,7 @@ __pycache__/
 venv/
 dist/
 build/
+site/
 .DS_Store
 logs/
 *.log

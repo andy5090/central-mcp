@@ -36,7 +36,7 @@
 
 ## 상태
 
-현재는 `uv` 기준으로 설치하는 경로를 권장합니다 (`pip`도 가능). 가까운 시일 내에 `uv`가 없으면 함께 설치까지 처리하는 원라인 `curl` 설치 옵션을 제공할 예정입니다.
+원라인 `curl` 설치 스크립트가 [https://central-mcp.org](https://central-mcp.org/)에서 제공됩니다 — `uv`가 없으면 자동 설치, central-mcp 설치, `central-mcp init`까지 한 번에.
 
 ## 지원 플랫폼
 
@@ -49,23 +49,29 @@
 ## 빠른 시작
 
 ```bash
-# 현재는 uv가 없다면 먼저 설치 (https://docs.astral.sh/uv/)
-curl -LsSf https://astral.sh/uv/install.sh | sh
+# 한 줄 — uv 부트스트랩, central-mcp 설치, `central-mcp init`까지 자동.
+curl -fsSL https://central-mcp.org/install.sh | sh
 ```
-
-> 현재는 pip도 사용 가능합니다: `pip install central-mcp`
->
-> 추후에는 원라인 `curl` 설치 스크립트로 `uv` 부트스트랩까지 한 번에 처리하는 옵션을 제공할 예정입니다.
 
 (선택적 관찰 레이어를 쓰려면 `tmux`도.)
 
 ```bash
-# 1. central-mcp 설치
-uv tool install central-mcp
-
-# 2. 바로 실행 — 한 번에 모든 설정
+# 바로 실행 — 한 번에 모든 설정
 central-mcp
 ```
+
+> **수동 설치** (스크립트를 파이프로 실행하기 싫다면):
+>
+> ```bash
+> # 1. uv 설치 (https://docs.astral.sh/uv/) — 이미 있으면 생략
+> curl -LsSf https://astral.sh/uv/install.sh | sh
+>
+> # 2. central-mcp 설치 + ~/.central-mcp/ 스캐폴드
+> uv tool install central-mcp
+> central-mcp init
+> ```
+>
+> pip도 사용 가능: `pip install central-mcp`
 
 첫 실행 시 `~/.central-mcp/registry.yaml`이 자동 생성되고, PATH에서 발견된 모든 MCP 클라이언트(claude, codex, gemini, opencode)에 central-mcp가 자동 등록됩니다. 그 다음 선택된 에이전트로 오케스트레이터가 기동됩니다.
 

@@ -1,0 +1,83 @@
+name: docs
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - 'CHANGELOG.md'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch: {}
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install mkdocs
+        run: |
+          python -m pip install --upgrade pip
+          pip install \
+            mkdocs-material \
+            mkdocs-include-markdown-plugin
+
+      - name: Build site
+        run: mkdocs build --strict
+
+      - name: Configure AWS CLI for R2
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          mkdir -p ~/.aws
+          cat > ~/.aws/credentials <<EOF
+          [default]
+          aws_access_key_id = ${AWS_ACCESS_KEY_ID}
+          aws_secret_access_key = ${AWS_SECRET_ACCESS_KEY}
+          EOF
+          cat > ~/.aws/config <<EOF
+          [default]
+          region = auto
+          output = json
+          EOF
+
+      - name: Sync site to Cloudflare R2
+        env:
+          R2_BUCKET:   ${{ secrets.R2_BUCKET }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+        run: |
+          # Bulk sync everything else with a 5-minute browser cache.
+          aws s3 sync site/ "s3://${R2_BUCKET}/" \
+            --endpoint-url "${R2_ENDPOINT}" \
+            --delete \
+            --exclude "install.sh" \
+            --cache-control "public, max-age=300"
+
+          # install.sh: shorter cache so users pick up fixes faster,
+          # explicit content-type so browsers/curl handle it cleanly.
+          aws s3 cp site/install.sh "s3://${R2_BUCKET}/install.sh" \
+            --endpoint-url "${R2_ENDPOINT}" \
+            --content-type "text/x-shellscript; charset=utf-8" \
+            --cache-control "public, max-age=60"
+
+      - name: Summarize
+        run: |
+          echo "Deployed to https://central-mcp.org/" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Files synced:" >> "$GITHUB_STEP_SUMMARY"
+          find site/ -type f | wc -l | xargs -I{} echo "  {} files" >> "$GITHUB_STEP_SUMMARY"

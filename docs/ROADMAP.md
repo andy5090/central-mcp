@@ -278,4 +278,4 @@ Design spec: [`docs/architecture/workspaces.md`](architecture/workspaces.md)
 
 ## Change log pointer
 
-Actual shipped changes live in [../CHANGELOG.md](../CHANGELOG.md). This roadmap is intent, not history.
+Actual shipped changes live in [the changelog](changelog.md). This roadmap is intent, not history.

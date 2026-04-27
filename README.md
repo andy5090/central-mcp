@@ -40,7 +40,7 @@ Every dispatch is a fresh subprocess in the project's cwd (e.g. `claude -p "..."
 
 ## Status
 
-Install today with `uv` (or `pip` if needed). A one-line `curl` installer is planned so setup can bootstrap `uv` when missing and finish in one pass.
+One-line `curl` installer ships at [https://central-mcp.org](https://central-mcp.org/) — bootstraps `uv` when missing, installs central-mcp, and runs `central-mcp init`.
 
 ## Supported platforms
 
@@ -53,23 +53,29 @@ Run central-mcp on the platform it's been exercised on, and expect a bit of roug
 ## Quickstart
 
 ```bash
-# Today: install uv first if you don't have it yet (https://docs.astral.sh/uv/)
-curl -LsSf https://astral.sh/uv/install.sh | sh
+# One line — bootstraps uv, installs central-mcp, runs `central-mcp init`.
+curl -fsSL https://central-mcp.org/install.sh | sh
 ```
-
-> For now you can also use pip: `pip install central-mcp`
->
-> A first-party `curl` installer is planned to streamline this into a single command and bootstrap `uv` automatically when needed.
 
 (`tmux` only if you want the optional observation layer.)
 
 ```bash
-# 1. Install central-mcp
-uv tool install central-mcp
-
-# 2. Launch — one command does everything
+# Launch — one command does everything
 central-mcp
 ```
+
+> **Manual install** if you'd rather not pipe a script:
+>
+> ```bash
+> # 1. Install uv (https://docs.astral.sh/uv/) if you don't have it yet
+> curl -LsSf https://astral.sh/uv/install.sh | sh
+>
+> # 2. Install central-mcp + scaffold ~/.central-mcp/
+> uv tool install central-mcp
+> central-mcp init
+> ```
+>
+> Or with pip: `pip install central-mcp`
 
 The first `central-mcp` run auto-creates `~/.central-mcp/registry.yaml` and registers central-mcp with every MCP client binary it finds on PATH (claude, codex, gemini, opencode). After that it launches the orchestrator in your preferred agent.
 
