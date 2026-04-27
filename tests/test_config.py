@@ -70,6 +70,36 @@ class TestCurrentWorkspace:
         with pytest.raises(ValueError, match="unknown workspace"):
             config.set_current_workspace("nonexistent")
 
+    def test_env_var_overrides_saved_value(
+        self, fake_home: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Saved default in config.toml is "default"; env says "client-a".
+        # Per-process env wins so multiple shells / MCP clients can
+        # concurrently target different workspaces.
+        registry.add_project("p", "/p")
+        registry.add_workspace("client-a")
+        config.set_current_workspace("default")
+        monkeypatch.setenv("CMCP_WORKSPACE", "client-a")
+        assert config.current_workspace() == "client-a"
+
+    def test_env_var_used_even_when_unknown_to_registry(
+        self, fake_home: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # current_workspace() does NOT validate — that's set_current_workspace's
+        # job. The env path is intentionally permissive: validation happens
+        # at the CLI surface (cmcp run --workspace), not on every read.
+        monkeypatch.setenv("CMCP_WORKSPACE", "made-up")
+        assert config.current_workspace() == "made-up"
+
+    def test_no_env_falls_through_to_config(
+        self, fake_home: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        registry.add_project("p", "/p")
+        registry.add_workspace("work")
+        config.set_current_workspace("work")
+        monkeypatch.delenv("CMCP_WORKSPACE", raising=False)
+        assert config.current_workspace() == "work"
+
 
 # ── ensure_initialized() ──────────────────────────────────────────────────────
 

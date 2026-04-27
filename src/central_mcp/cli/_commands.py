@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import os
+import shlex
 import shutil
 import sys
 from importlib.resources import files
@@ -96,6 +97,10 @@ def _flags_for(agent: str, mode: str) -> list[str] | None:
 # ---------- server / listing ----------
 
 def cmd_serve(args: argparse.Namespace) -> int:
+    # --workspace overrides env / config for this MCP server instance only.
+    # Honors the resolution order in config.current_workspace().
+    if getattr(args, "workspace", None):
+        os.environ["CMCP_WORKSPACE"] = args.workspace
     user_config.ensure_initialized()
     from central_mcp.server import main as server_main
     server_main()
@@ -172,6 +177,16 @@ def _orchestrator_pane_for_up(args: argparse.Namespace) -> layout.OrchestratorPa
         )
         flags = []
     command = " ".join([binary, *flags]) if flags else binary
+
+    # If the user passed --workspace explicitly to `cmcp up/tmux/zellij`,
+    # propagate it into the orchestrator pane via env so that pane's
+    # MCP server child sees the right scope. Without this, the pane
+    # would inherit only whatever CMCP_WORKSPACE happens to be in the
+    # shell that ran `cmcp tmux`, which is wrong when --workspace
+    # explicitly differs.
+    ws_override = getattr(args, "workspace", None)
+    if ws_override:
+        command = f"env CMCP_WORKSPACE={shlex.quote(ws_override)} {command}"
 
     return layout.OrchestratorPane(command=command, cwd=str(launch_dir), label=label)
 
@@ -1134,6 +1149,27 @@ def _prompt_choice(installed: list[tuple[str, str, str]]) -> tuple[str, str, str
 def cmd_run(args: argparse.Namespace) -> int:
     _ensure_default_registry()
     user_config.ensure_initialized()
+
+    # --workspace overrides the saved default for this orchestrator
+    # session only. Validates the name against the registry so a typo
+    # fails fast instead of silently launching with an empty workspace.
+    # The env var propagates to the orchestrator (via execvp below) and
+    # then to its MCP server child (via stdio inheritance), so multiple
+    # `cmcp run` instances in different terminals can each scope to a
+    # different workspace concurrently.
+    if getattr(args, "workspace", None):
+        from central_mcp.registry import load_workspaces
+        workspaces = load_workspaces()
+        if workspaces and args.workspace not in workspaces:
+            known = ", ".join(sorted(workspaces.keys())) or "(none)"
+            print(
+                f"error: unknown workspace {args.workspace!r}. "
+                f"known: {known}",
+                file=sys.stderr,
+            )
+            return 1
+        os.environ["CMCP_WORKSPACE"] = args.workspace
+
     _maybe_prompt_upgrade()
     _maybe_auto_install()
     installed = _detect_installed()
@@ -1262,8 +1298,15 @@ def cmd_run(args: argparse.Namespace) -> int:
     from central_mcp import upgrade
     installed_ver = upgrade.installed_version() or "source"
     source_suffix = f"  [{source}]" if source else ""
+    active_ws = current_workspace()
+    ws_source = (
+        "via --workspace" if getattr(args, "workspace", None)
+        else "via CMCP_WORKSPACE" if os.environ.get("CMCP_WORKSPACE")
+        else "saved default"
+    )
     print(f"central-mcp  : {installed_ver}")
     print(f"orchestrator : {label} ({binary}){source_suffix}")
+    print(f"workspace    : {active_ws}  [{ws_source}]")
     print(f"launch cwd   : {launch_dir}")
     if len(argv) > 1:
         print(f"extra args   : {' '.join(argv[1:])}")

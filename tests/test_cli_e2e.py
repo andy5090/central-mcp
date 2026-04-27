@@ -284,6 +284,37 @@ class TestWorkspace:
         assert "1" in r.stdout  # 1 project in work
 
 
+class TestRunWorkspaceFlag:
+    """`cmcp run --workspace NAME` per-process workspace scope.
+
+    Multiple shells / MCP clients can run concurrently on different
+    workspaces by passing `--workspace` (or exporting `CMCP_WORKSPACE`)
+    instead of mutating the saved default in `config.toml`.
+    """
+
+    def test_unknown_workspace_errors(self, cli_env: dict) -> None:
+        _run(["init"], cli_env)
+        r = _run(["run", "--workspace", "ghost", "--dry-run"], cli_env)
+        assert r.returncode == 1
+        assert "unknown workspace" in r.stderr
+
+    def test_known_workspace_accepted(
+        self, cli_env: dict, tmp_path: Path
+    ) -> None:
+        _run(["init"], cli_env)
+        _run(["workspace", "new", "client-a"], cli_env)
+        # --dry-run exits before exec; if the workspace lookup is wrong
+        # we'd see the "unknown workspace" branch fire instead.
+        r = _run(
+            ["run", "--workspace", "client-a", "--dry-run"],
+            cli_env,
+        )
+        # Exit may still be 1 if no orchestrator binary is installed in
+        # the test env — accept either, but stderr must NOT carry the
+        # workspace-validation error.
+        assert "unknown workspace" not in r.stderr
+
+
 class TestHelp:
     def test_run_help_shows_run_flags(self, cli_env: dict) -> None:
         # `central-mcp --help` routes to `central-mcp run --help`

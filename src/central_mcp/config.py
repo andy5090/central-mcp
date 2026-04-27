@@ -156,7 +156,21 @@ def set_user_timezone(tz: str) -> None:
 # ── workspace ─────────────────────────────────────────────────────────────────
 
 def current_workspace() -> str:
-    """Return the active workspace name (default: 'default')."""
+    """Return the active workspace name (default: 'default').
+
+    Resolution order (highest to lowest):
+      1. ``CMCP_WORKSPACE`` env var — per-process override, lets multiple
+         shells / MCP clients run different workspaces concurrently.
+      2. ``[user].current_workspace`` from ``config.toml`` — saved default.
+      3. Literal ``"default"``.
+
+    The env-first rule is what makes "open client A on workspace foo
+    and client B on workspace bar at the same time" work without
+    config-file races.
+    """
+    env = os.environ.get("CMCP_WORKSPACE")
+    if env:
+        return env
     user = _read().get("user") or {}
     return str(user.get("current_workspace") or "default")
 

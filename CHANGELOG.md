@@ -3,6 +3,21 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.11.0] — 2026-04-28
+
+### Added
+- **Per-process workspace scope via `CMCP_WORKSPACE` env / `--workspace` flag.** Two `cmcp run` instances in different terminals can now target different workspaces concurrently — Claude Code on `client-a` in one window, Codex on `client-b` in another, both fully isolated for `list_projects()`, observation panes, dispatch fan-out, and `token_usage(workspace=...)`. No more racing on `config.toml [user].current_workspace` when you want to multitask.
+- **Resolution order for `current_workspace()` is now: `CMCP_WORKSPACE` env → `config.toml [user].current_workspace` → literal `default`.** The env-first rule is what makes per-shell scoping work without mutating shared config — every process tree (`cmcp run` → orchestrator → MCP server child) inherits the same value.
+- **`cmcp run --workspace NAME`** validates against the registry (typo fails fast), sets `CMCP_WORKSPACE` for the orchestrator + its MCP server child, and prints a `workspace : NAME [via --workspace]` banner line so you see which scope this terminal is locked to.
+- **`cmcp serve --workspace NAME`** for MCP clients that want to embed workspace context directly in their MCP server registration (e.g. `claude.json` having two distinct central-mcp entries, each pinned to its own workspace).
+- **`cmcp tmux --workspace NAME` / `cmcp zellij --workspace NAME`** now propagate the workspace into the orchestrator pane via an explicit `env CMCP_WORKSPACE=NAME` prefix on the launch command, so the pane's MCP server child sees the right scope independent of the shell that ran `cmcp tmux`.
+
+### Notes for existing installs
+- No migration needed. Existing single-workspace flows are unchanged — without `CMCP_WORKSPACE` env or `--workspace` flag, `current_workspace()` still reads `config.toml` exactly as before.
+- `set_current_workspace()` still mutates `config.toml`; if you want to switch the *saved default* across all shells, use `cmcp workspace use NAME` as before. `--workspace` is per-process only and does not write to disk.
+
+---
+
 ## [0.10.18] — 2026-04-27
 
 ### Added

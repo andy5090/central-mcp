@@ -85,6 +85,17 @@ def build_parser() -> argparse.ArgumentParser:
             "launch an orchestrator session that auto-loads the MCP tools."
         ),
     )
+    p_serve.add_argument(
+        "--workspace",
+        metavar="NAME",
+        default=None,
+        help=(
+            "scope this MCP server to a workspace (sets CMCP_WORKSPACE in "
+            "this process). Defaults to the env var if set, else the saved "
+            "config.toml [user].current_workspace. Use this to run multiple "
+            "MCP servers concurrently in different clients."
+        ),
+    )
     p_serve.set_defaults(func=cmd_serve)
 
     p_up = sub.add_parser(
@@ -483,6 +494,19 @@ def build_parser() -> argparse.ArgumentParser:
             "Team/Enterprise/API plan + Sonnet/Opus 4.6. "
             "restricted = no permission flags; the agent may halt on "
             "operations that would normally prompt."
+        ),
+    )
+    p_run.add_argument(
+        "--workspace",
+        metavar="NAME",
+        default=None,
+        help=(
+            "scope this orchestrator session to a workspace (sets "
+            "CMCP_WORKSPACE for the orchestrator + its MCP server child). "
+            "Lets you run multiple `cmcp run` instances in different "
+            "terminals, each on a different workspace, without touching "
+            "config.toml. Defaults to env CMCP_WORKSPACE, else the saved "
+            "config.toml [user].current_workspace."
         ),
     )
     p_run.add_argument("--dry-run", action="store_true", help="print the plan without executing")
