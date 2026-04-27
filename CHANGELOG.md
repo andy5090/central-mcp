@@ -3,6 +3,22 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.10.18] — 2026-04-27
+
+### Added
+- **`token_usage.summary_markdown` — pre-rendered HUD-style snapshot.** Orchestrators were rebuilding the same project-breakdown table from raw `breakdown` numbers on every report, with each model picking a different layout / unit / color treatment. The tool now ships a ready-to-paste markdown block alongside the structured data: a fenced `text` block with two sections — `SUBSCRIPTION QUOTA` (per-agent windows with `🟢/🟡/🔴` color emoji, 20-cell unicode bars, `resets in …`) and `PROJECT BREAKDOWN` (per-project share with the same bar treatment, `ORCHESTRATOR` pinned first, sizes formatted compactly as `260.0K` / `8.97M`). Color thresholds are user-spec: 🟢 < 50%, 🟡 50–89%, 🔴 ≥ 90%.
+- **`include_summary` parameter on `token_usage` (default `True`).** Pass `include_summary=False` to suppress the markdown render when only the structured payload is needed (e.g. internal aggregation).
+- **Runtime guidance in `data/CLAUDE.md` / `data/AGENTS.md`** instructs orchestrators to paste `summary_markdown` verbatim when the user asks for a token-usage report — fixing the rendering drift across agents.
+
+### Changed
+- New module `central_mcp/quota/render.py` houses the renderer (`render_summary`, `_color_emoji`, `_bar`, `_fmt_tokens`). Kept presentation isolated from the quota-fetcher modules so adding agents doesn't tangle with formatting.
+
+### Notes for existing installs
+- Runtime docs (`~/.central-mcp/{CLAUDE,AGENTS}.md`) auto-sync on next `central-mcp run`. Existing installs that have customized those files (rare) need to `rm` them before launch to pick up the new bundle.
+- No tool-signature breaks. The added field is additive; callers that ignore unknown keys are unaffected.
+
+---
+
 ## [0.10.17] — 2026-04-26
 
 ### Changed

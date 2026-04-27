@@ -1683,6 +1683,7 @@ def token_usage(
     workspace: str | None = None,
     group_by: str = "project",
     include_quota: bool = True,
+    include_summary: bool = True,
 ) -> dict[str, Any]:
     """Portfolio-wide token-usage aggregation (SQL over `tokens.db`) plus
     a normalized per-agent subscription quota snapshot.
@@ -1698,6 +1699,12 @@ def token_usage(
     **group_by**: `project` | `agent` | `source` — how `breakdown` is keyed
     **include_quota**: include per-agent subscription window utilization
       (default True). Cached 60s in-process; opt out for fast bulk polling.
+    **include_summary**: include a pre-rendered markdown HUD
+      (`summary_markdown`) the orchestrator can surface verbatim
+      (default True). Uses Unicode block bars, emoji color markers
+      (🟢 < 50%, 🟡 50–89%, 🔴 ≥ 90%), and fixed-width alignment
+      inside a fenced code block. Disable to save tokens when you
+      only need the raw structured data.
 
     Returns:
       {
@@ -1722,7 +1729,11 @@ def token_usage(
           "gemini": {"mode": "auth_only", "auth_type": ..., "note": ...},
           "fetched_at": ISO,
           "cached": bool,
-        }
+        },
+        "summary_markdown": "**Token Usage — ...**\\n```text\\n..."
+                                                # only when include_summary=True
+                                                # — pre-rendered HUD; surface
+                                                # verbatim, do not re-format.
       }
     """
     if period not in ("today", "week", "month", "all"):
@@ -1763,6 +1774,16 @@ def token_usage(
             # Snapshot already isolates per-fetcher errors, but guard the
             # whole tool against any unexpected import/threading failure.
             result["quota"] = {"error": f"snapshot failed: {exc}"}
+    if include_summary:
+        try:
+            from central_mcp.quota.render import render_summary
+            result["summary_markdown"] = render_summary(result)
+        except Exception as exc:
+            # Rendering must never break the tool — fall back silently
+            # so the structured `breakdown` / `quota` fields still land.
+            result["summary_markdown"] = (
+                f"_(summary render failed: {exc})_"
+            )
     return _with_completed(result)
 
 

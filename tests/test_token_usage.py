@@ -174,6 +174,22 @@ class TestTokenUsageQuotaInclusion:
         r = server.token_usage(include_quota=False)
         assert "quota" not in r
 
+    def test_summary_markdown_present_by_default(
+        self, seed: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._stub_fetchers(monkeypatch)
+        r = server.token_usage()
+        assert "summary_markdown" in r
+        assert "Token Usage" in r["summary_markdown"]
+        assert "```text" in r["summary_markdown"]
+
+    def test_include_summary_false_omits_field(
+        self, seed: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._stub_fetchers(monkeypatch)
+        r = server.token_usage(include_summary=False)
+        assert "summary_markdown" not in r
+
     def test_quota_failure_does_not_break_tool(
         self, seed: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

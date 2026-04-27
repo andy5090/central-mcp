@@ -116,10 +116,13 @@ class TestNoReverseDrift:
         # the agent is in AGENTS; the has_quota_api flag reflects
         # "usable for quota-based fallback decisions", which is stricter
         # than "module file exists".
+        # `render` is a presentation-layer helper (HUD markdown), not an
+        # agent quota fetcher — skip it.
+        non_agent_modules = {"render"}
         quota_dir = Path(importlib.import_module("central_mcp.quota").__file__).parent
         for p in quota_dir.glob("*.py"):
             name = p.stem
-            if name == "__init__":
+            if name == "__init__" or name in non_agent_modules:
                 continue
             assert name in agents.AGENTS, (
                 f"Quota module {name!r} exists but agent isn't in AGENTS."
