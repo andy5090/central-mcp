@@ -3,7 +3,7 @@ site_description: Coding agent-agnostic MCP hub for managing multiple coding age
 site_url: https://central-mcp.org/
 repo_url: https://github.com/andy5090/central-mcp
 repo_name: andy5090/central-mcp
-edit_uri: edit/main/docs/
+edit_uri: ""   # hide the per-page "Edit on GitHub" pencil icon
 copyright: 'Stamped 2026 · <a href="https://github.com/andy5090/central-mcp/blob/main/LICENSE">MIT licensed</a> · Made for terminals'
 
 # Flat HTML output (`/quickstart.html` instead of `/quickstart/index.html`).
@@ -26,7 +26,6 @@ theme:
     - search.suggest
     - search.highlight
     - content.code.copy
-    - content.action.edit
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
