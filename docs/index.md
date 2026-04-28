@@ -36,6 +36,14 @@ Every dispatch is a fresh subprocess in the project's cwd (e.g. `claude -p "..."
 3. **Dispatch-router preamble.** The orchestrator is instructed to be a pure router — parse the project name, call `dispatch`, move on. This minimizes LLM reasoning latency to ~1–2 seconds per turn.
 4. **File-based state.** `registry.yaml` is the single source of truth.
 
+## Live observation — cmux-friendly
+
+Run several projects in parallel, watch them all live. central-mcp ships an observation layer with three backends: **[cmux](https://github.com/manaflow-ai/cmux)** (macOS GUI), tmux, and zellij.
+
+cmux gets a deliberate first-class treatment: its design philosophy ("agents manage their own panes") aligns with central-mcp's stateless, log-driven model. One sentence to the orchestrator — *"set up watch panes for the current workspace"* — produces a clean grid of live `cmcp watch <project>` panes around the orchestrator pane, no config files involved.
+
+[Observation guide →](observation.md){ .md-button }
+
 ## Install
 
 ```bash
@@ -57,6 +65,7 @@ Bootstraps `uv` if missing, installs `central-mcp` from PyPI, and runs `central-
 - **[Quickstart](quickstart.md)** — install + first dispatch
 - **[CLI reference](cli.md)** — every subcommand
 - **[MCP tools](mcp-tools.md)** — the API surface
+- **[Observation](observation.md)** — live multi-pane view (cmux / tmux / zellij)
 - **[Workspaces](architecture/workspaces.md)** — project grouping
 - **[Roadmap](ROADMAP.md)** — what's planned
 - **[Changelog](changelog.md)** — what shipped

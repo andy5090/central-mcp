@@ -53,6 +53,7 @@ nav:
   - Quickstart: quickstart.md
   - CLI reference: cli.md
   - MCP tools: mcp-tools.md
+  - Observation: observation.md
   - Workspaces: architecture/workspaces.md
   - Roadmap: ROADMAP.md
   - Changelog: changelog.md
