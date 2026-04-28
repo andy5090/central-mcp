@@ -8,11 +8,15 @@
 
 set -e
 
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-DIM='\033[2m'
-RESET='\033[0m'
+# Materialize ANSI escapes once so the variables are usable both as
+# `printf` format-string substitutions ("${GREEN}…${RESET}") and as
+# `printf '%s'` arguments. POSIX `sh` doesn't have `$'\e[…]'` syntax,
+# so we go through `printf` to produce real escape characters.
+GREEN=$(printf '\033[0;32m')
+YELLOW=$(printf '\033[1;33m')
+RED=$(printf '\033[0;31m')
+DIM=$(printf '\033[2m')
+RESET=$(printf '\033[0m')
 
 log()  { printf "${GREEN}▸${RESET} %s\n" "$1"; }
 warn() { printf "${YELLOW}!${RESET} %s\n" "$1" >&2; }
@@ -56,17 +60,12 @@ else
   exit 1
 fi
 
-cat <<EOF
-
-${GREEN}✓${RESET} central-mcp is ready.
-
-  Run:                  ${DIM}cmcp${RESET}        ${DIM}# launch the orchestrator${RESET}
-  Or with full name:    ${DIM}central-mcp${RESET}
-
-  Add a project:        ${DIM}cmcp add my-app ~/Projects/my-app --agent claude${RESET}
-  List projects:        ${DIM}cmcp list${RESET}
-  Live observation:     ${DIM}cmcp up${RESET}
-
-  Docs: https://central-mcp.org/
-
-EOF
+# `cat <<EOF` would print "\033[..." literally — heredoc doesn't expand
+# C-style escapes. printf does, so use it for everything color-bearing.
+printf '\n%s✓%s central-mcp is ready.\n\n' "$GREEN" "$RESET"
+printf '  Run:                  %scmcp%s        %s# launch the orchestrator%s\n' "$DIM" "$RESET" "$DIM" "$RESET"
+printf '  Or with full name:    %scentral-mcp%s\n\n' "$DIM" "$RESET"
+printf '  Add a project:        %scmcp add my-app ~/Projects/my-app --agent claude%s\n' "$DIM" "$RESET"
+printf '  List projects:        %scmcp list%s\n' "$DIM" "$RESET"
+printf '  Live observation:     %scmcp up%s\n\n' "$DIM" "$RESET"
+printf '  Docs: https://central-mcp.org/\n\n'
