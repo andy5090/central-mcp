@@ -87,18 +87,71 @@
 /* ── Hero (index page) ────────────────────────────────────────────────────── */
 
 .cmcp-hero {
+  position: relative;
+  overflow: hidden;
   text-align: center;
   padding: 2.5rem 0 1.5rem;
   margin-bottom: 1.5rem;
 }
 
+/* Lift hero content above the background lanes. */
+.cmcp-hero > *:not(.cmcp-hero-bg) {
+  position: relative;
+  z-index: 1;
+}
+
+/* Background "throughput lanes" — horizontal gradient pulses sliding across,
+   suggesting parallel agents running at different paces. Pure CSS, paused
+   for users who opt out of motion. */
+.cmcp-hero-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.cmcp-lane {
+  position: absolute;
+  top: var(--top, 50%);
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    var(--md-typeset-a-color) 35%,
+    var(--md-typeset-a-color) 50%,
+    transparent 80%);
+  background-size: 35% 100%;
+  background-repeat: no-repeat;
+  background-position: -40% 0;
+  opacity: 0.45;
+  filter: blur(0.5px);
+  animation: cmcp-stream var(--speed, 6s) linear infinite;
+  animation-delay: var(--offset, 0s);
+}
+
+[data-md-color-scheme="slate"] .cmcp-lane {
+  opacity: 0.55;
+}
+
+@keyframes cmcp-stream {
+  from { background-position: -40% 0; }
+  to   { background-position: 140% 0; }
+}
+
 .cmcp-hero-logo {
   margin: 0 0 1.25rem !important;
-  animation: cmcp-fade-up 0.7s ease-out both;
+  animation: cmcp-fade-up 0.7s ease-out both, cmcp-logo-pulse 5s 1s ease-in-out infinite;
 }
 
 .cmcp-hero-logo img {
   filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.18));
+}
+
+@keyframes cmcp-logo-pulse {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.025); }
 }
 
 .cmcp-hero-title {
@@ -112,7 +165,7 @@
   animation: cmcp-fade-up 0.7s 0.1s ease-out both;
 }
 
-/* Shimmer accent on the second word — slow, restrained gradient sweep. */
+/* Shimmer accent on the second word — faster, more energetic gradient sweep. */
 .cmcp-hero-emph {
   background: linear-gradient(90deg, #c8651e 0%, #f0a050 50%, #c8651e 100%);
   background-size: 200% auto;
@@ -120,7 +173,7 @@
   background-clip: text;
   -webkit-text-fill-color: transparent;
   color: transparent;
-  animation: cmcp-shimmer 3.6s ease-in-out infinite;
+  animation: cmcp-shimmer 1.8s ease-in-out infinite;
 }
 
 [data-md-color-scheme="slate"] .cmcp-hero-emph {
@@ -140,15 +193,22 @@
   animation: cmcp-fade-up 0.7s 0.2s ease-out both;
 }
 
-/* Token-multiplier ticker — fixed width to avoid layout shift on swap. */
+/* Token-multiplier counter — fixed width to avoid layout shift while
+   the JS animates from 10 to 1000+. Subtle glow makes it feel alive
+   without crossing into AI-slop neon. */
 .cmcp-hero-counter {
   display: inline-block;
-  min-width: 3.4ch;
+  min-width: 4.2ch;
   text-align: center;
-  font-weight: 700;
+  font-weight: 800;
   font-feature-settings: "tnum" 1;
+  font-variant-numeric: tabular-nums;
   color: var(--md-typeset-a-color);
-  transition: opacity 0.35s ease;
+  text-shadow: 0 0 14px rgba(232, 137, 73, 0.35);
+}
+
+[data-md-color-scheme="slate"] .cmcp-hero-counter {
+  text-shadow: 0 0 16px rgba(217, 152, 88, 0.5);
 }
 
 /* Buttons row inside the hero */
@@ -177,9 +237,11 @@
   .cmcp-hero-logo,
   .cmcp-hero-title,
   .cmcp-hero-sub,
-  .cmcp-hero-emph {
+  .cmcp-hero-emph,
+  .cmcp-lane {
     animation: none !important;
   }
+  .cmcp-hero-bg { display: none; }
 }
 
 /* Tighten admonition density a touch — the default is too padded. */

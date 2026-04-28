@@ -1,28 +1,52 @@
-/* Token-multiplier ticker on the index hero.
- * Cycles a span's text through values listed in its `data-values`
- * attribute (pipe-separated), with a soft fade between swaps.
- * No-ops when the user prefers reduced motion or the element is missing. */
+/* Hero token-multiplier counter.
+ * Animates a value from 10 → 1000 with easeOutExpo, holds at the peak,
+ * then loops. Reads min/max from `data-min` / `data-max` (defaults 10
+ * and 1000). Honors prefers-reduced-motion (lands a static "1000×").
+ * Re-binds on mkdocs-material's `document$` so it survives instant
+ * page transitions. */
 
 (function () {
+  const REDUCED = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function easeOutExpo(t) {
+    return t === 1 ? 1 : 1 - Math.pow(2, -10 * t);
+  }
+
+  let activeRaf = 0;
+  let activeTimer = 0;
+
   function start() {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    cancelAnimationFrame(activeRaf);
+    clearTimeout(activeTimer);
 
     const el = document.querySelector('.cmcp-hero-counter');
     if (!el) return;
 
-    const values = (el.dataset.values || '').split('|').map(s => s.trim()).filter(Boolean);
-    if (values.length < 2) return;
+    const min = Number(el.dataset.min) || 10;
+    const max = Number(el.dataset.max) || 1000;
+    const duration = 2400;
+    const hold = 1800;
 
-    let i = Math.max(0, values.indexOf(el.textContent.trim()));
+    if (REDUCED) {
+      el.textContent = max + '×';
+      return;
+    }
 
-    setInterval(() => {
-      i = (i + 1) % values.length;
-      el.style.opacity = '0';
-      setTimeout(() => {
-        el.textContent = values[i];
-        el.style.opacity = '1';
-      }, 320);
-    }, 2200);
+    function loop() {
+      const t0 = performance.now();
+      function step(now) {
+        const progress = Math.min((now - t0) / duration, 1);
+        const value = Math.round(min + (max - min) * easeOutExpo(progress));
+        el.textContent = value + '×';
+        if (progress < 1) {
+          activeRaf = requestAnimationFrame(step);
+        } else {
+          activeTimer = setTimeout(loop, hold);
+        }
+      }
+      activeRaf = requestAnimationFrame(step);
+    }
+    loop();
   }
 
   if (document.readyState === 'loading') {
@@ -31,9 +55,8 @@
     start();
   }
 
-  // mkdocs-material navigation.instant swaps content without full reload —
-  // re-bind on its custom event so the ticker keeps working after navigation.
-  if (typeof document !== 'undefined' && 'document$' in window) {
+  // mkdocs-material instant navigation: rebind on every page transition.
+  if (typeof window !== 'undefined' && window.document$ && typeof window.document$.subscribe === 'function') {
     window.document$.subscribe(start);
   }
 })();

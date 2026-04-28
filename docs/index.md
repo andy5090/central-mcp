@@ -6,6 +6,13 @@ hide:
 
 <div class="cmcp-hero" markdown="1">
 
+<div class="cmcp-hero-bg" aria-hidden="true">
+  <span class="cmcp-lane" style="--speed: 6.0s; --offset: 0.0s; --top: 18%;"></span>
+  <span class="cmcp-lane" style="--speed: 7.5s; --offset: 0.6s; --top: 32%;"></span>
+  <span class="cmcp-lane" style="--speed: 5.5s; --offset: 1.1s; --top: 62%;"></span>
+  <span class="cmcp-lane" style="--speed: 8.5s; --offset: 0.3s; --top: 78%;"></span>
+</div>
+
 <p class="cmcp-hero-logo">
   <img src="logo.png?v=0.11.0" alt="central-mcp" width="200" class="cmcp-hero-light"/>
   <img src="logo-dark.png?v=0.11.0" alt="central-mcp" width="200" class="cmcp-hero-dark"/>
@@ -13,7 +20,7 @@ hide:
 
 <h1 class="cmcp-hero-title">Tokenmaxxing, <span class="cmcp-hero-emph">disciplined.</span></h1>
 
-<p class="cmcp-hero-sub">Fan out Claude Code, Codex, Gemini, opencode across every project in parallel. Burn <span class="cmcp-hero-counter" data-values="10×|100×|1000×">10×</span> the tokens — non-blocking, observable, never bottlenecked on one agent.</p>
+<p class="cmcp-hero-sub">Fan out Claude Code, Codex, Gemini, opencode across every project in parallel. Burn <span class="cmcp-hero-counter" data-min="10" data-max="1000">10×</span> the tokens — non-blocking, observable, never bottlenecked on one agent.</p>
 
 [Get started](quickstart.md){ .md-button .md-button--primary }
 [GitHub](https://github.com/andy5090/central-mcp){ .md-button }
