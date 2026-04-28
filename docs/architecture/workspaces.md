@@ -1,132 +1,153 @@
-# Workspaces — Design Spec
+# Workspaces
 
-Phase 3 of the central-mcp roadmap. Two independent sub-features that can ship in order.
+A workspace is a named subset of registered projects. Use them to:
+
+- Keep client engagements separated (`client-a`, `client-b`, …) so a `list_projects` from inside one engagement doesn't surface the other's projects.
+- Fan out a single prompt to every project in a logical group at once (`dispatch("@frontend", "tighten the README")`).
+- Run multiple `cmcp` instances in different terminals at the same time, each scoped to a different workspace.
+- Slice token usage and quota views by group rather than by single project.
+
+Every install starts with one workspace called `default` that holds every project you've registered.
 
 ---
 
-## Sub-feature 1 — Project grouping (tags inside one registry)
+## Quick example
 
-### Problem
+```bash
+# create a workspace and add some projects to it
+cmcp workspace new client-a
+cmcp workspace add my-app    --workspace client-a
+cmcp workspace add api-server --workspace client-a
 
-Users with 10+ projects want to dispatch to a logical slice (e.g. "all frontend projects") without naming each one. Today, fan-out requires N separate `dispatch` calls from the orchestrator.
+# switch the saved default to client-a (affects new shells)
+cmcp workspace use client-a
 
-### Data model
-
-Add an optional top-level key to `registry.yaml`:
-
-```yaml
-workspaces:
-  frontend: [my-app, api-server]
-  infra:    [rink-service, rinkdns-agents]
-
-projects:
-  - name: my-app
-    ...
+# inside an orchestrator session scoped to client-a, this fan-out
+# dispatches to every project in the workspace at once
+"Send all my projects the same prompt: tighten the README."
 ```
 
-Projects not listed under any workspace stay individually addressable as today. A project may appear in multiple workspaces.
+---
 
-### MCP surface changes
+## Where the data lives
 
-| Tool | Change |
+| File | Role |
 |---|---|
-| `dispatch(target, prompt)` | `target` resolves to a workspace name → fan out to each member project; returns a list of `dispatch_id`s |
-| `list_projects` | gains optional `workspace` filter |
-| `orchestration_history` | gains optional `workspace` filter; fan-out runs share a `group_id` |
-| `add_project` | gains optional `--workspace` flag |
+| `~/.central-mcp/registry.yaml` | `projects:` list + `workspaces:` map (`{name: [project, …]}`). |
+| `~/.central-mcp/config.toml` | `[user].current_workspace` — your saved default workspace. |
 
-### CLI surface changes
-
-```
-central-mcp up --workspace frontend      # tmux/zellij: only this workspace's panes
-central-mcp list --workspace infra
-```
-
-### Dispatch fan-out
-
-- Each member project is dispatched independently (non-blocking, parallel).
-- `dispatch` with a workspace target returns `{workspace: "frontend", dispatches: [{project: "my-app", dispatch_id: "…"}, …]}`.
-- `orchestration_history` groups these under a shared `group_id` so the orchestrator can poll all at once.
-
-### Resolution order
-
-When `target` matches both a project name and a workspace name:
-- Default: project wins (explicit beats group).
-- Prefix `@frontend` to force workspace resolution.
-
-### Open questions
-
-- Should fan-out respect per-project `permission_mode` or override from the workspace?
-- Concurrent dispatch cap per workspace (avoid saturating API rate limits)?
+A project may appear in multiple workspaces; central-mcp doesn't enforce mutual exclusion. Projects you never explicitly assign live in `default`.
 
 ---
 
-## Sub-feature 2 — Registry profiles (switchable workspaces)
+## CLI
 
-### Problem
+All workspace commands are under `cmcp workspace`:
 
-Users juggle multiple unrelated project sets (work laptop / personal / client engagement) and today must manually swap `registry.yaml` or maintain parallel installs.
-
-### Directory layout
-
-```
-~/.central-mcp/
-  registry.yaml          ← default (backward compatible)
-  config.toml
-  workspaces/
-    client-x/
-      registry.yaml
-      config.toml        ← optional workspace-local overrides
-      logs/
-    personal/
-      registry.yaml
-      logs/
+```bash
+cmcp workspace list              # show every workspace + project count
+cmcp workspace current           # print the active workspace name
+cmcp workspace new <name>        # create an empty workspace
+cmcp workspace use [<name>]      # switch active (interactive picker if name omitted)
+cmcp workspace add <project> --workspace <name>      # assign a project
+cmcp workspace remove <project> --workspace <name>   # unassign
 ```
 
-### Selection cascade
+`cmcp workspace use` with no argument opens an arrow-key picker showing every workspace with its project count and a `[current]` marker on the active one.
 
-1. `CENTRAL_MCP_WORKSPACE=<name>` env var
-2. `central-mcp --workspace <name>` CLI flag
-3. `config.toml` → `[workspace] default = "client-x"`
-4. Root `~/.central-mcp/registry.yaml` (current behavior)
-
-### `config.toml` additions
-
-```toml
-[workspace]
-default = "work"          # optional; falls back to root registry if unset
-```
-
-### CLI additions
-
-```
-central-mcp workspace list
-central-mcp workspace new <name>
-central-mcp workspace use <name>     # sets default in config.toml
-central-mcp workspace current        # prints active workspace name
-```
-
-### `paths.py` impact
-
-`resolve_home()` in `paths.py` gains workspace awareness. All downstream paths (`registry.yaml`, `logs/`, `workers/`) derive from the resolved root — no other module needs changes.
-
-### Backward compatibility
-
-- Root `~/.central-mcp/registry.yaml` remains valid forever; no migration required.
-- The new `workspaces/` subtree is opt-in.
+`cmcp workspace use <name>` writes to `config.toml` and is **persistent** — every new shell on this machine inherits it. For a one-off override (a single shell, no config write), use `cmcp run --workspace <name>` or set `CMCP_WORKSPACE` in that shell's env (see *Concurrent workspaces* below).
 
 ---
 
-## Sub-feature 3 — Shared context (deferred)
+## Running orchestrators against a workspace
 
-Apply a shared prompt prefix or `CLAUDE.md` template to every dispatch inside a workspace. Deferred until Sub-features 1 and 2 are stable and real usage reveals what "shared context" actually needs to contain.
+### Default behavior (single workspace, saved)
+
+```bash
+cmcp                # uses config.toml [user].current_workspace
+```
+
+The orchestrator sees only that workspace's projects when it calls `list_projects()` with no arguments. Dispatch fan-out (`@workspace`) targets the same scope.
+
+### One-off override (this terminal only)
+
+```bash
+cmcp run --workspace client-a
+```
+
+This sets `CMCP_WORKSPACE=client-a` in the launched orchestrator's environment. The MCP server child inherits it via stdio. The saved default in `config.toml` is **not** changed, so opening another terminal and running `cmcp` will still use whatever the saved default is.
+
+### Concurrent workspaces (multiple terminals)
+
+```bash
+# terminal 1 — Claude Code on client-a
+cmcp run --workspace client-a
+
+# terminal 2 — Codex on client-b at the same time
+cmcp run --workspace client-b
+```
+
+Each instance is fully isolated for `list_projects`, dispatch fan-out, and `token_usage(workspace=…)`. They share `tokens.db`, `dispatches.db`, and the `registry.yaml` (workspace-scoped reads, all multi-process safe).
+
+You can also `export CMCP_WORKSPACE=client-a` once per shell instead of passing `--workspace` to every command.
+
+### Resolution order for `current_workspace()`
+
+1. `CMCP_WORKSPACE` env var (per-process)
+2. `config.toml [user].current_workspace` (saved default)
+3. Literal `default`
 
 ---
 
-## Implementation order
+## MCP tool calls — what changes inside the orchestrator
 
-1. **Sub-feature 1** first — purely additive to `registry.yaml` + `server.py`. No path changes.
-2. **Sub-feature 2** second — touches `paths.py` and `registry.py`; higher blast radius.
-3. **Sub-feature 3** last — depends on both.
+When the orchestrator session is scoped to a workspace, every tool that takes `workspace` as a parameter defaults to the active one:
 
-Sub-feature 1 can ship as a minor version bump. Sub-feature 2 warrants a minor bump with a migration note.
+| Tool | Default behavior |
+|---|---|
+| `list_projects()` | Returns projects in the active workspace. |
+| `list_projects(workspace="__all__")` | Every project across every workspace. |
+| `orchestration_history()` | Filtered to the active workspace. |
+| `token_usage()` | Aggregated across the active workspace. |
+| `dispatch("@workspace", prompt)` | Fan-out to every project in the *named* workspace (not necessarily the active one — `@<name>` is explicit). |
+| `dispatch("project-name", prompt)` | Single project; not affected by workspace scope. |
+
+`@workspace` resolution: if a name matches both a project and a workspace, the project wins. Use `@<name>` to force workspace resolution.
+
+---
+
+## Observation panes
+
+`cmcp up`, `cmcp tmux`, and `cmcp zellij` honor the workspace too:
+
+```bash
+cmcp tmux --workspace client-a    # session named cmcp-client-a, panes only for client-a's projects
+cmcp tmux --all                   # one cmcp-<workspace> session per workspace
+cmcp tmux switch <workspace>      # detach from current, attach to another workspace's session
+```
+
+When `--workspace` is explicit on `cmcp tmux/zellij`, the orchestrator pane gets `CMCP_WORKSPACE=<name>` injected into its launch command — so the orchestrator sees the right scope independent of the shell that ran `cmcp tmux`.
+
+cmux works the same way at the layout level: the agent-driven setup (see [Observation](../observation.md)) lays out one pane per project that the active workspace contains.
+
+---
+
+## Token usage by workspace
+
+```python
+# inside the orchestrator
+token_usage(period="week", workspace="client-a")
+# → breakdown limited to client-a's projects
+# → quota snapshot is global (subscriptions are per-account, not per-workspace)
+```
+
+The `summary_markdown` field in the response is rendered with the same workspace scope.
+
+---
+
+## What workspaces are *not*
+
+- **Not isolated registries.** All workspaces live in the same `registry.yaml`. Removing a workspace doesn't delete its projects — they fall back to `default` ownership.
+- **Not separate token / dispatch databases.** `tokens.db` and `dispatches.db` are global; workspace filtering happens at read time via the registry.
+- **Not access-controlled.** Anyone with shell access to your `~/.central-mcp/` sees every workspace. Use OS-level permissions if you need stronger separation.
+- **Not auto-derived from project paths.** Membership is explicit — `cmcp workspace add` is the only way a project joins a workspace.
