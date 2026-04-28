@@ -5,6 +5,13 @@ repo_url: https://github.com/andy5090/central-mcp
 repo_name: andy5090/central-mcp
 edit_uri: edit/main/docs/
 
+# Flat HTML output (`/quickstart.html` instead of `/quickstart/index.html`).
+# Required for Cloudflare R2: R2 serves objects literally and does not
+# auto-resolve `/foo/` to `/foo/index.html`. Flat URLs let R2 serve every
+# page directly. The remaining edge case — root `/` → `/index.html` — is
+# handled by a Cloudflare Transform Rule (URL rewrite) at the zone level.
+use_directory_urls: false
+
 theme:
   name: material
   logo: logo.png
