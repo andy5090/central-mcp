@@ -19,7 +19,10 @@ theme:
   logo: logo.png
   favicon: favicon-256x256.png
   features:
-    - navigation.instant
+    # navigation.instant intentionally disabled — incompatible with the
+    # mkdocs-static-i18n language switcher (the contextual link breaks
+    # under instant navigation). Page transitions do a full reload, which
+    # is acceptable for our content size.
     - navigation.tracking
     - navigation.sections
     - navigation.top
@@ -63,6 +66,28 @@ nav:
 
 plugins:
   - search
+  - i18n:
+      docs_structure: suffix
+      fallback_to_default: true
+      reconfigure_material: true
+      reconfigure_search: true
+      languages:
+        - locale: en
+          default: true
+          name: English
+          build: true
+        - locale: ko
+          name: 한국어
+          build: true
+          nav_translations:
+            Home: 홈
+            Quickstart: 빠른 시작
+            CLI reference: CLI 레퍼런스
+            MCP tools: MCP 도구
+            Observation: 관찰 모드
+            Workspaces: 워크스페이스
+            Roadmap: 로드맵
+            Changelog: 변경 이력
   - include-markdown
 
 markdown_extensions:
