@@ -20,7 +20,7 @@ hide:
 
 <h1 class="cmcp-hero-title">Tokenmaxxing, <span class="cmcp-hero-emph">disciplined.</span></h1>
 
-<p class="cmcp-hero-sub">Fan out Claude Code, Codex, Gemini, opencode across every project in parallel. Burn <span class="cmcp-hero-counter" data-min="10" data-max="100">10×</span> the tokens — non-blocking, observable, never bottlenecked on one agent.</p>
+<p class="cmcp-hero-sub">Fan out Claude Code, Codex, Gemini, opencode across every project in parallel. central-mcp absorbs the context switching — tokens climb to <span class="cmcp-hero-counter" data-min="10" data-max="100">10×</span>, your focus stays put.</p>
 
 [Get started](quickstart.md){ .md-button .md-button--primary }
 [GitHub](https://github.com/andy5090/central-mcp){ .md-button }
