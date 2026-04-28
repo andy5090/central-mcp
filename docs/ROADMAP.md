@@ -1,281 +1,86 @@
 # Roadmap
 
-Planned direction for central-mcp. Ordered by priority; later phases depend on demand.
+What's planned for central-mcp. This page is **forward-looking only** — for what's already shipped, see the [Changelog](changelog.md).
 
-Status legend: ✅ done · 🚧 in progress · 📋 planned · 💭 idea
+> **Have a suggestion?** Open an issue at [github.com/andy5090/central-mcp/issues](https://github.com/andy5090/central-mcp/issues). We read every one.
 
----
-
-## Phase 1 — Observable dispatch (shipped in 0.2.0)
-
-**Goal**: make `central-mcp up` actually observable. Every dispatch writes structured events to a per-project log; panes stream those events live.
-
-✅ **jsonl event log**
-- Path: `~/.central-mcp/logs/<project>/dispatch.jsonl` (append-only JSON Lines).
-- Events: `start`, `attempt_start`, `output` (line-oriented chunks), `complete`, `error`.
-- `server.py dispatch()` streams subprocess stdout/stderr into the jsonl via reader threads while still returning the full response as the MCP result.
-
-✅ **`central-mcp watch <project>` CLI**
-- Tails the project's jsonl with human-readable formatting (ANSI colors, headers, exit code, duration).
-- Touches the log file if missing so fresh projects wait silently for the first dispatch.
-
-✅ **tmux pane integration**
-- Project panes run `central-mcp watch <project>`; orchestrator pane stays interactive.
-- Hub window uses `main-vertical` with `main-pane-width 50%` so the orchestrator takes the left half; overflow projects chunk into `cmcp-2`, `cmcp-3`, … with the first window picking up a `-hub` suffix.
-- Pane border titles + conditional `pane-border-format` highlight the orchestrator in bold yellow.
-
-✅ **Tests**
-- Dispatch event sequence end-to-end, watch renderer unit tests, layout invariants (main-vertical coordinates, window/pane counts, active-pane focus).
-
-✅ **Related quality-of-life shipped alongside**
-- Default bypass flipped to ON with a README risk disclaimer (`--no-bypass` opts out).
-- `central-mcp tmux` one-shot (create-if-missing + attach) named after the backend so `central-mcp zellij` can sit beside it in Phase 2.
-- `central-mcp upgrade` for PyPI-driven self-update (0.2.1).
-- `codex` / `gemini` adapters now resume the last session (`codex exec resume --last`, `gemini --resume latest`).
+Status legend: 📋 planned · 💭 idea · 🚧 in progress
 
 ---
 
-## Phase 2 — Zellij support (shipped, unreleased)
+## Visibility
 
-**Goal**: provide the same layout experience on Zellij for users who prefer it over tmux.
+Make the project-portfolio view consistent across every surface.
 
-✅ **Zellij implementation**
-- New `central_mcp/zellij.py` builds a KDL layout for the current registry and launches (or attaches to) a session named `central`.
-- Same chunking / hub / pane-title semantics as tmux mode; project panes run `central-mcp watch <project>`.
-- Exposed as `central-mcp zellij` — backend-named subcommand, matching `central-mcp tmux`.
+📋 **Reuse `token_usage.summary_markdown` in `cmcp monitor` and `cmcp watch`.** The pre-rendered HUD shipped in 0.10.18 is currently only seen by orchestrators. Wiring it into the curses monitor and the watch-pane sticky header eliminates rendering drift across surfaces.
 
-✅ **Tests**
-- Unit tests for KDL generation across empty registry / orchestrator present / absent / overflow. Live validation deferred to manual usage because zellij needs a TTY.
+📋 **Token budgets + alerts.** Per-project / per-workspace token caps in `config.toml`; threshold breaches trigger a yellow banner at dispatch start, and the existing quota-aware fallback chain extends to budget-aware fallback at 90%.
 
-💭 **Deferred**
-- `LayoutBackend` interface extraction. Kept the two modules independent for now — duplication is mild, and a single abstraction is easier to design after a third backend appears (or a real pain point shows up).
-- Auto-detect mode (`central-mcp up --backend auto`). Explicit picks (`tmux` / `zellij`) keep the contract obvious.
+💭 **Watch mode: cumulative consumption next to elapsed time.** Show `+ 42s · 8.97M tokens` rather than `+ 42s` alone, so long-running dispatches make their cost visible.
 
 ---
 
-## Phase 2b — cmux (macOS, agent-driven only — no CLI surface)
+## Routing
 
-**Goal**: let macOS users get the observation layer via [cmux.app](https://github.com/manaflow-ai/cmux) without adding a brittle CLI wrapper. cmux is a native GUI terminal designed so that agents manage their own panes (it injects `CMUX_WORKSPACE_ID` / `CMUX_SURFACE_ID` into every pane it spawns), so the orchestrator agent handles observation-pane setup directly.
+Move from "user picks the agent for every dispatch" to "central-mcp suggests."
 
-✅ **Agent-driven workflow (no dedicated CLI command)**
-- Open cmux.app, run `cmcp` in a pane to launch the configured orchestrator, then ask the orchestrator to set up observation panes. The orchestrator reads `src/central_mcp/data/AGENTS.md` (shipped to `~/.central-mcp/AGENTS.md` at hub init) which includes a "Running inside cmux" section covering the exact cmux CLI incantations (`cmux new-split` → `cmux --json list-pane-surfaces` → `cmux send-text`). On `CMUX_WORKSPACE_ID` absence the section is a no-op, so the same guideline file is safe across tmux / zellij / cmux contexts.
+📋 **`suggest_dispatch(project, prompt)` MCP tool.** Returns `{agent, model, reasoning, fallback}` without dispatching — orchestrators show the suggestion, the user accepts or overrides. Heuristics first (prompt length, keywords like "refactor" / "research" / "review", current quota state); LLM-assisted classifier later if it earns its keep.
 
-💭 **Why no CLI command**
-- An earlier 0.8.0 attempt shipped `central-mcp cmux` that spawned a workspace via `cmux new-workspace --command 'claude "<seed prompt>"'`. Long seed payloads (1k+ chars) proved fragile — cmux's keystroke-injection truncated mid-string in the wild, and shell quoting races made the launch unreliable. Delegating to the agent's Bash tool avoids both failure modes: command lengths stay small, no shell inside the cmux pane, the agent sees each cmux CLI call's output and can retry per-project on failure.
+📋 **Budget-aware fallback chain.** The existing quota-aware chain (saved preference → fallback → remaining installed) extends to also skip agents over their configured token budget. Ties Visibility's budget work into Routing.
 
-💭 **Declarative layout (future path)**
-- cmux source has `--layout <json>` wired up on `new-workspace`, but it hasn't landed in a shipped release (0.63.2 rejects the flag). If a future release exposes it, central-mcp could add back a "build the whole layout up front" path as a parallel option, without removing the agent-driven flow.
+💭 **`auto_dispatch` opt-in.** Combined classify + dispatch, gated behind `config.toml [routing].auto = true`. Only after `suggest_dispatch` data shows users accept recommendations >70% of the time.
 
-⚠️ **Scope**
-- opencode / droid are supported like any other orchestrator on the tmux / zellij backends. Inside cmux, any agent whose Bash tool can execute `cmux new-split` will work — the AGENTS.md section is agent-agnostic.
+💭 **Per-workspace routing overrides.** Different favored agents per workspace (e.g. workspace `client-a` defaults to claude, `client-b` to codex).
 
 ---
 
-## Phase 3 — Workspaces ✅ shipped in 0.9.x
+## Workspaces
 
-**Goal**: let users group projects into named workspaces so orchestrators can address a group with one dispatch, and swap between different project sets without editing `registry.yaml`.
+Per-process workspace scoping (`CMCP_WORKSPACE`) is shipped. Next steps are about session-level visibility and shared context.
 
-Design spec: [`docs/architecture/workspaces.md`](architecture/workspaces.md)
+📋 **Persistent session IDs.** New `sessions` table tracking each `cmcp run` instance — `id`, `workspace`, `started_at`, `last_seen_at`, `pid`, `terminal_kind`. Backs a new `cmcp sessions ls` command and links each `dispatch_id` to the session that initiated it. Useful when running 3+ concurrent workspaces and wanting to see which terminal owns which dispatch.
 
-✅ **Sub-feature 1 — Project grouping inside a registry (0.9.0)**
-- Top-level `workspaces: {name: [project, …]}` map in `registry.yaml`; `current_workspace` field tracks the active workspace. Auto-migrated on first use.
-- `dispatch("@workspace", prompt)` fans out to every project in the workspace; returns a list of `dispatch_id`s.
-- `list_projects(workspace=...)` / `orchestration_history(workspace=...)` for filtered views.
-- `add_project(…, workspace=...)` registers a project and assigns it in one call.
-- `cmcp tmux` / `cmcp zellij` accept `--workspace NAME`, `--all`, and `switch NAME`; sessions named `cmcp-<workspace>`.
+📋 **Per-session history view.** `orchestration_history(session=<id>)` returns only the dispatches initiated by that session. Optional, off by default — most users only need workspace-level isolation.
 
-✅ **Sub-feature 2 — Active workspace switching (0.9.0)**
-- `cmcp workspace list / current / new / use / add / remove` CLI subcommand tree.
-- Active workspace stored in `registry.yaml` as `current_workspace`. Simpler than the originally-planned separate registry trees per workspace; separate-tree model deferred.
+💭 **Per-workspace `CLAUDE.md` / `AGENTS.md` overlays.** `~/.central-mcp/workspaces/<name>/AGENTS.md` augments the base orchestrator instructions when launching that workspace. Useful for client engagements with distinct working agreements.
 
-✅ **Migration fix (0.9.2)**
-- On first migration of a pre-workspace registry, `default` is now seeded with all existing project names so the YAML reflects reality. `add_to_workspace` to a named workspace removes the project from `default` to avoid duplicate membership.
-
-✅ **`current_workspace` moved to config.toml (0.10.0)**
-- Per-user UI state, not shared project metadata — it lives in `config.toml [user].current_workspace` now, alongside `[user].timezone` and `[orchestrator].default`. One-shot migration on startup lifts any legacy `current_workspace` key out of `registry.yaml`.
-
-✅ **`list_projects()` scopes to current workspace by default (0.10.1)**
-- Calling the tool with no args returns the user's *current* workspace instead of every registered project across workspaces — matches orchestrator intuition ("what am I working on right now"). Opt into the old behavior with `workspace="__all__"` (canonical) or `workspace="*"` (alias).
-
-💭 **Sub-feature 3 — Shared context** (deferred until 1+2 usage reveals actual needs)
-- Prompts/system-instructions applied to every dispatch inside a workspace.
-- Per-workspace `CLAUDE.md` / `AGENTS.md` templates auto-applied when launching the orchestrator for that workspace.
-
-💭 **Open questions remaining**
-- Concurrent dispatch cap when fan-out grows large (API rate limit exposure).
-- `orchestration_history` fan-out grouping: currently flat list; `group_id` not yet implemented.
-- Separate registry trees per workspace (original Sub-feature 2 design) — still useful for fully isolated client engagements.
+💭 **Shared context: per-workspace user prompts.** A workspace-specific `user.md` overlay applied to every dispatch inside that workspace.
 
 ---
 
-## Phase 4 — UX & personalization ✅ largely shipped in 0.10.x
+## Distribution
 
-**Goal**: make central-mcp more tailored to individual users and more observable at a glance — covering personal workflow rules, watch-pane readability, and usage visibility.
+📋 **Auto-generate CLI + MCP-tool reference pages.** Today the [CLI](cli.md) and [MCP tools](mcp-tools.md) pages are hand-curated. A small `scripts/gen_docs.py` walks `argparse._SubParsersAction` and `inspect.signature` over `server.py`, regenerates these pages, and a CI guard fails the build if they drift from source.
 
-✅ **User-specific instruction overlays** (shipped 0.9.4)
-- `~/.central-mcp/user.md` scaffolded on first launch; orchestrators read it at session start.
-- Augmentation layer — outranks router defaults but not system/developer constraints; user turn instructions still win.
-- Never overwritten by upgrades. Single-user; named profiles deferred.
-
-✅ **Watch mode visual improvements** (shipped 0.9.4 → refined through 0.9.x)
-- Elapsed time prefix (`+  42s`) on every output line during active dispatch.
-- Code block detection (` ``` ` / `~~~` fences) → magenta to separate prose from code.
-- Spinner / progress-bar / blank lines dimmed to reduce visual clutter; agent-specific noise filtering (Codex headers, Gemini warnings).
-- Fallback `attempt_start` transitions rendered in yellow with `↻` arrow.
-- Curses sticky header keeps project / agent / status pinned while the log scrolls below.
-
-✅ **Token usage monitoring — full backend rebuild** (shipped 0.10.0)
-- **Adapter-driven JSON-output parsing** replaces the 0.9.4 regex path (which matched 0% in practice because agent CLIs don't emit tokens in plain stdout). Each adapter's `exec_argv` now requests structured output (`claude --output-format json`, `codex --json`, `gemini -o json`, `droid -o json`, `opencode --format json`) and its `parse_output(stdout)` returns `(display_text, {input, output, total})` deterministically. Gemini aggregates across router + main models per request.
-- **`~/.central-mcp/tokens.db` SQLite aggregation store** — single flat `usage` table, `UNIQUE(source, session_id, request_id)` making re-syncs idempotent. `source` is either `dispatch` (subprocess) or `orchestrator` (session-file derived).
-- **Orchestrator-session token backfill** — `dispatch()` scans the active orchestrator's session file on every call and records per-turn tokens (Claude Code: `~/.claude/projects/<slug>/*.jsonl`; Codex: `~/.codex/sessions/**/rollout-*.jsonl`). Gemini has no on-disk session store → no-op; opencode (SQLite-backed) is a Phase 4.1 follow-up.
-- All reads windowed by `config.toml [user].timezone`, auto-seeded with the system IANA name on install/upgrade.
-
-✅ **`token_usage` MCP tool** (shipped 0.10.0)
-- Portfolio-wide aggregation split out from `orchestration_history` so event history and token accounting evolve independently. Parameters: `period` (`today`/`week`/`month`/`all`), `project`, `workspace`, `group_by` (`project`/`agent`/`source`). Paves the way for a live token pane.
-
-✅ **`central-mcp monitor` portfolio dashboard** (shipped 0.10.0)
-- Curses live view. Top: per-agent subscription quota bars (Claude Pro 5h/wk, Codex ChatGPT 1h/day) polled from provider OAuth usage APIs; Gemini shows auth type only. Bottom: DISPATCH STATS with `today tok` / `7d tok` columns.
-- Quota refreshes every 90s in a background thread; stats every 10s.
-
-✅ **Timeline rotation + archive summaries** (shipped 0.10.0)
-- `log_timeline()` opportunistically rotates `timeline.jsonl` (>5 MB or >10k lines) into `archive/timeline-<utc-microsecond>.jsonl` + paired `*-summary.json` (per-project event counts, per-agent events, `{from, to}` ts range). Dormant at today's install sizes — infrastructure in place for long-running deployments.
-- `orchestration_history(include_archives=True)` attaches archive summaries (not raw records) so callers can see the full shape of history without blowing past context.
-
-✅ **Concurrency correctness** (shipped 0.10.0)
-- `log_timeline()` serialized with `threading.Lock` + `fcntl.flock` (POSIX). File line order now tracks `ts` order under concurrent writers (MCP handler thread + multiple `_run_bg` daemon threads). Windows native gracefully degrades to `threading.Lock` only.
-
-✅ **User config consolidation** (shipped 0.10.0)
-- New `central_mcp.config` module owns `~/.central-mcp/config.toml`. Sections: `[orchestrator].default`, `[user].timezone`, `[user].current_workspace`.
-
-✅ **Arrow-key interactive pickers** (shipped 0.10.2)
-- `central-mcp run` (orchestrator choice) and `central-mcp up` (multiplexer choice) use ↑/↓ (or k/j) navigation with a bold highlight + cursor-hide during selection. Non-TTY environments (piped stdin, Windows native) transparently fall back to the legacy numbered prompt.
-
-✅ **`central_mcp.agents` capability registry** (shipped 0.10.3)
-- Single source of truth: one `AGENTS` dict of `AgentCapabilities` (can_dispatch / can_orchestrate / mcp_installable / has_quota_api / has_session_reader) replaces the previously-scattered `ORCHESTRATORS` / `VALID_AGENTS` / `SUPPORTED_CLIENTS` declarations. Legacy names are re-exported so pre-existing imports keep working.
-- Consistency tests enforce the registry ↔ implementation contract both ways — flipping a capability flag without wiring up the module / adapter / installer fails the suite.
-- Drift fix: **opencode now appears in the `cmcp run` picker** (it had been in VALID_AGENTS + SUPPORTED_CLIENTS but missing from ORCHESTRATORS).
-
-✅ **Orchestrator fallback chain with quota-aware skip** (shipped 0.10.4)
-- `cmcp run` walks `preferred → config.toml [orchestrator].fallback (optional hint) → remaining installed orchestrator-capable agents` instead of hard-launching the saved preference. Entries whose provider quota meets/exceeds the configured threshold (default 95% / 90% for 5h / weekly) are skipped with a one-line notice.
-- `config.toml [orchestrator].fallback_enabled`, `[orchestrator].fallback`, `[orchestrator.quota_threshold]` all honor sensible defaults.
-- Agents without a quota API (gemini, opencode, droid) are never skipped on quota grounds — nothing to base a decision on.
-
-✅ **opencode orchestrator-session backfill** (shipped 0.10.5)
-- `orch_session.sync_orchestrator("opencode")` now populates `tokens.db` with `source='orchestrator'` rows alongside Claude Code + Codex. Hybrid strategy — SQLite discovery (3 stable columns from `session` table) + `opencode export <id>` CLI for the per-turn token content — honors "public contract for content" while keeping discovery tractable.
-
-✅ **Startup upgrade probe** (shipped 0.10.7, tuned 0.10.10)
-- `central-mcp run` probes PyPI at launch (at most once per `[user].upgrade_check_interval_hours`) and offers an interactive Y/n upgrade when a newer release is available. Every failure path is silent — never blocks startup on flaky networks / non-TTY shells / source installs. Default interval lowered from 24h → 4h in 0.10.10 to track the current release cadence.
-
-✅ **Installed-version banner at startup** (shipped 0.10.10)
-- Prints `central-mcp  : X.Y.Z` above the orchestrator summary so the launched build is always visible. Shows `source` for editable installs.
-
-✅ **Background-poll cadence — data-driven retune** (shipped 0.10.8)
-- Orchestrator guidance for `check_dispatch` polling dropped 30s → 3s after analyzing ~170 real dispatches across all five agents (median ~80s, minimum ~6s codex). Keeps total tool-call volume reasonable for an 80s dispatch (~25 polls) while cutting the completion-to-report gap to <1.5s on average.
-
-📋 **Token budget + alerting** (Phase 4.1 remaining)
-- Running cumulative token / cost tracker per project and per workspace (configurable cap). `tokens.db` + `token_usage` tool provide the primitives; budget policy + UI alerts + cross-project aggregation are still to land.
-- Watch mode shows cumulative consumption alongside elapsed time.
-- Budget-triggered agent fallback during dispatch (reuses the existing fallback chain).
-
-💭 **Open questions**
-- Full syntax highlighting (`pygments`/`rich`) or extend current heuristics?
-- Token budget: stored in `registry.yaml` per project, or separate `budget.yaml`?
-- Named user profiles (defer until demand is clear).
+💭 **Windows installer (PowerShell).** macOS + Linux work via `install.sh`. A PowerShell parallel would unblock Windows users; pure-Python core already runs there, the friction is install + alias setup.
 
 ---
 
-## Phase 5 — Distribution & docs 📋 planned
+## Architecture
 
-**Goal**: make it trivially easy for new users to discover, install, and understand central-mcp.
+The slow-burn changes — only land when usage data justifies the complexity.
 
-📋 **curl-based quickstart installer**
-- Single `curl | sh` command bootstraps `uv` if missing, then runs `uv tool install central-mcp`.
-- Runs `central-mcp init` to scaffold `~/.central-mcp/` and the `cmcp` alias.
-- Hosted at a stable short URL (e.g. `get.central-mcp.dev`).
+💭 **Lazy daemon.** First MCP connection spawns a background daemon, holds a PID lock, exposes a Unix socket; stdio `central-mcp serve` auto-detects and proxies. Wins: ~150ms cold-start saved per MCP client, centralized session scanners, single place for pre-work. Cross-process state already solved by `dispatches.db` in 0.10.9, so the urgency is low.
 
-📋 **Static documentation site**
-- Generated from existing docs (`README.md`, `CHANGELOG.md`, CLI reference, MCP tool signatures).
-- Covers: quickstart, CLI reference, MCP tool API, workspace guide, observation layer guide, adapter configuration.
-- Hosted on GitHub Pages or equivalent; auto-deployed on each release tag.
+💭 **Push notifications when MCP clients forward them.** Server-initiated `notifications/resources/updated` events for completed dispatches. Currently blocked: no MCP client surfaces these to the LLM turn yet. Tracking upstream; will land when at least one client commits to forwarding.
 
-💭 **Open questions**
-- macOS + Linux only for the installer, or attempt Windows/PowerShell parity?
-- Static generator choice (VitePress, Starlight, mkdocs-material)?
-- How much of the tool-signature documentation can be auto-generated from source?
+💭 **Agent capability registry overrides.** Today's `agents.AGENTS` is the single source of truth. A `[agents.<name>]` block in `config.toml` would let users override capabilities per-host (e.g. mark codex `has_quota_api = false` in environments where the OAuth flow is broken).
 
 ---
 
-## Phase 6 — Daemon + push notifications (demand-driven)
+## Non-goals
 
-**Goal**: let multiple MCP clients share one central-mcp instance and receive dispatch completions via push rather than polling.
+These are deliberate "we won't do this" — saving everyone time:
 
-✅ **Cross-process dispatch state** (shipped 0.10.9 — the first shared-state primitive)
-- `~/.central-mcp/dispatches.db` (SQLite). Every dispatch is mirrored to this store on start and on terminal transition; `check_dispatch` / `list_dispatches` fall through to it when the caller's in-memory `_dispatches` dict doesn't have the record. In-memory state still wins for the originating process (free, no I/O).
-- **Concrete bug this fixed**: when the orchestrator dispatches on its own stdio child and then spawns a sub-agent (e.g. Codex `spawn_agent`) to poll, the sub-agent's central-mcp was a *different* process with an empty dict — so `check_dispatch` returned `"no dispatch with id <X>"` even though the parent had just started it. Now the sub-agent reads the shared store and sees it.
-- **Impact on Phase 6 motivation**: the "daemon is the only way to share state across stdio clients" argument is weaker now — SQLite + jsonl already cover cross-process *state* (not *push*). Push notifications remain the real open problem.
-- **Next milestone**: broaden validation beyond Codex (Claude Code sub-agents, Gemini, opencode) to confirm no regressions.
-
-📋 **Push notifications — blocked on MCP client support**
-- Research (Anthropic forum + Codex issue #16159) confirmed no MCP client currently surfaces server-initiated `notifications/resources/updated` events to the LLM turn. Even with a correctly-implemented server, the data never reaches the model, so "the dispatch finished" cannot be proactively reported in-conversation. Rolling our own push scheme won't help until clients propagate it.
-- Tracking the upstream state in `docs/architecture/` (TBD); revisit when a client publicly commits to forwarding notifications.
-
-💭 **Lazy daemon** (keep as an option, not a prerequisite)
-- First MCP connection spawns a background daemon, holds PID lock at `~/.central-mcp/daemon.pid`.
-- Unix socket at `~/.central-mcp/daemon.sock` (localhost TCP fallback for Windows).
-- stdio `central-mcp serve` auto-detects daemon and proxies — clients keep their current config.
-- With cross-process state already solved by 0.10.9, the remaining daemon wins are (a) fewer Python process launches (fastmcp cold-start is ~150ms), (b) centralized logging, (c) a single place to run pre-work like session scanners.
-
-💭 **MCP resource subscriptions** (downstream of push-notification breakthrough)
-- `dispatch://<project>/events` — stream of event objects.
-- `resources/subscribe` support → server pushes `notifications/resources/updated` on completion.
-- Backed by the same jsonl written in Phase 1 (no schema duplication).
-- Only worth building once at least one MCP client commits to forwarding notifications.
-
-💭 **Commands** (power users only)
-- `central-mcp daemon {start|stop|status|logs|restart}`
-- `central-mcp daemon --foreground` for debugging.
-
-💭 **Open questions**
-- Auto-restart on crash? (probably no, surface error to clients)
-- Version mismatch handling on upgrade (CLI vs daemon)?
-- Cross-platform socket story (Windows)?
+- **Browser UI.** central-mcp is terminal-native. Observation lives in tmux/zellij panes or by tailing logs.
+- **Agent-state syncing.** Each agent CLI manages its own conversation state. central-mcp orchestrates dispatches, observes their lifecycle, and aggregates token use — it doesn't replicate session history.
+- **Interactive approval / worker mode.** Dispatch is non-interactive by design. If a user needs to approve actions mid-run, they should run the agent directly in a terminal.
+- **`central-mcp install <client>` replacement of stdio.** Even after daemon mode lands, stdio stays the default transport. Daemon proxies behind it, transparent to clients.
 
 ---
 
-## Phase 7 — Agent harness (smart routing)
+## Suggesting changes
 
-**Goal**: act as a higher-level agent harness — given a user request, automatically pick the best coding agent and model tier for the job, then dispatch accordingly. The orchestrator stops making routing decisions itself; it just passes the task to central-mcp and trusts the harness to choose.
+Have a use case that doesn't fit anywhere above? An idea for a new MCP tool? A "this is slowing me down every day" complaint?
 
-📋 **Task classifier**
-- New MCP tool `suggest_dispatch(project, prompt)` — returns `{agent, model, reasoning, fallback}` without dispatching. The orchestrator can show the suggestion, call `dispatch` with it, or override.
-- Optional `auto_dispatch(project, prompt)` — classify + dispatch in one shot.
-- Heuristics at first (prompt length, keywords: "refactor", "research", "summarize", "shell command", "review", etc.), with an optional LLM-assisted classifier as a follow-up.
-
-📋 **Agent capability registry**
-- Structured metadata per agent: strengths (reasoning depth, tool use, speed), known weaknesses, cost tier, model tiers available.
-- Seeded with defaults for claude / codex / gemini / droid / opencode; user can override in `config.toml` under `[agents.<name>]`.
-- Model tier selection: each agent exposes low / medium / high variants, and the harness picks based on task complexity heuristics.
-
-📋 **Routing config**
-- `config.toml` under `[routing]` for preferences: favored agent for code-heavy tasks, fallback chains, cost caps.
-- Per-workspace routing overrides (ties into Phase 3 — Workspaces).
-
-💭 **Open questions**
-- How much of this belongs in central-mcp vs. a purpose-built classifier sidecar?
-- Do we expose the classifier's reasoning in MCP responses for auditability?
-- Should `auto_dispatch` be opt-in only, or become the default once good enough?
-
----
-
-## Non-goals / explicit decisions
-
-- **`central-mcp install <client>` stdio setup stays the default.** Even after daemon mode lands, orchestrators continue using stdio transport for simplicity; daemon is transparent behind it.
-- **No browser UI.** central-mcp is a terminal-native hub. Observation happens in tmux/zellij panes or by tailing logs.
-- **No agent-state syncing.** Each agent manages its own conversation state; central-mcp only orchestrates dispatches and observes their lifecycle.
-- **No interactive approval / worker mode.** Dispatch is non-interactive by design. If a user needs to approve actions mid-run, they should run the agent directly in a terminal — that's outside central-mcp's scope.
-
----
-
-## Change log pointer
-
-Actual shipped changes live in [the changelog](changelog.md). This roadmap is intent, not history.
+→ **[Open a GitHub issue](https://github.com/andy5090/central-mcp/issues/new)** with a short description and your context (which orchestrator, which workspace, what you tried). Real usage signals shape the roadmap more than abstract phasing — one good issue often promotes a 💭 to 📋.
