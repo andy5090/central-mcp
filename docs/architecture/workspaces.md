@@ -29,6 +29,33 @@ cmcp workspace use client-a
 
 ---
 
+## Natural-language workflow
+
+Inside an orchestrator session you usually don't need the `cmcp workspace` CLI — most operations have a natural-language analogue.
+
+> *"Add `~/Projects/my-app` to the client-a workspace, with claude as its agent."*
+
+The orchestrator unwraps that into `add_project(name="my-app", path="...", agent="claude", workspace="client-a")`. If `client-a` doesn't exist yet, it gets created on the fly.
+
+Other phrasings that work out of the box:
+
+> *"What projects are in client-a?"* → `list_projects(workspace="client-a")`
+>
+> *"Show me every project across every workspace."* → `list_projects(workspace="__all__")`
+>
+> *"Send the same prompt to every project in client-a: tighten the README."* → `dispatch("@client-a", "tighten the README")`
+>
+> *"How many tokens did client-a's projects use this week?"* → `token_usage(period="week", workspace="client-a")`
+
+Creating an empty workspace or switching the active one is faster from the CLI:
+
+```bash
+cmcp workspace new client-a       # empty workspace
+cmcp workspace use                # interactive picker to switch
+```
+
+---
+
 ## Where the data lives
 
 | File | Role |
