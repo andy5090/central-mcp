@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+
+{#
+  Inject the full favicon package + theme-color meta tag.
+  mkdocs-material's `theme.favicon` config only writes a single
+  <link rel="icon">, so we extend the `extrahead` block to add the
+  rest (apple-touch, android-chrome via webmanifest, theme-color).
+#}
+{% block extrahead %}
+  <link rel="icon" href="{{ 'favicon.ico'|url }}" sizes="any">
+  <link rel="icon" href="{{ 'favicon.svg'|url }}" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="{{ 'apple-touch-icon.png'|url }}">
+  <link rel="manifest" href="{{ 'site.webmanifest'|url }}">
+  <meta name="theme-color" content="#351d0f">
+{% endblock %}
