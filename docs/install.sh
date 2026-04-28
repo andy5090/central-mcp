@@ -50,22 +50,43 @@ log "Installing central-mcp from PyPI…"
 uv tool install --upgrade central-mcp
 
 # 3. One-time scaffold of ~/.central-mcp/ + cmcp alias.
-if command -v central-mcp >/dev/null 2>&1; then
-  log "Setting up ~/.central-mcp/…"
-  central-mcp init || warn "central-mcp init reported a non-zero exit (this is usually OK on re-runs)."
-else
+#    Skip silently if the registry is already present — avoids printing
+#    the "registry.yaml already exists" error on re-runs of the script.
+if ! command -v central-mcp >/dev/null 2>&1; then
   warn "central-mcp binary not on PATH after install."
   sub "Try: uv tool update-shell"
   sub "Then re-run this script."
   exit 1
 fi
 
-# `cat <<EOF` would print "\033[..." literally — heredoc doesn't expand
-# C-style escapes. printf does, so use it for everything color-bearing.
+if [ -f "$HOME/.central-mcp/registry.yaml" ]; then
+  log "~/.central-mcp/ already set up — skipping init."
+else
+  log "Setting up ~/.central-mcp/…"
+  central-mcp init || warn "central-mcp init reported a non-zero exit."
+fi
+
+# Closing summary — natural-language usage front and center, CLI shown
+# only for things you'd run *outside* an orchestrator session (those
+# are the ones that benefit from being typed at a shell prompt).
 printf '\n%s✓%s central-mcp is ready.\n\n' "$GREEN" "$RESET"
-printf '  Run:                  %scmcp%s        %s# launch the orchestrator%s\n' "$DIM" "$RESET" "$DIM" "$RESET"
-printf '  Or with full name:    %scentral-mcp%s\n\n' "$DIM" "$RESET"
-printf '  Add a project:        %scmcp add my-app ~/Projects/my-app --agent claude%s\n' "$DIM" "$RESET"
-printf '  List projects:        %scmcp list%s\n' "$DIM" "$RESET"
-printf '  Live observation:     %scmcp up%s\n\n' "$DIM" "$RESET"
+
+printf '  Launch the orchestrator:\n'
+printf '    %scmcp%s          %s(or: central-mcp)%s\n\n' "$DIM" "$RESET" "$DIM" "$RESET"
+
+printf '  Inside the session, just talk naturally — no command syntax:\n'
+printf '    %s"Add ~/Projects/my-app to the hub. Use claude as its agent."%s\n' "$DIM" "$RESET"
+printf '    %s"List my projects."%s\n' "$DIM" "$RESET"
+printf '    %s"Send my-app and api-server the same prompt: tighten the README."%s\n' "$DIM" "$RESET"
+printf '    %s"Any updates?"%s\n\n' "$DIM" "$RESET"
+
+printf '  CLI commands you run outside the session:\n'
+printf '    %scmcp run --agent codex%s         one-off orchestrator switch\n' "$DIM" "$RESET"
+printf '    %scmcp run --pick%s                change the saved default\n' "$DIM" "$RESET"
+printf '    %scmcp run --workspace NAME%s      scope this shell to a workspace\n' "$DIM" "$RESET"
+printf '    %scmcp workspace use%s             switch active workspace (picker)\n' "$DIM" "$RESET"
+printf '    %scmcp up%s                        live observation panes (tmux/zellij)\n' "$DIM" "$RESET"
+printf '    %scmcp watch <project>%s           tail one project'"'"'s dispatch stream\n' "$DIM" "$RESET"
+printf '    %scmcp upgrade%s                   update central-mcp itself\n\n' "$DIM" "$RESET"
+
 printf '  Docs: https://central-mcp.org/\n\n'
