@@ -1,7 +1,7 @@
 # central-mcp
 
 <p align="center">
-  <img src="logo.png" alt="central-mcp logo" width="240"/>
+  <img src="logo.png?v=0.11.0" alt="central-mcp logo" width="240"/>
 </p>
 
 **Coding agent-agnostic MCP hub for managing multiple coding agents.**
