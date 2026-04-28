@@ -88,7 +88,7 @@ curses 기반 포트폴리오 대시보드: 에이전트별 quota 바, 프로젝
 ## MCP 클라이언트 셋업
 
 ### `central-mcp install <client>`
-central-mcp을 클라이언트의 MCP 서버로 등록합니다. 선택지: `claude`, `codex`, `gemini`, `opencode`, `all`.
+central-mcp를 클라이언트의 MCP 서버로 등록합니다. 선택지: `claude`, `codex`, `gemini`, `opencode`, `all`.
 
 ### `central-mcp alias [name]`
 `cmcp` 단축 alias 출력 / 생성.

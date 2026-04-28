@@ -1,6 +1,6 @@
 # MCP 도구
 
-central-mcp이 orchestrator에 노출하는 MCP 도구 목록입니다. 정식 진실의 원천은 [`server.py`](https://github.com/andy5090/central-mcp/blob/main/src/central_mcp/server.py)이고, 이 페이지는 큐레이션된 레퍼런스입니다.
+central-mcp가 orchestrator에 노출하는 MCP 도구 목록입니다. 정식 진실의 원천은 [`server.py`](https://github.com/andy5090/central-mcp/blob/main/src/central_mcp/server.py)이고, 이 페이지는 큐레이션된 레퍼런스입니다.
 
 !!! note
     `server.py`에서 풀 시그니처와 docstring을 자동 추출하는 작업은 로드맵에 있습니다.
