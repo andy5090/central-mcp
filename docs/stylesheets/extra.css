@@ -71,9 +71,18 @@
   padding: 2px;
 }
 
+/* Dark mode: swap to the gold-on-black logo variant + matching backdrop.
+   `content: url(...)` replaces the rendered img source while preserving
+   the alt attribute and the accessibility tree. */
 [data-md-color-scheme="slate"] .md-header__button.md-logo img {
-  background: #2a2520;
+  background: #1d1814;
+  content: url("../logo-dark.png?v=0.11.0");
 }
+
+/* Hero logo on the index page: render both, hide one per scheme. */
+.cmcp-hero-light, .cmcp-hero-dark { display: inline-block; }
+[data-md-color-scheme="default"] .cmcp-hero-dark { display: none; }
+[data-md-color-scheme="slate"]   .cmcp-hero-light { display: none; }
 
 /* Tighten admonition density a touch — the default is too padded. */
 .md-typeset .admonition,
