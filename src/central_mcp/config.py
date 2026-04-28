@@ -6,16 +6,21 @@ Flat per-user settings keyed by top-level TOML tables:
   default = "claude"            # which CLI `central-mcp run` launches
 
   [user]
-  timezone          = "Asia/Seoul"   # IANA tz for date-boundary display
-  current_workspace = "default"      # active workspace
+  timezone       = "Asia/Seoul"  # IANA tz for date-boundary display
+  last_workspace = "default"     # last workspace explicitly chosen
 
 Reads are best-effort (return defaults on missing/malformed). Writes go
 through `tomlkit` so comments and ordering are preserved.
 
 `ensure_initialized()` is the idempotent bootstrap path called on every
 install/upgrade/startup: it injects the system timezone + default
-workspace when those fields are absent, and migrates `current_workspace`
-out of `registry.yaml` (where it used to live) into this file.
+workspace when those fields are absent, migrates legacy
+`current_workspace` (both from `registry.yaml`'s top level and from
+`config.toml`'s `[user]` table) into the canonical `last_workspace`
+key, and clears the old name. The rename happened because in a
+multi-instance world (`cmcp run --workspace foo` in one shell, `cmcp
+run --workspace bar` in another) "current" was misleading — only one
+saved value remembers the user's last explicit choice.
 """
 
 from __future__ import annotations
@@ -161,48 +166,72 @@ def current_workspace() -> str:
     Resolution order (highest to lowest):
       1. ``CMCP_WORKSPACE`` env var — per-process override, lets multiple
          shells / MCP clients run different workspaces concurrently.
-      2. ``[user].current_workspace`` from ``config.toml`` — saved default.
+      2. ``[user].last_workspace`` from ``config.toml`` — last workspace
+         the user explicitly chose (via ``cmcp workspace use``). Falls
+         back to legacy ``current_workspace`` key if a stale install
+         still has it; ``ensure_initialized()`` migrates both into
+         ``last_workspace`` on next startup.
       3. Literal ``"default"``.
 
     The env-first rule is what makes "open client A on workspace foo
     and client B on workspace bar at the same time" work without
-    config-file races.
+    config-file races. Naming the saved key ``last_workspace`` (rather
+    than ``current_workspace``) reflects what it actually is in a
+    multi-instance world: a remembered choice, not "the active one".
     """
     env = os.environ.get("CMCP_WORKSPACE")
     if env:
         return env
     user = _read().get("user") or {}
-    return str(user.get("current_workspace") or "default")
+    saved = user.get("last_workspace") or user.get("current_workspace")
+    return str(saved or "default")
 
 
 def set_current_workspace(name: str) -> None:
-    """Set the active workspace. Raises ValueError if it's not registered."""
+    """Persist the workspace as the saved default for future shells.
+
+    Writes to ``[user].last_workspace`` and clears any legacy
+    ``current_workspace`` key so the file ends up with one canonical
+    name. Raises ``ValueError`` if the name isn't a registered
+    workspace.
+    """
     # Import locally to avoid registry ↔ config cycles at module load.
     from central_mcp.registry import load_workspaces
     workspaces = load_workspaces()
     if workspaces and name not in workspaces:
         raise ValueError(f"unknown workspace {name!r}")
     doc = _read()
-    _get_table(doc, "user")["current_workspace"] = name
+    user_tbl = _get_table(doc, "user")
+    user_tbl["last_workspace"] = name
+    if "current_workspace" in user_tbl:
+        del user_tbl["current_workspace"]
     _write(doc)
 
 
 # ── bootstrap ─────────────────────────────────────────────────────────────────
 
 def ensure_initialized() -> bool:
-    """Idempotently seed `[user].timezone` and `[user].current_workspace`.
+    """Idempotently seed `[user].timezone` and `[user].last_workspace`.
 
-    Safe to call on every startup. Also performs a one-shot migration of
-    `current_workspace` out of `registry.yaml` (its legacy home) into
-    `config.toml`. Returns True if any change was persisted.
+    Safe to call on every startup. Performs two one-shot migrations:
+      1. Pre-0.10 layouts that stored `current_workspace` at the top of
+         `registry.yaml` — lifts it into `config.toml` and removes from
+         the registry.
+      2. 0.10.0–0.11.0 layouts that stored the saved workspace as
+         `[user].current_workspace` in config.toml — renames the key to
+         `last_workspace` and drops the old name.
+
+    The rename reflects intent: in a world where multiple `cmcp` instances
+    can run concurrently against different workspaces, the saved value
+    isn't "the current one" — it's just the most recent explicit choice.
+
+    Returns True if any change was persisted.
     """
     doc = _read()
     user = _get_table(doc, "user")
     changed = False
 
-    # Try to lift a legacy current_workspace value out of registry.yaml.
-    # Done before injecting defaults so the user's prior choice wins over
-    # the "default" placeholder.
+    # Migration 1: lift `current_workspace` out of registry.yaml.
     legacy_ws: str | None = None
     try:
         from central_mcp.registry import _read_raw, _write_raw  # type: ignore
@@ -215,13 +244,20 @@ def ensure_initialized() -> bool:
     except Exception:
         pass
 
-    if "current_workspace" not in user:
-        user["current_workspace"] = legacy_ws or "default"
+    # Migration 2: rename `current_workspace` → `last_workspace` in config.
+    if "current_workspace" in user:
+        if "last_workspace" not in user:
+            user["last_workspace"] = user.get("current_workspace")
+        del user["current_workspace"]
         changed = True
-    elif legacy_ws and user.get("current_workspace") == "default":
-        # Config already exists but only with the placeholder — honor the
-        # legacy value we just lifted.
-        user["current_workspace"] = legacy_ws
+
+    if "last_workspace" not in user:
+        user["last_workspace"] = legacy_ws or "default"
+        changed = True
+    elif legacy_ws and user.get("last_workspace") == "default":
+        # Config already had `last_workspace` but only with the placeholder
+        # — honor the legacy value we just lifted from registry.yaml.
+        user["last_workspace"] = legacy_ws
         changed = True
 
     if "timezone" not in user:

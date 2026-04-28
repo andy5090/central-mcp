@@ -113,7 +113,10 @@ class TestEnsureInitialized:
         doc = tomlkit.parse(paths.config_file().read_text())
         assert "user" in doc
         assert doc["user"]["timezone"]          # non-empty
-        assert doc["user"]["current_workspace"] == "default"
+        # 0.11.1+ stores the saved workspace as `last_workspace`; the
+        # legacy `current_workspace` key MUST not appear on a fresh init.
+        assert doc["user"]["last_workspace"] == "default"
+        assert "current_workspace" not in doc["user"]
 
     def test_is_idempotent(self, fake_home: Path) -> None:
         config.ensure_initialized()
@@ -138,8 +141,48 @@ class TestEnsureInitialized:
 
         config.ensure_initialized()
 
-        # Config now carries the value…
+        # Config now carries the value under the new key…
         assert config.current_workspace() == "work"
+        doc = tomlkit.parse(paths.config_file().read_text())
+        assert doc["user"]["last_workspace"] == "work"
         # …and the legacy key is gone from registry.yaml.
         raw_after = registry._read_raw()
         assert "current_workspace" not in raw_after
+
+    def test_migrates_current_workspace_in_config_to_last_workspace(
+        self, fake_home: Path
+    ) -> None:
+        """0.10.0–0.11.0 stored the saved workspace under
+        `[user].current_workspace`. Ensure that's renamed to
+        `last_workspace` on next startup, with the value preserved."""
+        # Hand-craft a pre-rename config.toml.
+        paths.config_file().parent.mkdir(parents=True, exist_ok=True)
+        paths.config_file().write_text(
+            '[user]\ntimezone = "UTC"\ncurrent_workspace = "work"\n'
+        )
+
+        config.ensure_initialized()
+
+        doc = tomlkit.parse(paths.config_file().read_text())
+        assert doc["user"]["last_workspace"] == "work"
+        assert "current_workspace" not in doc["user"]
+        # Reading should also return the migrated value.
+        assert config.current_workspace() == "work"
+
+    def test_set_clears_legacy_current_workspace_key(
+        self, fake_home: Path
+    ) -> None:
+        """`set_current_workspace` should write to `last_workspace` and
+        wipe any leftover `current_workspace` key in one pass."""
+        paths.config_file().parent.mkdir(parents=True, exist_ok=True)
+        paths.config_file().write_text(
+            '[user]\ntimezone = "UTC"\ncurrent_workspace = "old"\n'
+        )
+        registry.add_project("p", "/p")
+        registry.add_workspace("new")
+
+        config.set_current_workspace("new")
+
+        doc = tomlkit.parse(paths.config_file().read_text())
+        assert doc["user"]["last_workspace"] == "new"
+        assert "current_workspace" not in doc["user"]

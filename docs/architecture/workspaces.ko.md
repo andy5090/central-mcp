@@ -47,7 +47,7 @@ cmcp workspace use                # 인터랙티브 픽커로 전환
 | 파일 | 역할 |
 |---|---|
 | `~/.central-mcp/registry.yaml` | `projects:` 리스트와 `workspaces:` 맵 (`{이름: [프로젝트, …]}`) |
-| `~/.central-mcp/config.toml` | `[user].current_workspace` — 저장된 디폴트 워크스페이스 |
+| `~/.central-mcp/config.toml` | `[user].last_workspace` — `cmcp workspace use`로 가장 최근에 고른 워크스페이스. `CMCP_WORKSPACE` 환경 변수가 없을 때의 디폴트입니다. |
 
 같은 프로젝트가 여러 워크스페이스에 들어가도 됩니다. 어디에도 명시적으로 안 넣은 프로젝트는 `default`에 머뭅니다.
 
@@ -77,7 +77,7 @@ cmcp workspace remove <project> --workspace <name>   # 그룹에서 빼기
 ### 보통 (한 워크스페이스, 저장된 디폴트)
 
 ```bash
-cmcp                # config.toml [user].current_workspace 사용
+cmcp                # config.toml [user].last_workspace 사용
 ```
 
 이 상태에서 orchestrator가 `list_projects()`를 인자 없이 부르면 그 워크스페이스 프로젝트만 봅니다. dispatch fan-out (`@workspace`) 도 같은 스코프를 탑니다.
@@ -107,7 +107,7 @@ cmcp run --workspace client-b
 ### `current_workspace()` 해석 순서
 
 1. `CMCP_WORKSPACE` 환경 변수 (per-process)
-2. `config.toml [user].current_workspace` (저장된 디폴트)
+2. `config.toml [user].last_workspace` (저장된 디폴트)
 3. 리터럴 `default`
 
 ---

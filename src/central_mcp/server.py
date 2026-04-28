@@ -445,8 +445,9 @@ def list_projects(workspace: str | None = None) -> list[dict[str, Any]] | dict[s
 
     **workspace**:
       - None (default) → projects in the **current** workspace
-        (`config.toml [user].current_workspace`). This matches the
-        orchestrator's "what am I working on right now" expectation.
+        (`CMCP_WORKSPACE` env > `config.toml [user].last_workspace` >
+        `"default"`). This matches the orchestrator's "what am I
+        working on right now" expectation.
       - `"__all__"` (or `"*"`) → every registered project across all
         workspaces
       - any other name → that workspace's members

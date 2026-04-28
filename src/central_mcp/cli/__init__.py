@@ -92,7 +92,7 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "scope this MCP server to a workspace (sets CMCP_WORKSPACE in "
             "this process). Defaults to the env var if set, else the saved "
-            "config.toml [user].current_workspace. Use this to run multiple "
+            "config.toml [user].last_workspace. Use this to run multiple "
             "MCP servers concurrently in different clients."
         ),
     )
@@ -506,7 +506,7 @@ def build_parser() -> argparse.ArgumentParser:
             "Lets you run multiple `cmcp run` instances in different "
             "terminals, each on a different workspace, without touching "
             "config.toml. Defaults to env CMCP_WORKSPACE, else the saved "
-            "config.toml [user].current_workspace."
+            "config.toml [user].last_workspace."
         ),
     )
     p_run.add_argument("--dry-run", action="store_true", help="print the plan without executing")

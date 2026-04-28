@@ -3,6 +3,21 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.11.1] — 2026-04-29
+
+### Changed
+- **`config.toml [user].current_workspace` renamed to `[user].last_workspace`.** The old name implied a single "active" value, which became misleading once 0.11.0 enabled multiple `cmcp run` instances against different workspaces concurrently — only one saved value remembers the user's last explicit choice (`cmcp workspace use`), while live activity is tracked per-process via `CMCP_WORKSPACE`. The new name reflects intent: a remembered choice, not "the active one."
+- `set_current_workspace()` now writes to `last_workspace` and clears any leftover `current_workspace` key in the same pass — so a config file mid-migration ends up with one canonical name, not both.
+
+### Migration
+- `ensure_initialized()` performs the rename automatically on next startup: if `[user].current_workspace` exists in `config.toml`, its value moves to `last_workspace` and the old key is deleted. Idempotent — no user action required, no data loss. The previously-existing migration of registry.yaml's top-level `current_workspace` key (the pre-0.10.0 location) now also lands at `last_workspace`.
+
+### Notes for existing installs
+- No behavior change. Function names (`current_workspace()`, `set_current_workspace()`) and CLI commands (`cmcp workspace current`, `cmcp workspace use`) are unchanged — the rename is internal to the persisted config file.
+- `cmcp workspace current` still prints the value of `current_workspace()`, which now resolves through `last_workspace` instead.
+
+---
+
 ## [0.11.0] — 2026-04-28
 
 ### Added

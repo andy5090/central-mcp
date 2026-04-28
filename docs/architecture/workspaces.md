@@ -61,7 +61,7 @@ cmcp workspace use                # interactive picker to switch
 | File | Role |
 |---|---|
 | `~/.central-mcp/registry.yaml` | `projects:` list + `workspaces:` map (`{name: [project, …]}`). |
-| `~/.central-mcp/config.toml` | `[user].current_workspace` — your saved default workspace. |
+| `~/.central-mcp/config.toml` | `[user].last_workspace` — the workspace you most recently chose via `cmcp workspace use`. Used as the saved default when `CMCP_WORKSPACE` env isn't set. |
 
 A project may appear in multiple workspaces; central-mcp doesn't enforce mutual exclusion. Projects you never explicitly assign live in `default`.
 
@@ -91,7 +91,7 @@ cmcp workspace remove <project> --workspace <name>   # unassign
 ### Default behavior (single workspace, saved)
 
 ```bash
-cmcp                # uses config.toml [user].current_workspace
+cmcp                # uses config.toml [user].last_workspace
 ```
 
 The orchestrator sees only that workspace's projects when it calls `list_projects()` with no arguments. Dispatch fan-out (`@workspace`) targets the same scope.
@@ -121,7 +121,7 @@ You can also `export CMCP_WORKSPACE=client-a` once per shell instead of passing 
 ### Resolution order for `current_workspace()`
 
 1. `CMCP_WORKSPACE` env var (per-process)
-2. `config.toml [user].current_workspace` (saved default)
+2. `config.toml [user].last_workspace` (saved default)
 3. Literal `default`
 
 ---
