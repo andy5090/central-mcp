@@ -84,6 +84,104 @@
 [data-md-color-scheme="default"] .cmcp-hero-dark { display: none; }
 [data-md-color-scheme="slate"]   .cmcp-hero-light { display: none; }
 
+/* ── Hero (index page) ────────────────────────────────────────────────────── */
+
+.cmcp-hero {
+  text-align: center;
+  padding: 2.5rem 0 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.cmcp-hero-logo {
+  margin: 0 0 1.25rem !important;
+  animation: cmcp-fade-up 0.7s ease-out both;
+}
+
+.cmcp-hero-logo img {
+  filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.18));
+}
+
+.cmcp-hero-title {
+  font-size: 3rem !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.035em !important;
+  line-height: 1.05 !important;
+  margin: 0.5rem auto 1rem !important;
+  border-bottom: none !important;
+  padding-bottom: 0 !important;
+  animation: cmcp-fade-up 0.7s 0.1s ease-out both;
+}
+
+/* Shimmer accent on the second word — slow, restrained gradient sweep. */
+.cmcp-hero-emph {
+  background: linear-gradient(90deg, #c8651e 0%, #f0a050 50%, #c8651e 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: cmcp-shimmer 3.6s ease-in-out infinite;
+}
+
+[data-md-color-scheme="slate"] .cmcp-hero-emph {
+  background: linear-gradient(90deg, #d99858 0%, #f0c290 50%, #d99858 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.cmcp-hero-sub {
+  font-size: 1.05rem !important;
+  line-height: 1.55;
+  max-width: 640px;
+  margin: 0 auto 1.5rem !important;
+  color: var(--md-default-fg-color--light);
+  animation: cmcp-fade-up 0.7s 0.2s ease-out both;
+}
+
+/* Token-multiplier ticker — fixed width to avoid layout shift on swap. */
+.cmcp-hero-counter {
+  display: inline-block;
+  min-width: 3.4ch;
+  text-align: center;
+  font-weight: 700;
+  font-feature-settings: "tnum" 1;
+  color: var(--md-typeset-a-color);
+  transition: opacity 0.35s ease;
+}
+
+/* Buttons row inside the hero */
+.cmcp-hero p:last-of-type,
+.cmcp-hero > p:nth-of-type(3) {
+  /* mkdocs renders the trailing buttons as a paragraph; tighten gap */
+  margin-top: 0.5rem !important;
+}
+
+.cmcp-hero .md-button {
+  margin: 0.25rem 0.3rem !important;
+}
+
+@keyframes cmcp-shimmer {
+  0%, 100% { background-position: 0% 50%; }
+  50%      { background-position: 100% 50%; }
+}
+
+@keyframes cmcp-fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Respect users who don't want motion. */
+@media (prefers-reduced-motion: reduce) {
+  .cmcp-hero-logo,
+  .cmcp-hero-title,
+  .cmcp-hero-sub,
+  .cmcp-hero-emph {
+    animation: none !important;
+  }
+}
+
 /* Tighten admonition density a touch — the default is too padded. */
 .md-typeset .admonition,
 .md-typeset details {

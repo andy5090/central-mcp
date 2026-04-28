@@ -1,19 +1,27 @@
-# central-mcp
+---
+title: central-mcp
+hide:
+  - toc
+---
 
-<p align="center">
-  <img src="logo.png?v=0.11.0" alt="central-mcp logo" width="240" class="cmcp-hero-light"/>
-  <img src="logo-dark.png?v=0.11.0" alt="central-mcp logo" width="240" class="cmcp-hero-dark"/>
+<div class="cmcp-hero" markdown="1">
+
+<p class="cmcp-hero-logo">
+  <img src="logo.png?v=0.11.0" alt="central-mcp" width="200" class="cmcp-hero-light"/>
+  <img src="logo-dark.png?v=0.11.0" alt="central-mcp" width="200" class="cmcp-hero-dark"/>
 </p>
 
-**Coding agent-agnostic MCP hub for managing multiple coding agents.**
+<h1 class="cmcp-hero-title">Tokenmaxxing, <span class="cmcp-hero-emph">disciplined.</span></h1>
 
-> Never stop. Run agents across every project in parallel — 10×, 100× your throughput.
-
-central-mcp turns any MCP-capable client (Claude Code, Codex, Gemini, opencode, …) into a control plane for your portfolio of coding-agent projects. Speak naturally, and the orchestrator routes each request to the right project's agent — non-blocking, with results reported back asynchronously.
+<p class="cmcp-hero-sub">Fan out Claude Code, Codex, Gemini, opencode across every project in parallel. Burn <span class="cmcp-hero-counter" data-values="10×|100×|1000×">10×</span> the tokens — non-blocking, observable, never bottlenecked on one agent.</p>
 
 [Get started](quickstart.md){ .md-button .md-button--primary }
 [GitHub](https://github.com/andy5090/central-mcp){ .md-button }
 [PyPI](https://pypi.org/project/central-mcp/){ .md-button }
+
+</div>
+
+central-mcp turns any MCP-capable client into a control plane for your portfolio of coding-agent projects. Speak naturally; the orchestrator routes each request to the right project's agent — non-blocking, with results reported back asynchronously.
 
 ---
 
