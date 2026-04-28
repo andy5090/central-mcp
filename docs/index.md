@@ -14,8 +14,8 @@ hide:
 </div>
 
 <p class="cmcp-hero-logo">
-  <img src="logo.png?v=0.11.0" alt="central-mcp" width="300" class="cmcp-hero-light"/>
-  <img src="logo-dark.png?v=0.11.0" alt="central-mcp" width="300" class="cmcp-hero-dark"/>
+  <img src="/logo.png?v=0.11.0" alt="central-mcp" width="300" class="cmcp-hero-light"/>
+  <img src="/logo-dark.png?v=0.11.0" alt="central-mcp" width="300" class="cmcp-hero-dark"/>
 </p>
 
 <h1 class="cmcp-hero-title">Tokenmaxxing, <span class="cmcp-hero-emph">disciplined.</span></h1>
