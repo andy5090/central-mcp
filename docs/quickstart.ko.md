@@ -28,31 +28,37 @@ curl -fsSL https://central-mcp.org/install.sh | sh
 
     pip를 더 좋아하신다면 `pip install central-mcp`도 됩니다.
 
-## 2. 프로젝트 하나 등록
-
-아무 터미널에서:
-
-```bash
-cmcp add my-app ~/Projects/my-app --agent claude
-```
-
-다른 프로젝트도 같은 식으로 더 추가하면 됩니다. 등록된 목록 보기:
-
-```bash
-cmcp list
-```
-
-## 3. orchestrator 띄우기
+## 2. orchestrator 띄우기
 
 ```bash
 cmcp
 ```
 
-선호 orchestrator(claude / codex / gemini / opencode 중 하나)를 골라 띄우고, 그 안으로 central-mcp의 MCP 도구가 자동 노출됩니다.
+선호 orchestrator(claude / codex / gemini / opencode 중 하나)를 골라 띄우고, 그 안으로 central-mcp의 MCP 도구가 자동 노출됩니다. 이후 작업은 모두 이 세션 안에서 자연어로 진행합니다.
 
-## 4. 자연어로 말 걸기
+## 3. 프로젝트 등록 (말로 던지기)
 
-orchestrator 세션 안에서 평소 말하듯 던지세요.
+```text
+~/Projects/my-app을 허브에 추가해줘. 에이전트는 claude로.
+```
+
+orchestrator가 이걸 `add_project(name="my-app", path="...", agent="claude")`로 풀어 호출하고 확인 응답을 줍니다. 다른 프로젝트도 같은 식으로 더 추가하면 됩니다. 등록 상태 확인:
+
+```text
+내 프로젝트 목록 보여줘.
+```
+
+??? info "CLI가 더 편하다면"
+    같은 작업을 셸에서:
+
+    ```bash
+    cmcp add my-app ~/Projects/my-app --agent claude
+    cmcp list
+    ```
+
+## 4. 작업 보내기
+
+여전히 같은 세션 안에서:
 
 > *"my-app에 다크 모드 토글 좀 추가해줘."*
 

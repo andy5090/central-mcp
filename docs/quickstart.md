@@ -28,31 +28,37 @@ The installer:
 
     `pip install central-mcp` also works if you prefer pip over uv.
 
-## 2. Register one project
-
-In any terminal:
-
-```bash
-cmcp add my-app ~/Projects/my-app --agent claude
-```
-
-Repeat for any other projects. List them back:
-
-```bash
-cmcp list
-```
-
-## 3. Launch the orchestrator
+## 2. Launch the orchestrator
 
 ```bash
 cmcp
 ```
 
-This picks your preferred orchestrator (claude/codex/gemini/opencode), launches it, and exposes central-mcp's MCP tools to it.
+This picks your preferred orchestrator (claude / codex / gemini / opencode), launches it, and exposes central-mcp's MCP tools to it. Everything from here happens in natural language inside that session.
 
-## 4. Speak naturally
+## 3. Register a project (just ask)
 
-Inside the orchestrator session:
+```text
+Add ~/Projects/my-app to the hub. Use claude as its agent.
+```
+
+The orchestrator unwraps that into `add_project(name="my-app", path="...", agent="claude")` and confirms back. Repeat for any other projects. To see what's registered:
+
+```text
+List my projects.
+```
+
+??? info "Prefer the CLI?"
+    Same operations from a shell prompt:
+
+    ```bash
+    cmcp add my-app ~/Projects/my-app --agent claude
+    cmcp list
+    ```
+
+## 4. Send work
+
+Still in the orchestrator session:
 
 > *"Ask my-app to add a dark mode toggle in settings."*
 
