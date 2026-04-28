@@ -1,15 +1,15 @@
 {% extends "base.html" %}
 
 {#
-  Inject the full favicon package + theme-color meta tag.
-  mkdocs-material's `theme.favicon` config only writes a single
-  <link rel="icon">, so we extend the `extrahead` block to add the
-  rest (apple-touch, android-chrome via webmanifest, theme-color).
+  Add multi-size favicon links so browsers / OS app launchers can pick
+  the resolution that suits them. Only the three sizes the user
+  explicitly approved (128/256/512) ship — no SVG, no apple-touch,
+  no webmanifest, no theme-color override.
+  mkdocs-material's `theme.favicon` already writes a single
+  <link rel="icon">; these are additional size hints.
 #}
 {% block extrahead %}
-  <link rel="icon" href="{{ 'favicon.ico'|url }}" sizes="any">
-  <link rel="icon" href="{{ 'favicon.svg'|url }}" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="{{ 'apple-touch-icon.png'|url }}">
-  <link rel="manifest" href="{{ 'site.webmanifest'|url }}">
-  <meta name="theme-color" content="#351d0f">
+  <link rel="icon" type="image/png" sizes="128x128" href="{{ 'favicon-128x128.png'|url }}">
+  <link rel="icon" type="image/png" sizes="256x256" href="{{ 'favicon-256x256.png'|url }}">
+  <link rel="icon" type="image/png" sizes="512x512" href="{{ 'favicon-512x512.png'|url }}">
 {% endblock %}
