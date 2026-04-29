@@ -24,6 +24,26 @@ Make the project-portfolio view consistent across every surface.
 
 ---
 
+## TUI · 1.0 milestone
+
+A self-contained terminal app that hosts the orchestrator agent inside a managed PTY, surrounds it with our own chrome (token HUD, active dispatches, notifications), and reacts to dispatch completion *immediately* — no longer dependent on the MCP client forwarding `notifications/resources/updated`. The track that **defines 1.0**: when this lands stable across all four orchestrators, central-mcp graduates from 0.x to 1.0.0 and starts honoring SemVer guarantees.
+
+🚧 **Phase 0 (0.12.0) — `cmcp tui --experimental`, claude only.** New experimental subcommand. `textual` for outer chrome (header / sidebar / footer / notifications), `pyte` for PTY emulation. Inside the main pane: claude REPL pass-through. Sidebar: `token_usage.summary_markdown` + active dispatches + recent completions. Daemon-style watcher on `dispatches.db` raises notifications inline. `--experimental` flag is required (no flag → actionable error). Optional install via `pip install central-mcp[tui]`.
+
+📋 **Phase B (0.13.0) — codex.** Same shell, second agent adapter. Adapter pattern lives in `adapters/base.py` already, extension is mechanical.
+
+📋 **Phase C (0.14.0) — gemini + opencode.** Round out the four orchestrators central-mcp already knows.
+
+📋 **Phase D (0.15.0–0.x) — stabilization.** Self-rendered scrollback / search / copy. Korean IME and double-width corner cases. Notification policy fine-tuning (`config.toml [tui].auto_inject = passive | hint | prompt`).
+
+🎉 **1.0.0 — TUI production-ready.** `--experimental` flag becomes a no-op (kept for backwards compatibility), API surface is locked, version-pinning windows close, breaking changes require a 2.0.
+
+💭 **Open questions**
+- Multi-pane layout — does the TUI host more than one watch pane internally, or does it stay single-pane and let users compose with their existing multiplexer (cmux / tmux / zellij) on top?
+- How transparent should prompt-injection be? `hint` mode shows a sidebar message and stops; `prompt` mode types the literal hint into the agent's stdin. The line between "helpful" and "intrusive" is blurry.
+
+---
+
 ## Routing
 
 Move from "user picks the agent for every dispatch" to "central-mcp suggests."
@@ -64,9 +84,13 @@ Per-process workspace scoping (`CMCP_WORKSPACE`) is shipped. Next steps are abou
 
 The slow-burn changes — only land when usage data justifies the complexity.
 
-💭 **Lazy daemon.** First MCP connection spawns a background daemon, holds a PID lock, exposes a Unix socket; stdio `central-mcp serve` auto-detects and proxies. Wins: ~150ms cold-start saved per MCP client, centralized session scanners, single place for pre-work. Cross-process state already solved by `dispatches.db` in 0.10.9, so the urgency is low.
+💭 **Lazy daemon — decision deferred until after the TUI track.** A background daemon would centralize `dispatches.db` watching, OS-level notifications, and session scanners — but the TUI (0.12.0+) is itself a long-running process that already absorbs those responsibilities for users who run it. Two outcomes possible after TUI 1.0 ships:
+  - (a) **No daemon needed.** TUI is self-contained; users without TUI accept polling/piggyback as they do today.
+  - (b) **Daemon for TUI-less environments.** If "I want completion alerts even without `cmcp tui` running" turns into a real signal, a slim daemon (just dispatches.db watcher + OS notifications, no MCP proxying) lands as a 1.x feature.
 
-💭 **Push notifications when MCP clients forward them.** Server-initiated `notifications/resources/updated` events for completed dispatches. Currently blocked: no MCP client surfaces these to the LLM turn yet. Tracking upstream; will land when at least one client commits to forwarding.
+  Cold-start savings (~150ms per MCP client) on their own don't justify the complexity — `dispatches.db` from 0.10.9 already solved cross-process state.
+
+💭 **Push notifications via MCP — still blocked, lower urgency now.** Server-initiated `notifications/resources/updated` for dispatch completion is still gated on at least one MCP client surfacing them to the LLM turn. The TUI sidesteps this entirely (the daemon-style watcher inside TUI doesn't need MCP-side cooperation), so even if upstream stays blocked, central-mcp users will have a working completion-alert path via `cmcp tui`. Push notifications land if/when an MCP client commits to forwarding — they remain the right answer for non-TUI users, just no longer the only path.
 
 💭 **Agent capability registry overrides.** Today's `agents.AGENTS` is the single source of truth. A `[agents.<name>]` block in `config.toml` would let users override capabilities per-host (e.g. mark codex `has_quota_api = false` in environments where the OAuth flow is broken).
 
