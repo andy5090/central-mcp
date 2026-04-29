@@ -916,14 +916,36 @@ def _maybe_prompt_upgrade() -> None:
     if choice != 0:
         return                    # declined — skip
     # Hand off to the existing upgrade flow. It spawns `uv tool install`
-    # (or pip) synchronously; on success the user should re-run
-    # `cmcp run` on the new binary, so we exit after.
+    # (or pip) synchronously; on success we re-exec with the same argv
+    # so the user lands directly in the requested command on the new
+    # binary. The exec replaces this Python process so freshly-imported
+    # modules pick up the new code.
     rc = upgrade.run(check_only=False)
     if rc == 0:
         print(
-            "\nupgrade complete — please re-run your command on the new version.",
+            "\nupgrade complete — relaunching on the new version...",
             file=sys.stderr,
         )
+        # argv[0] could be `central-mcp`, `cmcp`, or an absolute path
+        # depending on how the user invoked us. Resolve the same name
+        # against PATH again so we hit the just-installed binary, not
+        # whatever stale shim might still be cached. Fall back to the
+        # original argv[0] if PATH lookup fails.
+        invoked_name = os.path.basename(sys.argv[0]) if sys.argv else "central-mcp"
+        new_bin = shutil.which(invoked_name) or (sys.argv[0] if sys.argv else None)
+        if new_bin and invoked_name in ("central-mcp", "cmcp"):
+            try:
+                os.execvp(new_bin, [new_bin, *sys.argv[1:]])
+            except OSError as exc:
+                print(
+                    f"auto-relaunch failed ({exc}) — please re-run your command manually.",
+                    file=sys.stderr,
+                )
+        else:
+            print(
+                "(launched via module / non-standard wrapper — re-run your command manually)",
+                file=sys.stderr,
+            )
         raise SystemExit(0)
 
 

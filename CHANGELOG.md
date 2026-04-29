@@ -3,6 +3,17 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.11.3] — 2026-04-30
+
+### Changed
+- **Auto-relaunch after in-place upgrade.** When the startup upgrade picker fires on `cmcp run` and the user picks "Upgrade now", we now `os.execvp` back into the same command on the freshly-installed binary instead of printing "please re-run your command manually" and exiting. The user lands directly in the orchestrator session they were trying to start, without retyping anything. Argv is preserved end-to-end (so `cmcp run --workspace foo` upgrades and re-runs with `--workspace foo` intact). Re-exec only fires when the invoking name is `central-mcp` or `cmcp`; module-style invocations (`python -m central_mcp`) and other wrappers still print the manual-rerun hint, since `execvp` on a non-binary path would fail anyway.
+
+### Notes
+- Behavior change is transparent for users on the saved-default path. No flag to opt out — if the upgrade succeeded, relaunching is what every user wanted anyway.
+- If `os.execvp` itself fails post-upgrade (rare: PATH races, missing binary), we surface the error and exit with the old "re-run manually" message.
+
+---
+
 ## [0.11.2] — 2026-04-30
 
 ### Fixed
