@@ -1,15 +1,79 @@
 {% extends "base.html" %}
 
 {#
-  Add multi-size favicon links so browsers / OS app launchers can pick
-  the resolution that suits them. Only the three sizes the user
-  explicitly approved (128/256/512) ship — no SVG, no apple-touch,
-  no webmanifest, no theme-color override.
-  mkdocs-material's `theme.favicon` already writes a single
-  <link rel="icon">; these are additional size hints.
+  SEO + favicon block.
+    - Multi-size favicon links (128/256/512 — the three sizes the user
+      approved). mkdocs-material's `theme.favicon` already writes the
+      primary <link rel="icon">; these are size hints for higher-DPI
+      displays and OS app launchers.
+    - Open Graph + Twitter Card meta so link previews on Slack /
+      Discord / Twitter / LinkedIn render the sepia emblem with the
+      page-specific title and description.
+    - JSON-LD `SoftwareApplication` block on the homepage for Google
+      rich-snippet eligibility.
 #}
 {% block extrahead %}
   <link rel="icon" type="image/png" sizes="128x128" href="{{ 'favicon-128x128.png'|url }}">
   <link rel="icon" type="image/png" sizes="256x256" href="{{ 'favicon-256x256.png'|url }}">
   <link rel="icon" type="image/png" sizes="512x512" href="{{ 'favicon-512x512.png'|url }}">
+
+  {#- `page` is None on some auxiliary templates (sitemap, 404 fallback);
+      guard so the build doesn't crash on `page.url` lookups. -#}
+  {%- if page %}
+  {%- set page_title = (page.meta and page.meta.title) or page.title or config.site_name -%}
+  {%- set page_desc  = (page.meta and page.meta.description) or config.site_description -%}
+  {%- set page_url   = page.canonical_url or (config.site_url ~ (page.url or '')) -%}
+  {%- set og_image   = config.site_url ~ 'logo.png?v=0.11.0' -%}
+  {%- set is_korean  = (page.url or '').startswith('ko/') -%}
+  {%- set og_locale  = 'ko_KR' if is_korean else 'en_US' -%}
+  {%- set og_alt     = 'en_US' if is_korean else 'ko_KR' -%}
+
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="{{ config.site_name }}">
+  <meta property="og:title" content="{{ page_title }}">
+  <meta property="og:description" content="{{ page_desc }}">
+  <meta property="og:url" content="{{ page_url }}">
+  <meta property="og:image" content="{{ og_image }}">
+  <meta property="og:image:width" content="1024">
+  <meta property="og:image:height" content="1024">
+  <meta property="og:image:alt" content="central-mcp emblem">
+  <meta property="og:locale" content="{{ og_locale }}">
+  <meta property="og:locale:alternate" content="{{ og_alt }}">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="{{ page_title }}">
+  <meta name="twitter:description" content="{{ page_desc }}">
+  <meta name="twitter:image" content="{{ og_image }}">
+  <meta name="twitter:image:alt" content="central-mcp emblem">
+
+  {%- if page.is_homepage and not is_korean %}
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "central-mcp",
+    "alternateName": "cmcp",
+    "description": "{{ config.site_description }}",
+    "url": "{{ config.site_url }}",
+    "image": "{{ og_image }}",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "macOS, Linux",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "license": "https://opensource.org/licenses/MIT",
+    "author": {
+      "@type": "Person",
+      "name": "Andy Lee",
+      "url": "https://github.com/andy5090"
+    },
+    "codeRepository": "https://github.com/andy5090/central-mcp",
+    "downloadUrl": "https://pypi.org/project/central-mcp/",
+    "keywords": "MCP, Claude Code, Codex, Gemini, opencode, AI agents, parallel agents, tokenmaxxing, dispatch hub"
+  }
+  </script>
+  {%- endif %}
+  {%- endif %}
 {% endblock %}
