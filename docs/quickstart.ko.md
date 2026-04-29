@@ -1,3 +1,7 @@
+---
+description: central-mcp 설치, orchestrator 띄우기, 첫 병렬 dispatch까지 3분. 프로젝트 등록부터 fan-out까지 자연어 한 줄 흐름으로.
+---
+
 # 빠른 시작
 
 central-mcp를 처음 듣는 시점부터 "방금 세 프로젝트에 동시에 일을 시켰어"까지 3분이면 됩니다.

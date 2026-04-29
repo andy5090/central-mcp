@@ -1,3 +1,7 @@
+---
+description: Group registered projects into named subsets, fan out dispatches to a whole group at once, and run multiple workspaces concurrently in different terminals via CMCP_WORKSPACE.
+---
+
 # Workspaces
 
 A workspace is a named subset of registered projects. Use them to:

@@ -1,3 +1,7 @@
+---
+description: central-mcp의 앞으로 계획 — Visibility, Routing, Workspaces, Distribution, Architecture 트랙. 제안은 GitHub 이슈로.
+---
+
 # 로드맵
 
 central-mcp의 앞으로 계획만 모았습니다. 이미 출시된 변경은 [변경 이력](changelog.md)을 보세요.

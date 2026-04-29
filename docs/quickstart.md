@@ -1,3 +1,7 @@
+---
+description: Install central-mcp, launch an orchestrator, and dispatch your first parallel agent task in three minutes — natural-language flow from project registration to fan-out.
+---
+
 # Quickstart
 
 Three minutes from "I just heard of central-mcp" to "I just dispatched work to three projects in parallel."

@@ -1,5 +1,6 @@
 ---
 title: central-mcp
+description: central-mcp turns any MCP-capable client into a parallel control plane for Claude Code, Codex, Gemini, and opencode — fan out work across every project at once and let the hub absorb the context switching.
 hide:
   - toc
 ---

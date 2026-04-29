@@ -1,3 +1,7 @@
+---
+description: Reference for every central-mcp / cmcp subcommand — run, serve, up, watch, monitor, install, workspace operations, and maintenance.
+---
+
 # CLI reference
 
 `central-mcp` is the full command name; `cmcp` is the short alias created by `central-mcp init`.

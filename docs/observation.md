@@ -1,3 +1,7 @@
+---
+description: Live multi-pane view of dispatches across cmux (macOS GUI), tmux, and zellij. Why central-mcp's stateless log-driven model lines up with cmux's agent-driven pane philosophy.
+---
+
 # Observation mode
 
 central-mcp dispatches are non-blocking. You ask the orchestrator to send work to three projects, get three `dispatch_id`s in <100ms, and keep talking. The agents run in the background, in their own project directories, and stream output to per-project event logs.

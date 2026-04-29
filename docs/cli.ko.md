@@ -1,3 +1,7 @@
+---
+description: central-mcp / cmcp의 모든 서브커맨드 레퍼런스 — run, serve, up, watch, monitor, install, 워크스페이스 명령, 유지보수까지.
+---
+
 # CLI 레퍼런스
 
 `central-mcp`이 풀 네임이고, `cmcp`은 `central-mcp init`이 깔아주는 단축 alias입니다.

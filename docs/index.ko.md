@@ -1,5 +1,6 @@
 ---
 title: central-mcp
+description: central-mcp는 어떤 MCP 클라이언트든 Claude Code · Codex · Gemini · opencode가 모든 프로젝트에서 동시에 일하는 병렬 컨트롤 플레인으로 바꿔줍니다. 컨텍스트 스위칭은 허브가 대신 짊어집니다.
 hide:
   - toc
 ---

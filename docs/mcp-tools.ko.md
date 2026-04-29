@@ -1,3 +1,7 @@
+---
+description: central-mcp가 노출하는 모든 MCP 도구 — list_projects, dispatch, check_dispatch, token_usage, 레지스트리 / 워크스페이스 변경 — 디폴트 동작과 파라미터 정리.
+---
+
 # MCP 도구
 
 central-mcp가 orchestrator에 노출하는 MCP 도구 목록입니다. 정식 진실의 원천은 [`server.py`](https://github.com/andy5090/central-mcp/blob/main/src/central_mcp/server.py)이고, 이 페이지는 큐레이션된 레퍼런스입니다.

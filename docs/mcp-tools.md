@@ -1,3 +1,7 @@
+---
+description: Every MCP tool central-mcp exposes — list_projects, dispatch, check_dispatch, token_usage, registry mutations, and workspace operations — with default behavior and parameter notes.
+---
+
 # MCP tools
 
 central-mcp exposes the following MCP tools to the orchestrator. The full source of truth is [`server.py`](https://github.com/andy5090/central-mcp/blob/main/src/central_mcp/server.py); this page is a curated reference.

@@ -1,3 +1,7 @@
+---
+description: Forward-looking plan for central-mcp — visibility, routing, workspaces, distribution, and architecture tracks. Suggestions welcome via GitHub issues.
+---
+
 # Roadmap
 
 What's planned for central-mcp. This page is **forward-looking only** — for what's already shipped, see the [Changelog](changelog.md).
