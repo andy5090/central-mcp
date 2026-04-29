@@ -84,7 +84,7 @@ Per-process workspace scoping (`CMCP_WORKSPACE`) is shipped. Next steps are abou
 
 The slow-burn changes — only land when usage data justifies the complexity.
 
-💭 **Push notifications via MCP — still blocked, lower urgency now.** Server-initiated `notifications/resources/updated` for dispatch completion is still gated on at least one MCP client surfacing them to the LLM turn. The TUI sidesteps this entirely (the watcher inside TUI doesn't need MCP-side cooperation), so even if upstream stays blocked, central-mcp users will have a working completion-alert path via `cmcp tui`. Push notifications land if/when an MCP client commits to forwarding — they remain the right answer for non-TUI users, just no longer the only path.
+💭 **Push notifications via MCP.** Server-initiated `notifications/resources/updated` for dispatch completion. Lands when at least one MCP client commits to surfacing them to the LLM turn — until then, `cmcp tui` is the recommended completion-alert path.
 
 💭 **Agent capability registry overrides.** Today's `agents.AGENTS` is the single source of truth. A `[agents.<name>]` block in `config.toml` would let users override capabilities per-host (e.g. mark codex `has_quota_api = false` in environments where the OAuth flow is broken).
 
@@ -97,7 +97,7 @@ These are deliberate "we won't do this" — saving everyone time:
 - **Browser UI.** central-mcp is terminal-native. Observation lives in tmux/zellij panes or by tailing logs.
 - **Agent-state syncing.** Each agent CLI manages its own conversation state. central-mcp orchestrates dispatches, observes their lifecycle, and aggregates token use — it doesn't replicate session history.
 - **Interactive approval / worker mode.** Dispatch is non-interactive by design. If a user needs to approve actions mid-run, they should run the agent directly in a terminal.
-- **Separate daemon process.** The TUI (`cmcp tui`, 0.12.0+) is itself a long-running watcher — its asyncio task tails `dispatches.db` independently of any LLM turn, surfaces completions in the sidebar, and (optionally) injects a hint into the agent's PTY so the LLM resumes and reports back without the user prompting it. That's the whole motivation a daemon would have served. Cross-process state is already covered by `dispatches.db` (since 0.10.9). If "I want alerts even with TUI not running" turns into a strong signal post-1.0, a thin watcher daemon could rejoin as a 1.x add-on, but it's not on the path to 1.0.
+- **Separate daemon process.** `cmcp tui` is the long-running watcher — its asyncio task tails `dispatches.db` independently of any LLM turn and surfaces completions directly. No second process to install, manage, or debug.
 
 ---
 
