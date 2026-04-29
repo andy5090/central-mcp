@@ -3,6 +3,18 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.11.4] — 2026-04-30
+
+### Added
+- **`agent_totals` field on `token_usage`.** Today/7-day token sums per agent surfaced alongside the existing project-level `breakdown`, independent of the caller's `group_by`. So one tool call now shows three things at once: subscription quota %, per-agent activity (today + week), and per-project share. Previously the agent slice required a second call with `group_by="agent"`.
+- **`AGENT TOTALS` section in `summary_markdown`.** New block sits between `SUBSCRIPTION QUOTA` and `PROJECT BREAKDOWN`. Idle agents (today + week both zero) are dropped to keep the block tight; remaining rows sort by today desc, then week desc as tiebreaker.
+
+### Notes
+- Server failure isolated: a `tokens_db` hiccup populates `agent_totals: {"error": "..."}` and the renderer skips the block — the rest of the response still lands.
+- Tests: `test_quota_render.py` adds 4 cases (data, all-idle, error payload, position relative to quota/breakdown). Full suite 557 passing.
+
+---
+
 ## [0.11.3] — 2026-04-30
 
 ### Changed

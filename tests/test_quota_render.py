@@ -233,3 +233,77 @@ class TestRenderSummary:
             "total": {"total": 0},
         })
         assert "PROJECT BREAKDOWN" not in out
+
+
+class TestAgentTotalsSection:
+    """`agent_totals` is the per-agent today/7d slice surfaced
+    independently of the caller's `group_by`."""
+
+    def test_renders_with_data(self) -> None:
+        out = render.render_summary({
+            "period": "today",
+            "timezone": "UTC",
+            "breakdown": {},
+            "total": {"total": 0},
+            "agent_totals": {
+                "claude":   {"today": 1_200_000, "week": 8_400_000},
+                "codex":    {"today":   320_000, "week": 2_100_000},
+                "gemini":   {"today":         0, "week": 1_500_000},
+                "opencode": {"today":         0, "week":         0},
+            },
+        })
+        assert "AGENT TOTALS" in out
+        assert "claude" in out and "codex" in out
+        # gemini still appears (week > 0); opencode is dropped (both 0).
+        assert "gemini" in out
+        assert "opencode" not in out
+        # Sort: claude (today=1.2M) before codex (320K) before gemini (0).
+        ci, co, gi = out.find("claude"), out.find("codex"), out.find("gemini")
+        assert 0 < ci < co < gi
+
+    def test_omitted_when_all_idle(self) -> None:
+        out = render.render_summary({
+            "period": "today",
+            "timezone": "UTC",
+            "breakdown": {},
+            "total": {"total": 0},
+            "agent_totals": {
+                "claude": {"today": 0, "week": 0},
+                "codex":  {"today": 0, "week": 0},
+            },
+        })
+        assert "AGENT TOTALS" not in out
+
+    def test_error_payload_does_not_crash_render(self) -> None:
+        """Server isolates a tokens_db failure and reports it in-band.
+        Renderer must skip the section, not raise."""
+        out = render.render_summary({
+            "period": "today",
+            "timezone": "UTC",
+            "breakdown": {},
+            "total": {"total": 0},
+            "agent_totals": {"error": "tokens_db unavailable"},
+        })
+        assert "AGENT TOTALS" not in out
+
+    def test_appears_between_quota_and_breakdown(self) -> None:
+        out = render.render_summary({
+            "period": "today",
+            "timezone": "UTC",
+            "breakdown": {"p1": {"total": 1_000_000}},
+            "total": {"total": 1_000_000},
+            "quota": {
+                "claude": {
+                    "mode": "pro",
+                    "five_hour": {"used_pct": 14, "resets_in": "4h"},
+                    "seven_day": {"used_pct": 25, "resets_in": "5d"},
+                },
+            },
+            "agent_totals": {
+                "claude": {"today": 1_000_000, "week": 5_000_000},
+            },
+        })
+        q = out.find("SUBSCRIPTION QUOTA")
+        a = out.find("AGENT TOTALS")
+        b = out.find("PROJECT BREAKDOWN")
+        assert 0 < q < a < b

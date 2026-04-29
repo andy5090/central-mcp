@@ -1775,6 +1775,30 @@ def token_usage(
             # Snapshot already isolates per-fetcher errors, but guard the
             # whole tool against any unexpected import/threading failure.
             result["quota"] = {"error": f"snapshot failed: {exc}"}
+
+    # Per-agent totals across two windows (today + last 7 days). Independent
+    # of the caller's `group_by` so the response always carries this slice
+    # — orchestrators want "how much did each agent burn" alongside the
+    # subscription quota and the project-level breakdown. Failures isolated
+    # so a tokens_db hiccup never blocks the rest of the response.
+    try:
+        agent_totals: dict[str, dict[str, int]] = {}
+        for window_key, window_period in (("today", "today"), ("week", "week")):
+            sub = tokens_db.aggregate(
+                period=window_period,
+                tz_str=tz,
+                project_filter=project_filter,
+                group_by="agent",
+            )
+            for agent_name, slice_ in (sub.get("breakdown") or {}).items():
+                bucket = agent_totals.setdefault(
+                    agent_name, {"today": 0, "week": 0}
+                )
+                bucket[window_key] = int((slice_ or {}).get("total") or 0)
+        if agent_totals:
+            result["agent_totals"] = agent_totals
+    except Exception as exc:
+        result["agent_totals"] = {"error": f"agent-totals query failed: {exc}"}
     if include_summary:
         try:
             from central_mcp.quota.render import render_summary

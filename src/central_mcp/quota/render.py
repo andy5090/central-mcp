@@ -135,6 +135,53 @@ def _render_quota_section(quota: dict[str, Any]) -> list[str]:
     return out
 
 
+def _render_agent_totals_section(
+    agent_totals: dict[str, Any] | None,
+) -> list[str]:
+    """Render the AGENT TOTALS block — per-agent token sums for today
+    and the last 7 days. Independent of the caller's `group_by` so this
+    section is always available when there's any usage to show.
+
+    Empty/idle agents are dropped (no point listing claude=0 / codex=0
+    for users who only ran one agent). Sorted by today desc, week desc
+    as tiebreaker, then name.
+    """
+    out: list[str] = []
+    if not agent_totals or not isinstance(agent_totals, dict):
+        return out
+    if "error" in agent_totals:
+        return out
+
+    rows: list[tuple[str, int, int]] = []
+    for name, slice_ in agent_totals.items():
+        if not isinstance(slice_, dict):
+            continue
+        today = int(slice_.get("today") or 0)
+        week = int(slice_.get("week") or 0)
+        if today == 0 and week == 0:
+            continue
+        rows.append((name, today, week))
+    if not rows:
+        return out
+
+    rows.sort(key=lambda r: (-r[1], -r[2], r[0]))
+
+    name_width = max(len(r[0]) for r in rows)
+    today_strs = [_fmt_tokens(r[1]) for r in rows]
+    week_strs = [_fmt_tokens(r[2]) for r in rows]
+    today_width = max(len(s) for s in today_strs)
+    week_width = max(len(s) for s in week_strs)
+
+    out.append("AGENT TOTALS")
+    for (name, _today, _week), today_s, week_s in zip(rows, today_strs, week_strs):
+        out.append(
+            f"  {name.ljust(name_width)}  "
+            f"today {today_s.rjust(today_width)}   ·   "
+            f"7d {week_s.rjust(week_width)}"
+        )
+    return out
+
+
 def _render_breakdown_section(
     breakdown: dict[str, dict[str, Any]],
     total: dict[str, Any],
@@ -206,6 +253,7 @@ def render_summary(result: dict[str, Any]) -> str:
     breakdown = result.get("breakdown") or {}
     total = result.get("total") or {}
     quota = result.get("quota") or {}
+    agent_totals = result.get("agent_totals") or {}
 
     lines: list[str] = []
     title_suffix = f" ({tz})" if tz else ""
@@ -218,13 +266,19 @@ def render_summary(result: dict[str, Any]) -> str:
         lines.append("SUBSCRIPTION QUOTA")
         lines.extend(quota_lines)
 
+    agent_lines = _render_agent_totals_section(agent_totals)
+    if agent_lines:
+        if quota_lines:
+            lines.append("")
+        lines.extend(agent_lines)
+
     breakdown_lines = _render_breakdown_section(breakdown, total, period)
     if breakdown_lines:
-        if quota_lines:
+        if quota_lines or agent_lines:
             lines.append("")
         lines.extend(breakdown_lines)
 
-    if not quota_lines and not breakdown_lines:
+    if not quota_lines and not agent_lines and not breakdown_lines:
         lines.append("(no data for this period)")
 
     lines.append("```")
