@@ -3,6 +3,18 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.11.2] — 2026-04-30
+
+### Fixed
+- **Claude `five_hour` / `seven_day` percentages now match reality.** Anthropic flipped the `utilization` field on `/api/oauth/claude_cli/usage` from a 0–1 fraction to a 0–100 percent at some point in 2026. We were still multiplying by 100 unconditionally, so every Pro account ended up reading "100% / 100%" in the HUD even when actual utilization was well under threshold (e.g. 79% / 23%). New `_coerce_utilization` helper auto-detects the scale (`v ≤ 1` → fraction, `v > 1` → already percent) so both response shapes normalize correctly. Side effect: the orchestrator-fallback chain's quota gates now fire only when *real* quota is high, instead of always.
+- **Codex 403 error message no longer points the user at `codex login`.** As of 2026-04, OpenAI's `chatgpt.com/backend-api/api/codex/usage` endpoint returns a generic HTML 403 for every token, every URL variant, every header combo — and the shipped Codex CLI 0.125.0 binary explicitly tells users to visit `chatgpt.com/codex/settings/usage` for quota info instead of querying programmatically. So 403s here are no longer an auth problem; the endpoint has been deprecated. The error string now says exactly that with the web URL, which is actionable. Re-running `codex login` had no effect on the previous misleading message.
+
+### Notes
+- Tests updated: claude normalization now covers both fraction and percent input scales; codex 403 test asserts the new deprecation pointer.
+- No API surface changes. Existing callers of `token_usage` / `quota.snapshot()` see corrected numbers and clearer error text on the next call.
+
+---
+
 ## [0.11.1] — 2026-04-29
 
 ### Changed

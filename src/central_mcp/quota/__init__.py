@@ -71,6 +71,27 @@ def _safe_pct(value: Any) -> float:
     return round(max(0.0, min(100.0, v)), 1)
 
 
+def _coerce_utilization(value: Any) -> float:
+    """Accept Anthropic's `utilization` field as either a fraction
+    (0–1, the original wire format) or a percent (0–100, the current
+    one observed against the live `/api/oauth/claude_cli/usage`
+    endpoint as of 2026-04). Values ≤ 1 are treated as fractions and
+    multiplied by 100; values > 1 are taken as percents already.
+
+    The schema flip happened upstream without notice — without this
+    coercion, `0.85` (fraction, old) and `79.0` (percent, new) both
+    used to be multiplied by 100, producing `85` (correct) and
+    `7900` (clamped to 100, wrong) respectively. That's how every
+    Pro account ended up reading "100% / 100%" in the HUD even when
+    actual utilization was well under threshold.
+    """
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return v * 100 if v <= 1.0 else v
+
+
 def _normalize_claude(q: dict[str, Any] | None) -> dict[str, Any]:
     if q is None:
         return {"mode": "not_installed"}
@@ -88,12 +109,12 @@ def _normalize_claude(q: dict[str, Any] | None) -> dict[str, Any]:
     return {
         "mode": "pro",
         "five_hour": {
-            "used_pct": _safe_pct((fh.get("utilization") or 0) * 100),
+            "used_pct": _safe_pct(_coerce_utilization(fh.get("utilization"))),
             "resets_in": _fmt_reset_iso(fh.get("resets_at")),
             "resets_at": fh.get("resets_at"),
         },
         "seven_day": {
-            "used_pct": _safe_pct((wd.get("utilization") or 0) * 100),
+            "used_pct": _safe_pct(_coerce_utilization(wd.get("utilization"))),
             "resets_in": _fmt_reset_iso(wd.get("resets_at")),
             "resets_at": wd.get("resets_at"),
         },

@@ -146,8 +146,18 @@ def fetch() -> dict[str, Any] | None:
 
     err_msg = str(last_err) if last_err else "unknown error"
     if last_err is not None and _is_auth_failure(last_err):
+        # The `/backend-api/api/codex/usage` endpoint started returning a
+        # generic HTML 403 uniformly in 2026-04 — same response for every
+        # token (id_token, access_token), every URL variant, every
+        # account-id header combination. The shipped codex CLI binary
+        # (0.125.0) no longer queries this endpoint either; instead it
+        # points users to the web settings page for quota info. So 403s
+        # here aren't an auth problem any more, they're an endpoint
+        # deprecation. Surface that, not the misleading "tokens may be
+        # expired" hint we used before.
         err_msg = (
-            f"{err_msg} — tokens may be expired; run `codex login` to refresh"
+            "subscription quota endpoint currently unavailable — "
+            "visit https://chatgpt.com/codex/settings/usage"
         )
     return {"mode": "chatgpt", "error": err_msg}
 

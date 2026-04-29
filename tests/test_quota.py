@@ -179,9 +179,14 @@ class TestCodexFetch:
         assert seen_tokens == ["ID-TOKEN", "ACCESS-TOKEN"]
         assert "raw" in result
 
-    def test_both_403_returns_helpful_error(
+    def test_both_403_returns_endpoint_deprecated_error(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """403 from every fetch attempt no longer means "tokens stale" —
+        as of 2026-04 OpenAI returns generic HTML 403 for the codex
+        usage endpoint regardless of token, signaling that programmatic
+        quota access has been deprecated. The error message points
+        users to the web settings page instead."""
         import urllib.error
         auth = tmp_path / "auth.json"
         auth.write_text(json.dumps({
@@ -204,7 +209,8 @@ class TestCodexFetch:
 
         result = codex_q.fetch()
         assert result["mode"] == "chatgpt"
-        assert "codex login" in result["error"]
+        assert "chatgpt.com/codex/settings/usage" in result["error"]
+        assert "currently unavailable" in result["error"]
 
 
 # ── gemini ────────────────────────────────────────────────────────────────────

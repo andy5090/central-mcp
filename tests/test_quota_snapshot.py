@@ -54,6 +54,34 @@ class TestNormalizeClaude:
         assert out["five_hour"]["resets_in"].endswith("m") or "h" in out["five_hour"]["resets_in"]
         assert "d" in out["seven_day"]["resets_in"]
 
+    def test_pro_accepts_percent_scale_utilization(self) -> None:
+        """Anthropic switched the `utilization` field from a fraction
+        (0–1) to a percent (0–100) at some point in 2026. Both shapes
+        must normalize to the same `used_pct` value so HUDs don't
+        silently misreport 79% as 100% (after a stray ×100). See
+        `_coerce_utilization` for the auto-detection."""
+        future = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+        out = quota._normalize_claude({
+            "mode": "pro",
+            "raw": {
+                "five_hour": {"utilization": 79.0, "resets_at": future},
+                "seven_day": {"utilization": 23.0, "resets_at": future},
+            },
+        })
+        assert out["five_hour"]["used_pct"] == 79.0
+        assert out["seven_day"]["used_pct"] == 23.0
+
+    def test_pro_handles_exactly_one_as_fraction(self) -> None:
+        """Boundary: utilization == 1.0 is treated as a fraction (100%
+        used), not as 1%. Real-world relevance: a Pro account that
+        has exhausted its 5h window."""
+        future = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+        out = quota._normalize_claude({
+            "mode": "pro",
+            "raw": {"five_hour": {"utilization": 1.0, "resets_at": future}},
+        })
+        assert out["five_hour"]["used_pct"] == 100.0
+
 
 class TestNormalizeCodex:
     def test_none_means_not_installed(self) -> None:
