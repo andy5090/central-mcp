@@ -155,13 +155,18 @@
 }
 
 .cmcp-hero-title {
-  font-size: 3rem !important;
+  font-size: clamp(1.9rem, 7.2vw, 3rem) !important;
   font-weight: 800 !important;
   letter-spacing: -0.035em !important;
-  line-height: 1.05 !important;
+  line-height: 1.1 !important;
   margin: 0.5rem auto 1rem !important;
   border-bottom: none !important;
-  padding-bottom: 0 !important;
+  padding: 0 0.75rem !important;
+  /* CJK breaks at proper word boundaries; long English tokens like
+     "Tokenmaxxing" stay whole instead of dropping a single trailing letter. */
+  word-break: keep-all;
+  overflow-wrap: normal;
+  text-wrap: balance;
   animation: cmcp-fade-up 0.7s 0.1s ease-out both;
 }
 
@@ -185,11 +190,17 @@
 }
 
 .cmcp-hero-sub {
-  font-size: 1.05rem !important;
+  font-size: clamp(0.95rem, 3.6vw, 1.05rem) !important;
   line-height: 1.55;
   max-width: 640px;
   margin: 0 auto 1.5rem !important;
+  padding: 0 1rem;
   color: var(--md-default-fg-color--light);
+  /* Keep Korean particles attached to their stem and avoid mid-token breaks
+     like "central-" / "mcp가". English still wraps at spaces. */
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
   animation: cmcp-fade-up 0.7s 0.2s ease-out both;
 }
 
@@ -230,6 +241,35 @@
 @keyframes cmcp-fade-up {
   from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Mobile: tighten hero padding, logo, and button gutter so the title and
+   subhead aren't fighting for room with screen edges. The clamp() font
+   sizes above already scale down — this just compacts the surrounding
+   chrome and avoids horizontal overflow on phones around 360–400px wide. */
+@media (max-width: 600px) {
+  .cmcp-hero {
+    padding: 1.5rem 0 1rem;
+    margin-bottom: 1rem;
+  }
+  .cmcp-hero-logo img {
+    width: 200px !important;
+    height: auto;
+  }
+  .cmcp-hero-logo {
+    margin: 0 0 0.75rem !important;
+  }
+  .cmcp-hero .md-button {
+    margin: 0.2rem 0.15rem !important;
+    padding: 0.45em 0.9em !important;
+    font-size: 0.78rem !important;
+  }
+  /* Counter is part of running prose on mobile — drop the fixed min-width
+     so it doesn't open an awkward gap on a narrow line. */
+  .cmcp-hero-counter {
+    min-width: 0;
+    padding: 0 0.1ch;
+  }
 }
 
 /* Respect users who don't want motion. */
