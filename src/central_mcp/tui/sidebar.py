@@ -92,6 +92,7 @@ class Sidebar(Vertical):
         width: 40;
         background: $panel;
         border-right: solid $accent;
+        padding-top: 1;
     }
     """
 

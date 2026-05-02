@@ -62,7 +62,10 @@ class CentralMcpTUI(App):
         argv = _AGENT_LAUNCH.get(self.agent, [self.agent])
         self._sidebar = Sidebar()
         self._terminal = PtyTerminal(command=argv)
-        yield Header()
+        # `icon="MENU"` overrides the default `⭘` glyph that renders as
+        # a bare "o" in many monospace fonts and gives no visual hint
+        # that clicking opens the command palette.
+        yield Header(icon="MENU")
         with Horizontal(id="body"):
             yield self._sidebar
             yield self._terminal

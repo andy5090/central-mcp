@@ -3,6 +3,17 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.12.1] — 2026-05-03
+
+### Changed
+- **`cmcp tui`: header icon "MENU" instead of `⭘`.** The default Textual command-palette glyph rendered as a bare `o` in most monospace fonts, leaving no hint that clicking opened anything. The new label is unambiguous and fits the 8-cell `HeaderIcon` slot with room.
+- **`cmcp tui` sidebar gets a one-row top gutter.** `SUBSCRIPTION QUOTA` was butting against the header bar with no separation; `padding-top: 1` on the `Sidebar` container restores the visual break expected from the rest of the chrome.
+
+### Notes
+- UI-only patch on the 0.12 series; the codex adapter (Phase B) is still landing in 0.13.
+
+---
+
 ## [0.12.0] — 2026-05-03
 
 ### Added
