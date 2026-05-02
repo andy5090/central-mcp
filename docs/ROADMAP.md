@@ -1,5 +1,5 @@
 ---
-description: Forward-looking plan for central-mcp — visibility, routing, workspaces, distribution, and architecture tracks. Suggestions welcome via GitHub issues.
+description: Forward-looking plan for central-mcp — visibility, routing, upstream agents, workspaces, distribution, and architecture tracks. Suggestions welcome via GitHub issues.
 ---
 
 # Roadmap
@@ -55,6 +55,22 @@ Move from "user picks the agent for every dispatch" to "central-mcp suggests."
 💭 **`auto_dispatch` opt-in.** Combined classify + dispatch, gated behind `config.toml [routing].auto = true`. Only after `suggest_dispatch` data shows users accept recommendations >70% of the time.
 
 💭 **Per-workspace routing overrides.** Different favored agents per workspace (e.g. workspace `client-a` defaults to claude, `client-b` to codex).
+
+---
+
+## Upstream agents
+
+Open the orchestrator to programmatic callers — personal autonomous agents (scheduled daemons, persistent self-referential loops, chat / browser bridges) that want to delegate work to central-mcp without a human in the REPL.
+
+Today the orchestrator only exists as the interactive REPL launched by `cmcp run`. Upstream MCP clients can call `dispatch` directly, but doing so skips the orchestrator's routing / fallback / localization / conflict-detection layer — losing the value central-mcp adds. Closing that gap means giving the orchestrator a non-interactive entry channel.
+
+📋 **`dispatch_orchestrator(prompt, agent=None, workspace=None)` MCP tool.** Spawns a fresh non-interactive orchestrator subprocess (claude `-p`, codex `exec`, gemini `-p`, opencode equivalent), loads central-mcp's MCP tools, hands it the prompt, and returns a `dispatch_id` mirroring `dispatch` semantics — caller polls `check_dispatch` for the final stdout. Reuses `_launch_dispatch` plumbing.
+
+📋 **`cmcp ask "<prompt>"` CLI.** Synchronous shell wrapper over `dispatch_orchestrator` for upstream agents that don't speak MCP. Same agent resolution as `cmcp run`.
+
+💭 **Per-agent non-interactive MCP-loading verification.** claude `-p` and codex `exec` are confirmed paths; gemini `-p` and opencode need a small spike. Phasing mirrors the TUI track — claude first, others follow.
+
+💭 **Persistent orchestrator session.** Reuse one long-lived orchestrator across many upstream calls instead of spawning per ask. Only justified once usage data shows spawn cost is non-negligible relative to LLM latency.
 
 ---
 

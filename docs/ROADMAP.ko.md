@@ -1,5 +1,5 @@
 ---
-description: central-mcp의 앞으로 계획 — Visibility, Routing, Workspaces, Distribution, Architecture 트랙. 제안은 GitHub 이슈로.
+description: central-mcp의 앞으로 계획 — Visibility, Routing, Upstream agents, Workspaces, Distribution, Architecture 트랙. 제안은 GitHub 이슈로.
 ---
 
 # 로드맵
@@ -55,6 +55,22 @@ central-mcp의 앞으로 계획만 모았습니다. 이미 출시된 변경은 [
 💭 **`auto_dispatch` opt-in.** classify + dispatch를 한 번에. `config.toml [routing].auto = true`로만 켜집니다. `suggest_dispatch` 추천 수락률이 70% 넘는다는 게 데이터로 보이면 그때.
 
 💭 **워크스페이스별 routing 오버라이드.** 워크스페이스마다 선호 에이전트가 다를 수 있으니 (`client-a`는 claude, `client-b`는 codex).
+
+---
+
+## Upstream agents
+
+오케스트레이터를 외부 호출자에게 엽니다 — 개인용 자율 에이전트(스케줄 데몬, persistent self-referential 루프, 챗 / 브라우저 브릿지)가 사용자가 REPL 앞에 없어도 central-mcp에 작업을 위임할 수 있도록.
+
+지금은 오케스트레이터가 `cmcp run`으로 띄우는 인터랙티브 REPL로만 존재합니다. upstream MCP 클라이언트가 `dispatch`를 직접 부를 수는 있지만, 그러면 오케스트레이터의 routing / fallback / localization / 충돌 감지 레이어를 우회 — central-mcp가 더하는 가치를 잃습니다. 이 갭을 메우려면 오케스트레이터에 비대화 진입 채널이 필요합니다.
+
+📋 **`dispatch_orchestrator(prompt, agent=None, workspace=None)` MCP 도구.** 비대화 오케스트레이터 서브프로세스(claude `-p`, codex `exec`, gemini `-p`, opencode 동등 옵션)를 띄우고, central-mcp MCP 도구를 로드하고, 프롬프트를 전달한 뒤 `dispatch_id`를 즉시 반환 — 호출자는 `check_dispatch`로 최종 stdout을 폴링. `_launch_dispatch` 배관을 그대로 재활용.
+
+📋 **`cmcp ask "<prompt>"` CLI.** MCP를 안 쓰는 upstream 에이전트용 동기 셸 래퍼. 에이전트 resolution은 `cmcp run`과 동일.
+
+💭 **에이전트별 비대화 모드 MCP 로딩 검증.** claude `-p` / codex `exec`는 확정 경로, gemini `-p` / opencode는 짧은 스파이크 필요. phasing은 TUI 트랙과 동일 — claude 먼저, 나머지 후속.
+
+💭 **Persistent 오케스트레이터 세션.** 매 ask마다 서브프로세스를 띄우는 대신 long-lived 오케스트레이터를 재사용. 사용 데이터가 spawn 비용이 LLM 지연 대비 무시할 수 없다는 걸 보여줄 때만 정당화.
 
 ---
 
