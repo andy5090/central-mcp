@@ -28,7 +28,7 @@ Make the project-portfolio view consistent across every surface.
 
 A self-contained terminal app that hosts the orchestrator agent inside a managed PTY, surrounds it with our own chrome (token HUD, active dispatches, notifications), and reacts to dispatch completion *immediately* — no longer dependent on the MCP client forwarding `notifications/resources/updated`. The track that **defines 1.0**: when this lands stable across all four orchestrators, central-mcp graduates from 0.x to 1.0.0 and starts honoring SemVer guarantees.
 
-🚧 **Phase 0 (0.12.0) — `cmcp tui --experimental`, claude only.** New experimental subcommand. `textual` for outer chrome (header / sidebar / footer / notifications), `pyte` for PTY emulation. Inside the main pane: claude REPL pass-through. Sidebar: `token_usage.summary_markdown` + active dispatches + recent completions. Daemon-style watcher on `dispatches.db` raises notifications inline. `--experimental` flag is required (no flag → actionable error). Optional install via `pip install central-mcp[tui]`.
+✅ **Phase 0 (0.12.0) — `cmcp tui --experimental`, claude only.** Shipped 2026-05-03. `textual` for outer chrome (header / sidebar / footer / notifications), `pyte` for PTY emulation. Inside the main pane: claude REPL pass-through. Sidebar: `token_usage.summary_markdown` + active dispatches + recent completions. Daemon-style watcher on `dispatches.db` raises notifications inline. `--experimental` flag is required (no flag → actionable error). Optional install via `pip install 'central-mcp[tui]'`.
 
 📋 **Phase B (0.13.0) — codex.** Same shell, second agent adapter. Adapter pattern lives in `adapters/base.py` already, extension is mechanical.
 

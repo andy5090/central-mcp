@@ -1475,3 +1475,38 @@ def _ws_remove_project(project: str, workspace: str) -> int:
         return 0
     print(f"error: {project!r} is not a member of workspace {workspace!r}", file=sys.stderr)
     return 1
+
+
+# ---------- tui (experimental) ----------
+
+def cmd_tui(args: argparse.Namespace) -> int:
+    """Launch the experimental Textual UI (`cmcp tui --experimental`).
+
+    Two opt-out paths return exit code 2 (usage error):
+    - missing --experimental flag → actionable hint to opt in
+    - missing [tui] extras → actionable `pip install` hint
+
+    Both paths are tested in tests/test_cli_tui.py — they're the
+    user-facing contract that needs to stay stable.
+    """
+    from central_mcp.tui import errors as tui_errors
+
+    if not getattr(args, "experimental", False):
+        return tui_errors.print_experimental_required()
+
+    agent = getattr(args, "agent", None) or "claude"
+    if agent != "claude":
+        sys.stderr.write(
+            f"error: tui agent {agent!r} not supported in 0.12.x — "
+            "claude only.\n"
+            "       codex / gemini / opencode arrive in 0.13.0+ "
+            "(see ROADMAP).\n"
+        )
+        return 2
+
+    try:
+        from central_mcp.tui import app as tui_app
+    except ImportError as exc:
+        return tui_errors.print_missing_extras(detail=str(exc))
+
+    return tui_app.run_tui(agent=agent)

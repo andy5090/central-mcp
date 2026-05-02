@@ -3,6 +3,26 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.12.0] — 2026-05-03
+
+### Added
+- **`cmcp tui --experimental` — embedded Textual UI (Phase 0, claude only).** New experimental subcommand hosts the orchestrator agent inside a managed PTY, surrounds it with our own chrome (header / sidebar / footer), and reacts to dispatch completion *immediately* by polling `dispatches.db` directly instead of waiting on `notifications/resources/updated`. Sidebar shows `token_usage.summary_markdown` (subscription quota + agent totals + project breakdown), an `Active` list of running dispatches, and a `Recent` list of the last 5 terminal-state dispatches. `--experimental` flag is required (no flag → exit 2 with hint). `Ctrl+Q` quits the chrome without killing the embedded agent first. Codex / gemini / opencode adapters land in 0.13+ (see ROADMAP).
+- **`[project.optional-dependencies] tui` group.** `pip install 'central-mcp[tui]'` brings in `textual>=8.0,<9` and `pyte>=0.8.2`; headless deployments and CI containers don't pay the install cost otherwise.
+
+### Notes
+- Rendering layer:
+  - PTY widget defers `subprocess.Popen` until after the first layout pass so claude's banner / table borders / decorative underlines are drawn at the actual widget width — spawning at `on_mount` left them frozen at default 100×30.
+  - Strips Kitty keyboard / xterm modify-other-keys probes (`\x1b[<u`, `\x1b[>1u`, `\x1b[>4;2m`, `\x1b[>0q`) before feeding pyte: pyte 0.8.2's CSI parser bails on the `<`/`>` private prefix and leaks the final byte (`u`) onto the screen as a literal.
+  - Drops text-emphasis attributes on whitespace cells so hyperlink-underlined runs followed by spaces don't display as long horizontal lines.
+  - `Ctrl+Q` is reserved for the chrome and not forwarded into the PTY (other keys, including `Ctrl+C`, still reach the embedded agent).
+- Tests: `test_app_composes_headless` (textual Pilot smoke — catches API drift on future textual upgrades) and `test_private_csi_leak_filter_strips_kitty_keyboard_queries` (locks the CSI filter contract). 563/563 passing.
+
+### Deferred
+- `cmcp tui` for codex / gemini / opencode (Phase B/C: 0.13.0+).
+- Self-rendered scrollback / search / copy, Korean IME and double-width corner cases, `[tui].auto_inject = passive | hint | prompt` notification policy (Phase D).
+
+---
+
 ## [0.11.5] — 2026-05-02
 
 ### Fixed

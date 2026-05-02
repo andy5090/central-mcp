@@ -28,6 +28,7 @@ from central_mcp.cli._commands import (
     cmd_run,
     cmd_serve,
     cmd_tmux,
+    cmd_tui,
     cmd_unalias,
     cmd_up,
     cmd_upgrade,
@@ -271,6 +272,30 @@ def build_parser() -> argparse.ArgumentParser:
     p_zellij.add_argument("--all", action="store_true",
                           help="create sessions for all workspaces")
     p_zellij.set_defaults(func=cmd_zellij)
+
+    p_tui = sub.add_parser(
+        "tui",
+        help="experimental embedded TUI (claude-only, requires --experimental)",
+        description=(
+            "Launch the embedded Textual UI: orchestrator agent in a managed "
+            "PTY, surrounded by a sidebar with token usage / active "
+            "dispatches / recent completions. Phase 0 is claude-only and "
+            "explicitly opt-in via --experimental — codex / gemini / "
+            "opencode adapters land in 0.13+. Requires the [tui] extra: "
+            "`pip install 'central-mcp[tui]'`."
+        ),
+    )
+    p_tui.add_argument(
+        "--experimental",
+        action="store_true",
+        help="acknowledge that the TUI is experimental (required to launch)",
+    )
+    p_tui.add_argument(
+        "--agent",
+        default="claude",
+        help="agent CLI to embed (claude only in 0.12.x; default: claude)",
+    )
+    p_tui.set_defaults(func=cmd_tui)
 
     p_list = sub.add_parser(
         "list",

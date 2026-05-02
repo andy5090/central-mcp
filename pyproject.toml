@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "central-mcp"
-version = "0.11.5"
+version = "0.12.0"
 description = "Coding agent-agnostic MCP hub for managing multiple coding agents."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -27,6 +27,19 @@ dependencies = [
     "pyyaml>=6.0",
     "ruamel.yaml>=0.18",
     "tomlkit>=0.13",
+]
+
+[project.optional-dependencies]
+# `pip install 'central-mcp[tui]'` — adds the experimental terminal UI
+# (`cmcp tui --experimental`). Both deps stay outside the base wheel so
+# headless deployments and CI containers don't pay the install cost.
+tui = [
+    # textual jumped 0.x → 8.x and reworked the visual pipeline (Static now
+    # stores `Visual` objects, layout calls `widget._render()`). Pin to the
+    # major we tested against; bump deliberately when the headless smoke
+    # test in tests/test_cli_tui.py confirms a newer release works.
+    "textual>=8.0,<9",
+    "pyte>=0.8.2",
 ]
 
 [project.urls]

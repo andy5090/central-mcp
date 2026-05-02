@@ -28,7 +28,7 @@ central-mcp의 앞으로 계획만 모았습니다. 이미 출시된 변경은 [
 
 자체 터미널 앱이 PTY로 orchestrator 에이전트를 안에 띄우고, 그 주변을 우리 chrome (token HUD, 활성 dispatch, 알림)으로 둘러싸는 트랙입니다. dispatch 완료에 *즉시* 반응 — MCP 클라이언트가 `notifications/resources/updated`를 forward해 주든 말든 우리가 직접 채널을 잡으니 무관해집니다. 이 트랙이 4개 orchestrator 모두에서 안정적으로 끝나는 시점이 **1.0 마일스톤**: central-mcp가 0.x를 졸업하고 1.0.0으로 올라가면서 SemVer 약속이 시작됩니다.
 
-🚧 **Phase 0 (0.12.0) — `cmcp tui --experimental`, claude 단독.** 새 experimental 서브커맨드. `textual`로 outer chrome (header / sidebar / footer / 알림), `pyte`로 PTY emulation. 메인 페인 안: claude REPL pass-through. 사이드바: `token_usage.summary_markdown` + 활성 dispatch + 최근 완료. `dispatches.db`를 watch하는 데몬 형태의 watcher가 알림을 인라인으로 띄워줍니다. `--experimental` 플래그 강제 (없으면 actionable 에러). 설치는 옵션으로 `pip install central-mcp[tui]`.
+✅ **Phase 0 (0.12.0) — `cmcp tui --experimental`, claude 단독.** 2026-05-03 출시. `textual`로 outer chrome (header / sidebar / footer / 알림), `pyte`로 PTY emulation. 메인 페인 안: claude REPL pass-through. 사이드바: `token_usage.summary_markdown` + 활성 dispatch + 최근 완료. `dispatches.db`를 watch하는 데몬 형태의 watcher가 알림을 인라인으로 띄워줍니다. `--experimental` 플래그 강제 (없으면 actionable 에러). 설치는 옵션으로 `pip install 'central-mcp[tui]'`.
 
 📋 **Phase B (0.13.0) — codex 추가.** 같은 셸, 두 번째 에이전트 어댑터. `adapters/base.py`에 패턴이 이미 있어서 확장은 기계적.
 
