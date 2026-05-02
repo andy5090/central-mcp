@@ -525,7 +525,11 @@ def main() -> None:
     # No args, or first arg is a flag (not a subcommand) → inject "run".
     # Handles: `central-mcp`, `central-mcp --permission-mode X`, `central-mcp --agent X`.
     # MCP clients use `central-mcp serve` explicitly, so this is safe.
-    if len(sys.argv) == 1 or sys.argv[1].startswith("-"):
+    # `-h`/`--help` are excluded so top-level help shows the full subcommand
+    # list instead of `run`'s flags only.
+    if len(sys.argv) == 1 or (
+        sys.argv[1].startswith("-") and sys.argv[1] not in ("-h", "--help")
+    ):
         sys.argv.insert(1, "run")
 
     parser = build_parser()

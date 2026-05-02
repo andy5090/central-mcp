@@ -316,17 +316,28 @@ class TestRunWorkspaceFlag:
 
 
 class TestHelp:
-    def test_run_help_shows_run_flags(self, cli_env: dict) -> None:
-        # `central-mcp --help` routes to `central-mcp run --help`
-        r = _run(["--help"], cli_env)
+    def test_top_level_help_lists_every_subcommand(self, cli_env: dict) -> None:
+        # `central-mcp --help` (and `-h`) must reach the top parser and list
+        # every registered subcommand — not be redirected into `run`'s help.
+        # Regression for 0.11.5: the bare-cmcp → run argv-injection rule used
+        # to swallow -h/--help and hide the subcommand list.
+        for flag in ("-h", "--help"):
+            r = _run([flag], cli_env)
+            assert r.returncode == 0, f"{flag}: rc={r.returncode} stderr={r.stderr!r}"
+            for sub in (
+                "serve", "up", "watch", "monitor", "upgrade", "down",
+                "tmux", "zellij", "list", "brief", "add", "remove",
+                "reorder", "init", "install", "alias", "unalias",
+                "workspace", "run",
+            ):
+                assert sub in r.stdout, f"{flag} missing subcommand {sub!r}"
+
+    def test_run_help_explicit_shows_run_flags(self, cli_env: dict) -> None:
+        # Users who want `run`'s flags must spell out the subcommand.
+        r = _run(["run", "--help"], cli_env)
         assert r.returncode == 0
         assert "--permission-mode" in r.stdout
         assert "--pick" in r.stdout
-
-    def test_serve_help_shows_all_subcommands(self, cli_env: dict) -> None:
-        # Use an explicit subcommand to reach the top-level help listing
-        r = _run(["serve", "--help"], cli_env)
-        assert r.returncode == 0
 
     def test_add_help(self, cli_env: dict) -> None:
         r = _run(["add", "--help"], cli_env)

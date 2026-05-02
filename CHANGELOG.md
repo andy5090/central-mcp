@@ -3,6 +3,16 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.11.5] — 2026-05-02
+
+### Fixed
+- **`central-mcp -h` / `--help` now shows the top-level subcommand list.** Previously the bare-`central-mcp` → `central-mcp run` argv-injection rule was too greedy and rewrote `-h`/`--help` into `run -h`, hiding the full subcommand list (`serve`, `up`, `watch`, `monitor`, `down`, `tmux`, `zellij`, `list`, `brief`, `add`, `remove`, `reorder`, `init`, `install`, `alias`, `unalias`, `workspace`, `run`) and only printing `run`'s flags. Help now reaches the top parser; `cmcp` (no args) and `cmcp --agent X` still default to `run` as before.
+
+### Notes
+- Regression test in `tests/test_cli_e2e.py` asserts the top-level help lists every registered subparser, so future argv-shimming changes can't silently re-hide them.
+
+---
+
 ## [0.11.4] — 2026-04-30
 
 ### Added
