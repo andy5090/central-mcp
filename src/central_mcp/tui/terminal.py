@@ -1,4 +1,4 @@
-"""PTY-backed Textual widget — claude REPL pass-through.
+"""PTY-backed Textual widget — agent REPL pass-through.
 
 A `pty.openpty()` master/slave pair owned by the widget. The slave fd
 is plumbed into the spawned agent CLI's stdin/stdout/stderr; the master
@@ -6,12 +6,26 @@ fd is drained asynchronously via `loop.add_reader` and the bytes are
 fed into a `pyte.Screen`. Each refresh walks the screen buffer and
 emits a `rich.text.Text` with per-cell styling.
 
-Phase 0 limitations (tracked in roadmap "Phase D — stabilization"):
+When constructed with a `project=` argument, the widget doubles as a
+dispatch event writer: `submit_prompt(text)` writes the prompt bytes
+into the PTY and records `start` in `dispatches_db` + `events.jsonl`,
+mirroring what MCP `dispatch()` does for a non-interactive child. A
+screen-stability watcher then declares the dispatch `complete` once
+the bottom rows of the pyte buffer hash-match for a few consecutive
+ticks — this gives the sidebar (`DispatchWatcher`) and any external
+observers the same lifecycle records they get from MCP-driven runs,
+without paying the MCP round-trip latency.
+
+Phase 0 limitations:
 - Plain blocking write to master on key events (PTY buffers comfortably
   absorb a typical REPL keystroke rate).
 - No mouse forwarding, no scrollback, no copy/paste integration.
 - Cursor rendered as a reversed cell. Most agent CLIs draw their own
   cursor block via escape codes; pyte's tracker is the fallback.
+- PTY-mode dispatches do not capture stdout into the `output` column
+  of `dispatches.db` and do not emit per-chunk `output` events into
+  `dispatch.jsonl`. Token totals are unavailable too. Both are tracked
+  separately for a follow-up pass.
 """
 from __future__ import annotations
 
@@ -23,6 +37,8 @@ import re
 import struct
 import subprocess
 import termios
+import time
+import uuid
 from typing import Sequence
 
 import pyte
@@ -31,6 +47,8 @@ from rich.text import Text
 from textual import events
 from textual.geometry import Size
 from textual.widget import Widget
+
+from central_mcp import dispatches_db, events as dispatch_events, pty_sessions
 
 
 # CSI sequences with `<` or `>` private-prefix bytes (Kitty keyboard
@@ -58,6 +76,19 @@ _DEFAULT_ROWS = 30
 # before our app-level quit binding can fire.
 _CHROME_KEYS = frozenset({"ctrl+q"})
 
+# Completion detection cadence. The watcher hashes (cursor pos + bottom
+# 6 rows of the pyte buffer) every tick; once it matches the previous
+# hash for `_STABLE_TICKS` consecutive ticks the dispatch is marked
+# complete. 3 × 0.5s = 1.5s of uninterrupted screen state — long enough
+# that streaming responses don't false-positive but short enough that a
+# follow-up prompt feels responsive.
+_TICK_SEC = 0.5
+_STABLE_TICKS = 3
+# How many bottom rows feed the stability hash. The whole screen is too
+# noisy (status bars / clocks tick on their own); the bottom strip is
+# where the agent's response and prompt indicator settle.
+_HASH_TAIL_ROWS = 6
+
 # Debug log — opt-in via CMCP_TUI_DEBUG=1. Writes one line per sizing
 # event to ~/.central-mcp/tui-debug.log so we can verify the PTY child
 # starts at the actual widget width (and that subsequent resizes line up).
@@ -84,15 +115,34 @@ class PtyTerminal(Widget, can_focus=True):
     }
     """
 
-    def __init__(self, command: Sequence[str]) -> None:
+    def __init__(
+        self,
+        command: Sequence[str],
+        *,
+        project: str | None = None,
+        agent: str | None = None,
+        cwd: str | os.PathLike[str] | None = None,
+    ) -> None:
         super().__init__()
         self.command = list(command)
+        # Bind this terminal to a project so submit_prompt() can record
+        # `start` / `complete` lifecycle events into dispatches.db and the
+        # project's dispatch.jsonl. None → free-floating REPL (no tracking).
+        self._project = project
+        self._agent_name = agent or (self.command[0] if self.command else "")
+        self._cwd = os.fspath(cwd) if cwd else None
         self._cols = _DEFAULT_COLS
         self._rows = _DEFAULT_ROWS
         self._screen = pyte.Screen(self._cols, self._rows)
         self._stream = pyte.ByteStream(self._screen)
         self._master_fd: int | None = None
         self._proc: subprocess.Popen | None = None
+        # Active-dispatch state. `_active_did` is set by submit_prompt()
+        # and cleared by _mark_complete(); the completion watcher only
+        # runs while a dispatch is in flight.
+        self._active_did: str | None = None
+        self._active_started_at: float = 0.0
+        self._completion_task: asyncio.Task | None = None
 
     # ── lifecycle ────────────────────────────────────────────────────
 
@@ -118,6 +168,18 @@ class PtyTerminal(Widget, can_focus=True):
         self._spawn_at(size)
 
     def on_unmount(self) -> None:
+        if self._completion_task is not None and not self._completion_task.done():
+            self._completion_task.cancel()
+            self._completion_task = None
+        # If a dispatch was still in flight when the user closed the
+        # widget, mark it cancelled so the sidebar doesn't show a
+        # zombie "running" row forever.
+        if self._active_did is not None:
+            self._mark_complete(ok=False, status="cancelled")
+        # Drop the PTY session registration so `dispatch()` resumes
+        # accepting background calls into this project.
+        if self._project is not None:
+            pty_sessions.unregister(self._project)
         self._teardown_reader()
         if self._master_fd is not None:
             try:
@@ -148,6 +210,7 @@ class PtyTerminal(Widget, can_focus=True):
                 close_fds=True,
                 preexec_fn=os.setsid,
                 env=env,
+                cwd=self._cwd,
             )
         finally:
             os.close(slave_fd)
@@ -209,6 +272,148 @@ class PtyTerminal(Widget, can_focus=True):
         event.stop()
         event.prevent_default()
 
+    # ── dispatch lifecycle ───────────────────────────────────────────
+
+    def submit_prompt(self, text: str) -> str | None:
+        """Send `text` to the running REPL as a new prompt.
+
+        When this widget is bound to a project, the call also records a
+        `start` row in `dispatches.db` and a `start` event in the
+        project's `dispatch.jsonl`, then arms the screen-stability
+        watcher to mark the dispatch complete when the agent's output
+        settles. Returns the dispatch_id when tracking was started, or
+        None when the PTY isn't ready / no project is bound / a previous
+        dispatch is still in flight (in which case the bytes are still
+        written so the user can answer follow-up questions).
+        """
+        if self._master_fd is None:
+            return None
+        try:
+            os.write(self._master_fd, text.encode("utf-8") + b"\r")
+        except OSError:
+            return None
+        if self._project is None or self._active_did is not None:
+            return None
+
+        did = uuid.uuid4().hex[:8]
+        self._active_did = did
+        self._active_started_at = time.time()
+        try:
+            dispatches_db.upsert_started({
+                "id": did,
+                "project": self._project,
+                "agent": self._agent_name,
+                "status": "running",
+                "started": self._active_started_at,
+                "prompt": text,
+                "command": " ".join(self.command),
+                "chain": [self._agent_name],
+            })
+            dispatch_events.log_event(
+                self._project, did, "start",
+                agent=self._agent_name,
+                prompt=text,
+                mode="pty",
+                chain=[self._agent_name],
+            )
+            dispatch_events.log_timeline(
+                did, self._project, "dispatched",
+                agent=self._agent_name,
+                mode="pty",
+            )
+        except Exception:
+            # `events`/`dispatches_db` are documented as best-effort, but
+            # belt-and-braces here so a misconfigured home dir never
+            # tears down the TUI mid-keystroke.
+            pass
+        return did
+
+    def _screen_hash(self) -> int:
+        """Hash the cursor position + bottom rows of the pyte buffer.
+
+        This is the signal the completion watcher uses to detect "the
+        agent has stopped writing." Top rows are excluded because some
+        agents redraw status decoration there on a timer; the bottom
+        strip is where actual response text and the input prompt land.
+        """
+        sc = self._screen
+        cur = (sc.cursor.y, sc.cursor.x, sc.cursor.hidden)
+        rows: list[str] = []
+        start = max(0, sc.lines - _HASH_TAIL_ROWS)
+        for y in range(start, sc.lines):
+            row = sc.buffer[y]
+            rows.append(
+                "".join((row[x].data or " ") for x in range(sc.columns))
+            )
+        return hash((cur, tuple(rows)))
+
+    async def _completion_watcher(self) -> None:
+        """Mark `_active_did` complete once the screen settles.
+
+        Idle when no dispatch is active. When one is in flight, the
+        watcher hashes the screen every `_TICK_SEC`; once the hash has
+        matched the previous tick for `_STABLE_TICKS` consecutive ticks
+        the dispatch is finalised. The PTY child keeps running — only
+        the bookkeeping closes — so the user can immediately submit a
+        follow-up prompt.
+        """
+        last_hash: int | None = None
+        stable = 0
+        try:
+            while self._master_fd is not None:
+                await asyncio.sleep(_TICK_SEC)
+                if self._active_did is None:
+                    last_hash = None
+                    stable = 0
+                    continue
+                h = self._screen_hash()
+                if h == last_hash:
+                    stable += 1
+                else:
+                    stable = 0
+                last_hash = h
+                if stable >= _STABLE_TICKS:
+                    self._mark_complete(ok=True, status="complete")
+                    last_hash = None
+                    stable = 0
+        except asyncio.CancelledError:
+            pass
+
+    def _mark_complete(self, *, ok: bool, status: str) -> None:
+        did = self._active_did
+        if did is None or self._project is None:
+            self._active_did = None
+            return
+        duration = round(time.time() - self._active_started_at, 1)
+        self._active_did = None
+        try:
+            dispatches_db.upsert_finished(did, status, {
+                "ok": ok,
+                "duration_sec": duration,
+                "exit_code": 0 if ok else None,
+                "output": "",
+                "stderr": "",
+                "tokens": None,
+                "agent_used": self._agent_name,
+            })
+            dispatch_events.log_event(
+                self._project, did, "complete",
+                agent_used=self._agent_name,
+                ok=ok,
+                status=status,
+                duration_sec=duration,
+                mode="pty",
+            )
+            dispatch_events.log_timeline(
+                did, self._project, "complete",
+                agent=self._agent_name,
+                ok=ok,
+                duration_sec=duration,
+                mode="pty",
+            )
+        except Exception:
+            pass
+
     # ── resize ───────────────────────────────────────────────────────
 
     def on_resize(self, event: events.Resize) -> None:
@@ -227,10 +432,29 @@ class PtyTerminal(Widget, can_focus=True):
         self._stream = pyte.ByteStream(self._screen)
         self._spawn()
         _debug(f"_spawn_at cols={cols} rows={rows} size={size!r} master_fd={self._master_fd}")
-        if self._master_fd is not None:
-            asyncio.get_running_loop().add_reader(
-                self._master_fd, self._on_pty_readable
+        # Register the PTY session so `dispatch()` knows the project is
+        # in PTY mode and refuses background prompts that would race the
+        # human user driving the pane. Free-floating REPLs (no project)
+        # are not registered.
+        if (
+            self._project is not None
+            and self._proc is not None
+            and self._proc.poll() is None
+        ):
+            pty_sessions.register(
+                self._project, self._proc.pid, self._agent_name
             )
+        if self._master_fd is not None:
+            loop = asyncio.get_running_loop()
+            loop.add_reader(self._master_fd, self._on_pty_readable)
+            # The completion watcher only starts when this widget is
+            # bound to a project — without one there's nowhere to record
+            # `start` / `complete` events, so the watcher would have
+            # nothing to do.
+            if self._project is not None:
+                self._completion_task = loop.create_task(
+                    self._completion_watcher()
+                )
 
     def _apply_size(self, size: Size) -> None:
         cols = max(20, size.width)

@@ -202,3 +202,77 @@ def test_install_opencode_rejects_invalid_json(
     monkeypatch.setenv("HOME", str(home))
     assert install.install("opencode") == 1
 
+
+# ─── hermes ────────────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def fake_hermes_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Seed `$HOME/.hermes/config.yaml` with a minimal user-edited config.
+
+    Includes a comment + a pre-existing `mcp_servers.other` entry so the
+    test can verify both round-trip preservation and merge behavior.
+    """
+    home = tmp_path / "home"
+    home.mkdir()
+    hermes_dir = home / ".hermes"
+    hermes_dir.mkdir()
+    cfg = hermes_dir / "config.yaml"
+    cfg.write_text(
+        "# user comment that must round-trip\n"
+        "model:\n"
+        "  default: gpt-5\n"
+        "mcp_servers:\n"
+        "  other:\n"
+        "    command: other-binary\n"
+        "    args:\n"
+        "      - serve\n"
+    )
+    monkeypatch.setenv("HOME", str(home))
+    return cfg
+
+
+def test_install_hermes_adds_entry(fake_hermes_config: Path) -> None:
+    from ruamel.yaml import YAML
+
+    rc = install.install("hermes")
+    assert rc == 0
+    yaml = YAML()
+    with fake_hermes_config.open("r") as fh:
+        data = yaml.load(fh)
+    assert "central" in data["mcp_servers"]
+    entry = data["mcp_servers"]["central"]
+    assert entry["command"] == "central-mcp"
+    assert list(entry["args"]) == ["serve"]
+    # Preserves the pre-existing server entry.
+    assert "other" in data["mcp_servers"]
+    # Round-trips the leading comment.
+    assert "user comment that must round-trip" in fake_hermes_config.read_text()
+
+
+def test_install_hermes_is_idempotent(fake_hermes_config: Path) -> None:
+    assert install.install("hermes") == 0
+    # Second call must be a no-op (no content drift).
+    text_before = fake_hermes_config.read_text()
+    assert install.install("hermes") == 0
+    assert fake_hermes_config.read_text() == text_before
+
+
+def test_install_hermes_refuses_if_no_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    # No ~/.hermes/config.yaml — Hermes hasn't been initialized. We
+    # don't fabricate the file because Hermes seeds many other defaults
+    # during its own setup that we shouldn't try to mirror.
+    assert install.install("hermes") == 1
+
+
+def test_install_hermes_dry_run_does_not_write(fake_hermes_config: Path) -> None:
+    text_before = fake_hermes_config.read_text()
+    rc = install.install("hermes", dry_run=True)
+    assert rc == 0
+    assert fake_hermes_config.read_text() == text_before
+

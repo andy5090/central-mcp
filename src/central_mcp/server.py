@@ -27,7 +27,7 @@ from typing import Any
 from fastmcp import FastMCP
 
 from central_mcp import config as user_config
-from central_mcp import dispatches_db, events, paths, tokens_db
+from central_mcp import dispatches_db, events, paths, pty_sessions, tokens_db
 from central_mcp.adapters import get_adapter
 from central_mcp.adapters.base import VALID_AGENTS, VALID_PERMISSION_MODES
 from central_mcp.registry import (
@@ -488,6 +488,21 @@ def _launch_dispatch(
 
     Returns the plain result dict (without _with_completed wrapping).
     """
+    # PTY-mode guard: a live PTY pane means a human is supervising this
+    # project's agent inside the TUI, and a background prompt would
+    # either be swallowed by an in-progress permission dialog or splice
+    # into whatever the user is typing. The TUI's `pty_submit` path is
+    # the right channel for prompt routing into PTY-active projects.
+    if pty_sessions.is_active(project.name):
+        return {
+            "ok": False,
+            "error": (
+                f"project {project.name!r} is in PTY mode — "
+                "prompt the agent directly in the PTY pane."
+            ),
+            "mode": "pty",
+        }
+
     # Resolve effective agent chain: primary then fallbacks
     primary_agent = agent or project.agent
     if fallback is None:

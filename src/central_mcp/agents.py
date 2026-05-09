@@ -71,6 +71,26 @@ AGENTS: dict[str, AgentCapabilities] = {
         mcp_installable=False,
         has_quota_api=False, has_session_reader=False,
     ),
+    "hermes": AgentCapabilities(
+        name="hermes", binary="hermes", label="Hermes Agent",
+        # Hermes is Nous Research's self-improving agentOS (OpenClaw
+        # successor). It already speaks MCP both ways: `hermes -z PROMPT`
+        # for one-shot dispatch, `hermes mcp add` to register external
+        # MCP servers, `hermes mcp serve` to expose its own conversations.
+        can_dispatch=True,
+        can_orchestrate=True,
+        mcp_installable=True,
+        # Hermes has no upstream subscription API, but its local
+        # ~/.hermes/state.db sessions table carries enough usage detail
+        # (input/output/cache/reasoning tokens, actual_cost_usd) for the
+        # quota fetcher to roll up hour/day/week windows on its own.
+        has_quota_api=True,
+        # Session reader stays off until a cwd-discovery spike (the
+        # hermes sessions table doesn't track working directory, so
+        # mapping a project's cwd → its sessions needs a different
+        # signal than what claude/codex provide).
+        has_session_reader=False,
+    ),
 }
 
 

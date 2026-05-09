@@ -241,3 +241,191 @@ class TestGeminiFetch:
         )
         monkeypatch.setattr(gemini_q, "_settings_path", lambda: settings)
         assert gemini_q.fetch() == {"auth_type": "oauth-personal"}
+
+
+# ── hermes ────────────────────────────────────────────────────────────────────
+
+
+class TestHermesFetch:
+    """Aggregate hermes usage from a synthetic ~/.hermes/state.db.
+
+    The fetcher must roll the same row into every window it falls in
+    (hour / day / week), exclude older rows once a window's cutoff
+    passes, and degrade gracefully when the db is missing or has the
+    wrong schema.
+    """
+
+    @staticmethod
+    def _make_db(path: Path, rows: list[dict]) -> None:
+        """Build a minimal sessions-shape db at `path`.
+
+        Only the columns the fetcher selects are present; the real
+        Hermes schema has many more, but a forward-compatible fetcher
+        must work as long as its required columns exist.
+        """
+        import sqlite3
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(path))
+        try:
+            conn.execute(
+                """
+                CREATE TABLE sessions (
+                    id TEXT PRIMARY KEY,
+                    started_at REAL NOT NULL,
+                    input_tokens INTEGER DEFAULT 0,
+                    output_tokens INTEGER DEFAULT 0,
+                    cache_read_tokens INTEGER DEFAULT 0,
+                    cache_write_tokens INTEGER DEFAULT 0,
+                    reasoning_tokens INTEGER DEFAULT 0,
+                    actual_cost_usd REAL
+                )
+                """
+            )
+            conn.executemany(
+                "INSERT INTO sessions(id, started_at, input_tokens, output_tokens, "
+                "cache_read_tokens, cache_write_tokens, reasoning_tokens, "
+                "actual_cost_usd) VALUES (:id, :started_at, :in, :out, :cr, :cw, "
+                ":rs, :cost)",
+                rows,
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def test_not_installed_when_db_missing(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from central_mcp.quota import hermes as hermes_q
+
+        monkeypatch.setattr(hermes_q, "_db_path", lambda: tmp_path / "no.db")
+        assert hermes_q.fetch() == {"mode": "not_installed"}
+
+    def test_aggregates_window_sums(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import time
+        from central_mcp.quota import hermes as hermes_q
+
+        now = time.time()
+        db = tmp_path / "state.db"
+        self._make_db(db, [
+            # 30 minutes ago — in all three windows.
+            {"id": "a", "started_at": now - 1800,
+             "in": 100, "out": 50, "cr": 0, "cw": 0, "rs": 10, "cost": 0.05},
+            # 12 hours ago — in day + week, not hour.
+            {"id": "b", "started_at": now - 43200,
+             "in": 200, "out": 60, "cr": 1000, "cw": 0, "rs": 20, "cost": 0.10},
+            # 5 days ago — week only.
+            {"id": "c", "started_at": now - 86400 * 5,
+             "in": 50, "out": 25, "cr": 0, "cw": 0, "rs": 5, "cost": 0.02},
+            # 30 days ago — outside every window.
+            {"id": "old", "started_at": now - 86400 * 30,
+             "in": 9999, "out": 9999, "cr": 0, "cw": 0, "rs": 0, "cost": 5.0},
+        ])
+        monkeypatch.setattr(hermes_q, "_db_path", lambda: db)
+
+        out = hermes_q.fetch()
+        assert out["mode"] == "local_ledger"
+        # Hour window: row 'a' only.
+        assert out["hour"]["sessions"] == 1
+        assert out["hour"]["input_tokens"] == 100
+        assert out["hour"]["output_tokens"] == 50
+        assert out["hour"]["total_tokens"] == 150
+        assert out["hour"]["cost_usd"] == 0.05
+        # Day window: rows 'a' + 'b'.
+        assert out["day"]["sessions"] == 2
+        assert out["day"]["input_tokens"] == 300
+        assert out["day"]["output_tokens"] == 110
+        assert out["day"]["cache_read_tokens"] == 1000
+        assert out["day"]["cost_usd"] == 0.15
+        # Week window: 'a' + 'b' + 'c'.
+        assert out["week"]["sessions"] == 3
+        assert out["week"]["input_tokens"] == 350
+        assert out["week"]["output_tokens"] == 135
+        # 30-day-old row must never bleed into any window — strongest
+        # signal that the cutoff math is right.
+        assert out["week"]["input_tokens"] != 350 + 9999
+
+    def test_handles_null_cost(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`actual_cost_usd` is nullable in the real schema (provider
+        didn't report it). The fetcher must coerce NULL → 0.0 instead
+        of letting it bubble up through SUM."""
+        import time
+        from central_mcp.quota import hermes as hermes_q
+
+        now = time.time()
+        db = tmp_path / "state.db"
+        self._make_db(db, [
+            {"id": "x", "started_at": now - 60,
+             "in": 1, "out": 1, "cr": 0, "cw": 0, "rs": 0, "cost": None},
+        ])
+        monkeypatch.setattr(hermes_q, "_db_path", lambda: db)
+
+        out = hermes_q.fetch()
+        assert out["hour"]["cost_usd"] == 0.0
+        assert out["hour"]["sessions"] == 1
+
+    def test_returns_error_on_corrupt_db(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from central_mcp.quota import hermes as hermes_q
+
+        bad = tmp_path / "state.db"
+        bad.write_bytes(b"this is not a sqlite database")
+        monkeypatch.setattr(hermes_q, "_db_path", lambda: bad)
+
+        out = hermes_q.fetch()
+        assert out["mode"] == "error"
+        assert "error" in out
+
+
+class TestHermesNormalize:
+    """Normalize layer in `quota.__init__` keeps the snapshot shape
+    stable across fetcher quirks so downstream renderers don't have
+    to branch on every error case."""
+
+    def test_none_becomes_not_installed(self) -> None:
+        from central_mcp.quota import _normalize_hermes
+        assert _normalize_hermes(None) == {"mode": "not_installed"}
+
+    def test_error_passes_through(self) -> None:
+        from central_mcp.quota import _normalize_hermes
+        out = _normalize_hermes({"mode": "error", "error": "boom"})
+        assert out["mode"] == "error"
+        assert out["error"] == "boom"
+
+    def test_local_ledger_includes_three_windows(self) -> None:
+        from central_mcp.quota import _normalize_hermes
+
+        ledger = {
+            "mode": "local_ledger",
+            "hour": {"input_tokens": 1, "sessions": 1},
+            "day":  {"input_tokens": 5, "sessions": 3},
+            "week": {"input_tokens": 9, "sessions": 7},
+        }
+        out = _normalize_hermes(ledger)
+        assert out["mode"] == "local_ledger"
+        assert "note" in out
+        assert out["hour"] == ledger["hour"]
+        assert out["day"]  == ledger["day"]
+        assert out["week"] == ledger["week"]
+
+
+def test_snapshot_includes_hermes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The top-level `snapshot()` must surface hermes alongside the
+    other providers so callers iterating over the dict see it without
+    a special case."""
+    from central_mcp import quota
+    from central_mcp.quota import hermes as hermes_q
+
+    quota._reset_cache_for_tests()
+    # Hermes-side stub: a simple "not_installed" return so we don't
+    # depend on an actual ~/.hermes/state.db on the test machine.
+    monkeypatch.setattr(hermes_q, "fetch", lambda: {"mode": "not_installed"})
+
+    snap = quota.snapshot(force=True)
+    assert "hermes" in snap
+    assert snap["hermes"]["mode"] == "not_installed"

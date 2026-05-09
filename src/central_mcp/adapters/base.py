@@ -737,12 +737,43 @@ class _OpenCode(Adapter):
 # potential users.
 
 
+class _Hermes(Adapter):
+    """Hermes Agent (Nous Research) — `hermes -z PROMPT` one-shot mode.
+
+    Hermes prints ONLY the assistant's reply on stdout when invoked with
+    -z, so the base `parse_output` (passthrough, no token accounting)
+    works out of the box. Permission flags map to `--yolo` (bypass
+    dangerous-command approval) plus `--accept-hooks` (auto-approve
+    declared shell hooks) — together they cover what bypass means for
+    the agents already in this table. Session resumption uses Hermes's
+    own `--continue` (latest session) and `--resume <id>` flags.
+    """
+
+    def exec_argv(
+        self,
+        prompt: str,
+        *,
+        resume: bool = True,
+        permission_mode: str = "restricted",
+        session_id: str | None = None,
+    ) -> list[str] | None:
+        argv = ["hermes", "-z", prompt]
+        if session_id:
+            argv += ["--resume", session_id]
+        elif resume:
+            argv.append("--continue")
+        if permission_mode == "bypass":
+            argv += ["--yolo", "--accept-hooks"]
+        return argv
+
+
 _ADAPTERS: dict[str, Adapter] = {
     "claude":   _Claude("claude",   launch=("claude",),   has_exec=True, supports_auto=True),
     "codex":    _Codex("codex",     launch=("codex",),    has_exec=True),
     "gemini":   _Gemini("gemini",   launch=("gemini",),   has_exec=True),
     "droid":    _Droid("droid",     launch=("droid",),    has_exec=True),
     "opencode": _OpenCode("opencode", launch=("opencode",), has_exec=True),
+    "hermes":   _Hermes("hermes",   launch=("hermes",),   has_exec=True),
 }
 
 _FALLBACK_ADAPTER = Adapter("(unknown)", launch=(), has_exec=False)

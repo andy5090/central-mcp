@@ -43,6 +43,7 @@ def _installer_for(client: str):
         "codex": _install_codex,
         "gemini": _install_gemini,
         "opencode": _install_opencode,
+        "hermes": _install_hermes,
     }.get(client)
 
 
@@ -303,6 +304,86 @@ def _install_gemini(*, dry_run: bool) -> int:
     _say(f"updated {cfg}")
     if bak:
         _say(f"backup: {bak}")
+    return 0
+
+
+def _install_hermes(*, dry_run: bool) -> int:
+    """Register central-mcp inside Hermes Agent's config.yaml.
+
+    Hermes (Nous Research) reads MCP server configuration from
+    ~/.hermes/config.yaml under the top-level ``mcp_servers`` key.
+    Entry shape:
+
+        mcp_servers:
+          central:
+            command: central-mcp
+            args:
+              - serve
+
+    Idempotent. Uses ruamel.yaml so any comments / formatting the user
+    added to config.yaml round-trip unchanged. The file must already
+    exist (created by `hermes setup` or first launch); we don't
+    fabricate one because Hermes's own initialization seeds many other
+    defaults we shouldn't try to mirror.
+    """
+    cfg_dir = Path.home() / ".hermes"
+    cfg = cfg_dir / "config.yaml"
+
+    if not cfg.exists():
+        print(
+            f"error: {cfg} does not exist — run 'hermes setup' first",
+            file=sys.stderr,
+        )
+        return 1
+
+    from ruamel.yaml import YAML
+
+    yaml = YAML()
+    yaml.preserve_quotes = True
+    yaml.indent(mapping=2, sequence=4, offset=2)
+
+    try:
+        with cfg.open("r") as fh:
+            doc = yaml.load(fh) or {}
+    except Exception as exc:
+        print(f"error: {cfg} is not valid YAML: {exc}", file=sys.stderr)
+        return 1
+    if not isinstance(doc, dict):
+        print(f"error: {cfg} root must be a YAML mapping", file=sys.stderr)
+        return 1
+
+    servers = doc.get("mcp_servers")
+    if servers is None:
+        doc["mcp_servers"] = {}
+        servers = doc["mcp_servers"]
+    if not isinstance(servers, dict):
+        print(f"error: {cfg} mcp_servers must be a mapping", file=sys.stderr)
+        return 1
+
+    existing = servers.get(SERVER_NAME)
+    if (
+        isinstance(existing, dict)
+        and existing.get("command") == LAUNCH_COMMAND
+        and list(existing.get("args") or []) == LAUNCH_ARGS
+    ):
+        _say(f"already registered in {cfg} — no change")
+        return 0
+
+    servers[SERVER_NAME] = {"command": LAUNCH_COMMAND, "args": list(LAUNCH_ARGS)}
+
+    if dry_run:
+        from io import StringIO
+        buf = StringIO()
+        yaml.dump(doc, buf)
+        _say(f"Would write to {cfg}:")
+        _say(buf.getvalue())
+        return 0
+
+    bak = _backup(cfg)
+    with cfg.open("w") as fh:
+        yaml.dump(doc, fh)
+    _say(f"updated {cfg}")
+    _say(f"backup: {bak}")
     return 0
 
 

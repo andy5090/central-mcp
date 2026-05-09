@@ -15,6 +15,7 @@ exercised even on a dev machine that has textual installed.
 """
 from __future__ import annotations
 
+import os
 import sys
 from types import SimpleNamespace
 
@@ -37,12 +38,41 @@ def test_requires_experimental_flag(capsys: pytest.CaptureFixture) -> None:
     assert "experimental" in err.lower()
 
 
-def test_unsupported_agent_rejected(capsys: pytest.CaptureFixture) -> None:
-    rc = cmd_tui(_args(experimental=True, agent="codex"))
+@pytest.mark.parametrize("agent", ["gemini", "opencode", "droid", "totally-fake"])
+def test_unsupported_agent_rejected(
+    agent: str, capsys: pytest.CaptureFixture
+) -> None:
+    rc = cmd_tui(_args(experimental=True, agent=agent))
     assert rc == 2
     err = capsys.readouterr().err
+    assert agent in err
+    # Lists every currently supported agent so the user knows what to retry.
+    assert "claude" in err
     assert "codex" in err
-    assert "claude only" in err.lower()
+
+
+@pytest.mark.parametrize("agent", ["claude", "codex"])
+def test_supported_agents_pass_gate(
+    agent: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The agent allowlist must include both claude and codex (Phase B).
+
+    We stub `tui.app.run_tui` so the test doesn't actually spawn the
+    agent's PTY child — only verifies cmd_tui's gate accepts the agent
+    and forwards it through.
+    """
+    pytest.importorskip("textual", reason="[tui] extras not installed")
+    from central_mcp.tui import app as tui_app
+
+    captured: dict[str, str] = {}
+    def _fake_run_tui(agent: str = "claude") -> int:
+        captured["agent"] = agent
+        return 0
+    monkeypatch.setattr(tui_app, "run_tui", _fake_run_tui)
+
+    rc = cmd_tui(_args(experimental=True, agent=agent))
+    assert rc == 0
+    assert captured["agent"] == agent
 
 
 def test_missing_tui_extras_actionable(
@@ -51,7 +81,14 @@ def test_missing_tui_extras_actionable(
 ) -> None:
     # Force the lazy `from central_mcp.tui import app` to raise
     # ImportError — simulates a host without the [tui] extras.
+    # Both knobs are required: an earlier test in the suite may have
+    # already imported `central_mcp.tui.app` and bound it as an
+    # attribute on the parent package, in which case `from
+    # central_mcp.tui import app` resolves via attribute lookup before
+    # consulting sys.modules.
     monkeypatch.setitem(sys.modules, "central_mcp.tui.app", None)
+    import central_mcp.tui as _tui_pkg
+    monkeypatch.delattr(_tui_pkg, "app", raising=False)
 
     rc = cmd_tui(_args(experimental=True, agent="claude"))
     assert rc == 2
@@ -104,6 +141,172 @@ def test_app_composes_headless() -> None:
     names = asyncio.run(_run())
     for required in ("Header", "Sidebar", "TokenHud", "DispatchList", "PtyTerminal", "Footer"):
         assert required in names, f"missing widget {required!r} in {names}"
+
+
+def test_submit_prompt_without_project_writes_bytes_only(
+    fake_home, capsys: pytest.CaptureFixture
+) -> None:
+    """A free-floating PTY (no project bound) writes the prompt to its
+    master fd but creates no `dispatches.db` row. This is the path used
+    when the TUI hosts the orchestrator's own claude REPL — that
+    session isn't a project dispatch, so it shouldn't leak into the
+    sidebar's running list.
+    """
+    pytest.importorskip("pyte")
+    import pty as _pty
+    from central_mcp import dispatches_db
+    from central_mcp.tui.terminal import PtyTerminal
+
+    master, slave = _pty.openpty()
+    try:
+        term = PtyTerminal(["claude"])  # no project= → tracking disabled
+        term._master_fd = master
+
+        did = term.submit_prompt("hello world")
+        assert did is None
+
+        os.set_blocking(slave, False)
+        seen = b""
+        try:
+            while True:
+                chunk = os.read(slave, 4096)
+                if not chunk:
+                    break
+                seen += chunk
+        except (BlockingIOError, OSError):
+            pass
+        assert b"hello world" in seen
+
+        assert dispatches_db.list_all() == []
+    finally:
+        os.close(master)
+        os.close(slave)
+
+
+def test_submit_prompt_with_project_records_dispatch(fake_home) -> None:
+    """When bound to a project, submit_prompt() writes a `running` row
+    to dispatches.db and a `start` event to dispatch.jsonl — the same
+    surfaces the MCP `dispatch()` tool writes to. DispatchWatcher's
+    sidebar refresh path treats both writers identically.
+    """
+    pytest.importorskip("pyte")
+    import pty as _pty
+    from central_mcp import dispatches_db, events as ev
+    from central_mcp.tui.terminal import PtyTerminal
+
+    master, slave = _pty.openpty()
+    try:
+        term = PtyTerminal(["claude"], project="my-app", agent="claude")
+        term._master_fd = master
+
+        did = term.submit_prompt("explain this codebase")
+        assert did is not None and len(did) == 8
+        assert term._active_did == did
+
+        rows = dispatches_db.list_all()
+        assert len(rows) == 1
+        entry = rows[0]
+        assert entry["id"] == did
+        assert entry["project"] == "my-app"
+        assert entry["agent"] == "claude"
+        assert entry["status"] == "running"
+        assert entry["prompt"] == "explain this codebase"
+
+        log = ev.log_path("my-app").read_text().strip().splitlines()
+        assert len(log) == 1
+        import json as _json
+        rec = _json.loads(log[0])
+        assert rec["event"] == "start"
+        assert rec["mode"] == "pty"
+        assert rec["prompt"] == "explain this codebase"
+    finally:
+        os.close(master)
+        os.close(slave)
+
+
+def test_submit_prompt_does_not_double_track_while_active(fake_home) -> None:
+    """A second submit_prompt() while a dispatch is still in flight
+    writes the bytes (so the user can answer follow-up questions) but
+    does not start a second tracking record."""
+    pytest.importorskip("pyte")
+    import pty as _pty
+    from central_mcp import dispatches_db
+    from central_mcp.tui.terminal import PtyTerminal
+
+    master, slave = _pty.openpty()
+    try:
+        term = PtyTerminal(["claude"], project="my-app", agent="claude")
+        term._master_fd = master
+
+        first = term.submit_prompt("question one")
+        assert first is not None
+        second = term.submit_prompt("yes please continue")
+        assert second is None  # already active — no new tracking
+
+        rows = dispatches_db.list_all()
+        assert len(rows) == 1
+        assert rows[0]["id"] == first
+    finally:
+        os.close(master)
+        os.close(slave)
+
+
+def test_screen_hash_changes_with_content() -> None:
+    """The completion watcher's signal: hash flips when bottom-row
+    bytes change, holds steady otherwise."""
+    pyte = pytest.importorskip("pyte")
+    from central_mcp.tui.terminal import PtyTerminal
+
+    term = PtyTerminal(["claude"])
+    term._screen = pyte.Screen(80, 24)
+    term._stream = pyte.ByteStream(term._screen)
+
+    h0 = term._screen_hash()
+    term._stream.feed(b"hello world\r\n")
+    h1 = term._screen_hash()
+    assert h0 != h1
+    # No new bytes → identical hash, which is the signal the watcher
+    # uses to count `_STABLE_TICKS` toward completion.
+    assert term._screen_hash() == h1
+
+
+def test_mark_complete_writes_finished_row(fake_home) -> None:
+    """_mark_complete() updates the dispatches.db row to a terminal
+    state and emits the matching `complete` event into dispatch.jsonl.
+    """
+    pytest.importorskip("pyte")
+    import time as _time
+    from central_mcp import dispatches_db, events as ev
+    from central_mcp.tui.terminal import PtyTerminal
+
+    term = PtyTerminal(["claude"], project="my-app", agent="claude")
+    term._active_did = "abcd1234"
+    term._active_started_at = _time.time() - 2.5
+    dispatches_db.upsert_started({
+        "id": "abcd1234",
+        "project": "my-app",
+        "agent": "claude",
+        "status": "running",
+        "started": term._active_started_at,
+        "prompt": "hi",
+        "command": "claude",
+        "chain": ["claude"],
+    })
+
+    term._mark_complete(ok=True, status="complete")
+
+    rows = dispatches_db.list_all()
+    assert len(rows) == 1
+    entry = rows[0]
+    assert entry["status"] == "complete"
+    assert entry["result"]["ok"] is True
+    assert entry["result"]["duration_sec"] >= 2.0
+    assert term._active_did is None
+
+    log = ev.log_path("my-app").read_text().strip().splitlines()
+    import json as _json
+    events_recorded = [_json.loads(line)["event"] for line in log]
+    assert "complete" in events_recorded
 
 
 def test_private_csi_leak_filter_strips_kitty_keyboard_queries() -> None:

@@ -46,8 +46,8 @@ Tail a project's `dispatch.jsonl` with human-readable formatting (ANSI colors, c
 ### `central-mcp monitor`
 Curses portfolio dashboard: per-agent quota bars, dispatch stats by project.
 
-### `central-mcp tui --experimental` (0.12.0+, claude only)
-Embedded Textual app: orchestrator agent runs inside a managed PTY in the main pane, surrounded by a sidebar (token usage HUD + active dispatches + recent completions). Reacts to dispatch completion immediately by polling `dispatches.db` directly — no MCP-client notification forwarding needed. Requires the optional `[tui]` extras: `pip install 'central-mcp[tui]'`. The `--experimental` flag is mandatory until the track graduates at 1.0; codex / gemini / opencode adapters land in 0.13+.
+### `central-mcp tui --experimental [--agent claude|codex]` (0.13.0+)
+Embedded Textual app: orchestrator agent runs inside a managed PTY in the main pane, surrounded by a sidebar (token usage HUD + active dispatches + recent completions). Reacts to dispatch completion immediately by polling `dispatches.db` directly — no MCP-client notification forwarding needed. Requires the optional `[tui]` extras: `pip install 'central-mcp[tui]'`. The `--experimental` flag is mandatory until the track graduates at 1.0; gemini / opencode adapters land in 0.14+.
 
 ---
 

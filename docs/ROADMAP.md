@@ -14,11 +14,27 @@ Status legend: 📋 planned · 💭 idea · 🚧 in progress
 
 ## Visibility
 
-Make the project-portfolio view consistent across every surface.
+Make the project-portfolio view consistent across every surface, and close the gap between "dispatch is running" and "I can see what it's doing."
+
+### Result retrieval
+
+📋 **`tail_dispatch(dispatch_id, since_ts=null)` MCP tool.** Returns recent output chunks since a timestamp without waiting for completion. Today `check_dispatch` only fills `output` once the subprocess exits — orchestrators (and the TUI sidebar) can't show progress text mid-run without parsing `dispatch.jsonl` themselves. This tool encapsulates that.
+
+📋 **`dispatches` table progress columns.** Add `last_output_ts`, `output_bytes`, `attempt_count` to the existing schema. Cheap update on every output chunk; reads power "is this dispatch still alive vs. wedged?" indicators in every observation surface.
+
+💭 **`wait_for_dispatch(dispatch_id, timeout_sec=300)` MCP tool.** Server-side polling that blocks until the dispatch terminates, then returns the row. Closes the "codex / gemini are bad at sustained polling" gap — the LLM makes one tool call instead of running a polling loop. claude already polls fine; this is for the others.
+
+### Visualization
+
+📋 **TUI sidebar expanded row.** Selected dispatch row expands to show: live tail of last N output lines, elapsed, token delta, "last output Xs ago" health hint. Other rows stay collapsed. Builds directly on `tail_dispatch` + the new schema columns.
 
 📋 **Reuse `token_usage.summary_markdown` in `cmcp monitor` and `cmcp watch`.** The pre-rendered HUD shipped in 0.10.18 is currently only seen by orchestrators. Wiring it into the curses monitor and the watch-pane sticky header eliminates rendering drift across surfaces.
 
 📋 **Token budgets + alerts.** Per-project / per-workspace token caps in `config.toml`; threshold breaches trigger a yellow banner at dispatch start, and the existing quota-aware fallback chain extends to budget-aware fallback at 90%.
+
+💭 **Heuristic progress markers.** Parse output streams for meaningful events — file reads / writes, tool calls, test runs, build steps — and surface them as a per-dispatch badge stripe ("I/O: 2 reads · Tools: 5 · Tests: 3✓"). Patterns are agent-specific, so they live on `agents.AGENTS` adapter records as `progress_markers: list[regex]`.
+
+💭 **Dispatch detail screen.** TUI keybinding (Enter) drills a row into a full-screen view: prompt / output / chain / tokens / duration / progress-marker timeline. Markdown rendering when output is markdown; raw text otherwise.
 
 💭 **Watch mode: cumulative consumption next to elapsed time.** Show `+ 42s · 8.97M tokens` rather than `+ 42s` alone, so long-running dispatches make their cost visible.
 
@@ -30,7 +46,7 @@ A self-contained terminal app that hosts the orchestrator agent inside a managed
 
 ✅ **Phase 0 (0.12.0) — `cmcp tui --experimental`, claude only.** Shipped 2026-05-03. `textual` for outer chrome (header / sidebar / footer / notifications), `pyte` for PTY emulation. Inside the main pane: claude REPL pass-through. Sidebar: `token_usage.summary_markdown` + active dispatches + recent completions. Daemon-style watcher on `dispatches.db` raises notifications inline. `--experimental` flag is required (no flag → actionable error). Optional install via `pip install 'central-mcp[tui]'`.
 
-📋 **Phase B (0.13.0) — codex.** Same shell, second agent adapter. Adapter pattern lives in `adapters/base.py` already, extension is mechanical.
+✅ **Phase B (0.13.0) — codex.** Shipped 2026-05-03. Same chrome, second agent on the allowlist; `--agent claude|codex` now a constrained choice and the CSI / whitespace-emphasis fixes from Phase 0 cover both.
 
 📋 **Phase C (0.14.0) — gemini + opencode.** Round out the four orchestrators central-mcp already knows.
 
@@ -41,6 +57,32 @@ A self-contained terminal app that hosts the orchestrator agent inside a managed
 💭 **Open questions**
 - Multi-pane layout — does the TUI host more than one watch pane internally, or does it stay single-pane and let users compose with their existing multiplexer (cmux / tmux / zellij) on top?
 - How transparent should prompt-injection be? `hint` mode shows a sidebar message and stops; `prompt` mode types the literal hint into the agent's stdin. The line between "helpful" and "intrusive" is blurry.
+
+---
+
+## Live agent panes
+
+A second execution mode — opt-in, session-scoped, complementary to the default non-interactive dispatch path.
+
+Today every dispatch is a fresh subprocess with `stdin=DEVNULL`, which forces `--dangerously-skip-permissions` (bypass mode) on every agent so prompts that pause for confirmation don't hang the dispatch forever. PTY mode runs the agent inside a real TTY pair, so permission prompts surface in a live pane the user can answer in real time, conversation context can persist across turns, and prompt-cache stays warm. The trade-off is one resident agent process per active project, so this is for the 2–3 projects you're actively supervising — not the whole portfolio.
+
+The two modes share the same data model (`dispatches.db` + `dispatch.jsonl` with `mode="pty"` marker), so `cmcp watch`, the TUI sidebar, and `orchestration_history` all surface both kinds without modification.
+
+✅ **Building blocks (0.12.2 unreleased).** `PtyTerminal(project=, agent=, cwd=)` doubles as a dispatch event writer: `submit_prompt(text)` records `start` / `complete` rows in `dispatches.db` and matching events in `dispatch.jsonl`. A screen-stability watcher (cursor + bottom 6 rows hash-match for 1.5s) flips status to `complete`. PTY-mode dispatches are indistinguishable from MCP-mode dispatches to readers — only the `mode="pty"` marker differs.
+
+📋 **`pty_sessions/<project>.json` lifecycle + dispatch guard.** PTY widget registers `{pid, agent, started_at}` on spawn, removes on unmount; stale-PID cleanup on read. `dispatch()` consults the registry and rejects calls into projects with an active PTY (`{ok: false, error: "...", mode: "pty"}`) so background fan-out can't inject prompts mid-conversation while a human is driving the pane.
+
+📋 **Output capture for PTY mode.** `pyte.HistoryScreen` (10000-row scrollback) feeds a `_capture_text()` helper that snapshots the full session into `dispatches.output` on `_mark_complete`. Closes the documented gap from 0.12.2 where PTY-mode dispatches left `output` empty. `check_dispatch(did)` then returns the same shape regardless of execution mode.
+
+📋 **`pty_inbox` queue + `pty_submit(project, prompt)` MCP tool.** Cross-process prompt routing: orchestrator calls `pty_submit` from any process, which inserts a row into a small SQLite inbox table. The TUI's PtyTerminal polls every 250ms (its own project only) and routes pulled rows through `submit_prompt()`. SQLite is the transport because the same pattern already works for `dispatches.db`; MCP stays at the API surface only.
+
+📋 **`list_projects` exposes mode.** Each row carries `mode: "pty" | "mcp"` derived from the `pty_sessions/` registry, so orchestrators see at a glance which projects are PTY-bound and pick `pty_submit` vs `dispatch` accordingly. Plus a one-line policy in `data/CLAUDE.md` so the LLM-side guidance matches the registry-side enforcement.
+
+💭 **Optional PTY panes in tmux / zellij / cmux layouts.** Today `cmcp tmux` / `cmcp zellij` populates project panes with `central-mcp watch <p>` (passive jsonl tail). A flag like `--mode=pty` or per-project override could populate a pane with the project's agent CLI directly — the user gets a live, interactive supervision pane instead of a passive log tail. The watch path stays available for projects you don't want to keep an agent resident for.
+
+💭 **Persistent REPL conversation context.** Long-lived agent REPL means a follow-up dispatch doesn't lose what the previous one established — caching is automatic, no `--resume` plumbing needed. Trade-off: state drift / context bloat. Need a "/clear" hook or session-rotation policy. Probably opt-in.
+
+💭 **Permission prompt visibility.** With PTY mode, agents can run **without** `--dangerously-skip-permissions` because the prompt surfaces in a pane the user can answer. A future `[live].permissions = ask | bypass` config keys the per-project default, with `ask` being the genuinely safer (and previously impossible) choice.
 
 ---
 
@@ -63,6 +105,8 @@ Move from "user picks the agent for every dispatch" to "central-mcp suggests."
 Open the orchestrator to programmatic callers — personal autonomous agents (scheduled daemons, persistent self-referential loops, chat / browser bridges) that want to delegate work to central-mcp without a human in the REPL.
 
 Today the orchestrator only exists as the interactive REPL launched by `cmcp run`. Upstream MCP clients can call `dispatch` directly, but doing so skips the orchestrator's routing / fallback / localization / conflict-detection layer — losing the value central-mcp adds. Closing that gap means giving the orchestrator a non-interactive entry channel.
+
+✅ **Hermes Agent (Nous Research) integration (0.12.2 unreleased).** Hermes is the OpenClaw successor — a self-improving agentOS with multi-platform delivery (Telegram / Discord / Slack), built-in cron, skill curation, and bidirectional MCP. The new `_Hermes` adapter wraps `hermes -z PROMPT` for dispatch (`--continue` / `--resume <id>` / `--yolo --accept-hooks` for bypass) and `cmcp install hermes` writes central-mcp into `~/.hermes/config.yaml` so Hermes's LLM sees `dispatch` / `list_projects` / `check_dispatch` as native tools. With `cmcp run --agent hermes` Hermes becomes the orchestrator; with `add_project --agent hermes` it becomes a dispatch target — chosen per project. Hermes's gateway layer is a natural place to surface dispatch completions to non-CLI surfaces (Telegram alert when a long dispatch finishes), and its cron lets daily / weekly central-mcp summaries land on chat platforms without us building a bot.
 
 📋 **`dispatch_orchestrator(prompt, agent=None, workspace=None)` MCP tool.** Spawns a fresh non-interactive orchestrator subprocess (claude `-p`, codex `exec`, gemini `-p`, opencode equivalent), loads central-mcp's MCP tools, hands it the prompt, and returns a `dispatch_id` mirroring `dispatch` semantics — caller polls `check_dispatch` for the final stdout. Reuses `_launch_dispatch` plumbing.
 
@@ -112,7 +156,7 @@ These are deliberate "we won't do this" — saving everyone time:
 
 - **Browser UI.** central-mcp is terminal-native. Observation lives in tmux/zellij panes or by tailing logs.
 - **Agent-state syncing.** Each agent CLI manages its own conversation state. central-mcp orchestrates dispatches, observes their lifecycle, and aggregates token use — it doesn't replicate session history.
-- **Interactive approval / worker mode.** Dispatch is non-interactive by design. If a user needs to approve actions mid-run, they should run the agent directly in a terminal.
+- **Interactive approval baked into `dispatch()`.** Default dispatch stays non-interactive — `stdin=DEVNULL`, bypass mode, no human in the loop. Mid-run approval lives on the [Live agent panes](#live-agent-panes) track instead, opt-in per session via PTY panes. The two paths share data and registry; the policy choice is per-project, not global.
 - **Separate daemon process.** `cmcp tui` is the long-running watcher — its asyncio task tails `dispatches.db` independently of any LLM turn and surfaces completions directly. No second process to install, manage, or debug.
 
 ---

@@ -132,6 +132,27 @@ def _render_quota_section(quota: dict[str, Any]) -> list[str]:
         out.append(f"  gemini   [{auth}]     no quota API available")
     # not_installed → silent.
 
+    # Hermes — local SQLite ledger, no provider cap. Show "today / week"
+    # token totals + cost as a single line. The `not_installed` branch
+    # stays silent so the HUD doesn't grow a useless row when the user
+    # never installed Hermes.
+    hermes = quota.get("hermes") or {}
+    hmode = hermes.get("mode")
+    if hmode == "local_ledger":
+        day  = hermes.get("day")  or {}
+        week = hermes.get("week") or {}
+        day_t  = _fmt_tokens(int(day.get("total_tokens") or 0))
+        week_t = _fmt_tokens(int(week.get("total_tokens") or 0))
+        cost   = float(day.get("cost_usd") or 0.0)
+        cost_str = f"${cost:.2f}" if cost > 0 else "$0"
+        out.append(
+            f"  hermes   [ledger]    today {day_t} · 7d {week_t} · today {cost_str}"
+        )
+    elif hmode == "error":
+        err = hermes.get("error") or "unknown"
+        out.append(f"  hermes   [error]     {str(err)[:60]}")
+    # not_installed → silent.
+
     return out
 
 

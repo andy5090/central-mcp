@@ -193,6 +193,59 @@ class TestOpenCode:
         assert argv[i + 1] == "ses_abc"
 
 
+class TestHermes:
+    """Hermes Agent (Nous Research) — `hermes -z PROMPT` one-shot mode."""
+
+    def test_basic(self) -> None:
+        argv = get_adapter("hermes").exec_argv("plan the day")
+        assert argv == ["hermes", "-z", "plan the day", "--continue"]
+
+    def test_no_resume(self) -> None:
+        argv = get_adapter("hermes").exec_argv("fresh start", resume=False)
+        assert argv == ["hermes", "-z", "fresh start"]
+        assert "--continue" not in argv
+
+    def test_bypass(self) -> None:
+        argv = get_adapter("hermes").exec_argv("do it", permission_mode="bypass")
+        # Hermes splits the bypass concept across two flags: `--yolo`
+        # disables the dangerous-command approval prompt, `--accept-hooks`
+        # auto-approves declared shell hooks. Both are needed to match
+        # what bypass means for the other adapters.
+        assert "--yolo" in argv
+        assert "--accept-hooks" in argv
+
+    def test_bypass_and_resume(self) -> None:
+        argv = get_adapter("hermes").exec_argv(
+            "x", resume=True, permission_mode="bypass",
+        )
+        assert "--continue" in argv
+        assert "--yolo" in argv
+        assert "--accept-hooks" in argv
+
+    def test_session_id_replaces_continue(self) -> None:
+        argv = get_adapter("hermes").exec_argv(
+            "x", resume=True, session_id="sess_42",
+        )
+        assert "--continue" not in argv
+        assert "--resume" in argv
+        i = argv.index("--resume")
+        assert argv[i + 1] == "sess_42"
+
+    def test_capabilities_registered(self) -> None:
+        """The capability table must list hermes as dispatch + orchestrate
+        + mcp_installable so the CLI pickers, install dispatch, and
+        VALID_AGENTS check all see it."""
+        from central_mcp.agents import AGENTS, ORCHESTRATORS, SUPPORTED_CLIENTS
+
+        cap = AGENTS["hermes"]
+        assert cap.can_dispatch is True
+        assert cap.can_orchestrate is True
+        assert cap.mcp_installable is True
+        assert "hermes" in VALID_AGENTS
+        assert "hermes" in SUPPORTED_CLIENTS
+        assert ("hermes", "hermes", "Hermes Agent") in ORCHESTRATORS
+
+
 class TestAmpRemoved:
     """Regression: amp was dropped because Amp Free rejects non-
     interactive `amp -x`. Make sure nobody silently re-adds it without

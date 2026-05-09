@@ -275,13 +275,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_tui = sub.add_parser(
         "tui",
-        help="experimental embedded TUI (claude-only, requires --experimental)",
+        help="experimental embedded TUI (claude / codex, requires --experimental)",
         description=(
             "Launch the embedded Textual UI: orchestrator agent in a managed "
             "PTY, surrounded by a sidebar with token usage / active "
-            "dispatches / recent completions. Phase 0 is claude-only and "
-            "explicitly opt-in via --experimental — codex / gemini / "
-            "opencode adapters land in 0.13+. Requires the [tui] extra: "
+            "dispatches / recent completions. Phase B (0.13.0) supports "
+            "claude and codex; gemini / opencode arrive in 0.14+. "
+            "Explicitly opt-in via --experimental until the track "
+            "graduates at 1.0. Requires the [tui] extra: "
             "`pip install 'central-mcp[tui]'`."
         ),
     )
@@ -293,7 +294,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_tui.add_argument(
         "--agent",
         default="claude",
-        help="agent CLI to embed (claude only in 0.12.x; default: claude)",
+        choices=["claude", "codex"],
+        help="agent CLI to embed (default: claude)",
     )
     p_tui.set_defaults(func=cmd_tui)
 
@@ -408,9 +410,13 @@ def build_parser() -> argparse.ArgumentParser:
             "for an already-installed client is a no-op."
         ),
     )
+    # Derive choices from the canonical capability table so adding a
+    # new mcp-installable agent in one place propagates here without a
+    # second edit. `all` is the auto-detect fan-out keyword.
+    from central_mcp.agents import SUPPORTED_CLIENTS as _SUPPORTED_CLIENTS
     p_install.add_argument(
         "client",
-        choices=["claude", "codex", "gemini", "opencode", "all"],
+        choices=[*sorted(_SUPPORTED_CLIENTS), "all"],
         help="target client, or `all` to auto-detect every supported client on PATH",
     )
     p_install.add_argument(

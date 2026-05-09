@@ -20,6 +20,7 @@ from typing import Any
 from central_mcp.quota import claude as _claude
 from central_mcp.quota import codex as _codex
 from central_mcp.quota import gemini as _gemini
+from central_mcp.quota import hermes as _hermes
 
 # Cache TTL chosen so that:
 #   - Sub-minute polling within a single orchestrator turn doesn't hammer
@@ -173,8 +174,31 @@ def _normalize_gemini(q: dict[str, Any] | None) -> dict[str, Any]:
     }
 
 
+def _normalize_hermes(q: dict[str, Any] | None) -> dict[str, Any]:
+    """Hermes has no upstream quota endpoint; the fetcher returns a
+    rolled-up local-ledger view. Normalize trims to the windows the
+    HUD displays and tags the mode so renderers can pick a different
+    layout (totals + cost) than the percent-of-cap layout used for
+    claude / codex.
+    """
+    if q is None:
+        return {"mode": "not_installed"}
+    mode = q.get("mode")
+    if mode == "not_installed":
+        return {"mode": "not_installed", "note": "no ~/.hermes/state.db"}
+    if mode == "error":
+        return {"mode": "error", "error": q.get("error") or "unknown"}
+    return {
+        "mode": "local_ledger",
+        "note": "local SQLite usage ledger (no provider cap)",
+        "hour": q.get("hour"),
+        "day":  q.get("day"),
+        "week": q.get("week"),
+    }
+
+
 def _do_snapshot() -> dict[str, Any]:
-    """Fetch + normalize all three providers. Each isolated by try/except."""
+    """Fetch + normalize every provider. Each isolated by try/except."""
 
     def _safe(fetcher, normalize):
         try:
@@ -190,6 +214,7 @@ def _do_snapshot() -> dict[str, Any]:
         "claude": _safe(_claude.fetch, _normalize_claude),
         "codex":  _safe(_codex.fetch,  _normalize_codex),
         "gemini": _safe(_gemini.fetch, _normalize_gemini),
+        "hermes": _safe(_hermes.fetch, _normalize_hermes),
         "fetched_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
 

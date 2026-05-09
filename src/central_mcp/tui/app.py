@@ -32,10 +32,14 @@ from central_mcp.tui.watcher import DispatchWatcher
 
 
 _AGENT_LAUNCH = {
-    # Phase 0 ships claude-only. Codex / gemini / opencode arrive in
-    # 0.13 / 0.14; their argv lives here so adding them is one-line.
+    # Phase 0 (0.12.0) shipped claude-only. Phase B (0.13.0) adds codex.
+    # gemini / opencode arrive in Phase C; their argv lives here so
+    # adding them stays one-line.
     "claude": ["claude"],
+    "codex": ["codex"],
 }
+
+SUPPORTED_AGENTS: frozenset[str] = frozenset(_AGENT_LAUNCH)
 
 
 class CentralMcpTUI(App):
@@ -89,8 +93,8 @@ def run_tui(agent: str = "claude") -> int:
         # could land here with an unsupported agent.
         import sys
         sys.stderr.write(
-            f"error: tui agent {agent!r} not supported in 0.12.x.\n"
-            "       supported: " + ", ".join(_AGENT_LAUNCH) + "\n"
+            f"error: tui agent {agent!r} not supported.\n"
+            "       supported: " + ", ".join(sorted(_AGENT_LAUNCH)) + "\n"
         )
         return 2
     if shutil.which(agent) is None:
