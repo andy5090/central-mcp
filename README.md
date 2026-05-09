@@ -16,7 +16,7 @@
 
 > **Never stop. Run agents across every project in parallel — 10×, 100× your throughput.**
 
-One MCP server turns any MCP-capable client (Claude Code, Codex CLI, Gemini CLI, opencode, …) into a control plane for your portfolio of coding-agent projects. Ask in natural language, and the orchestrator routes the request to the right project's agent — non-blocking, with results reported back asynchronously.
+One MCP server turns any MCP-capable client (Claude Code, Codex CLI, Gemini CLI, opencode, [Hermes Agent](https://github.com/NousResearch/hermes-agent), …) into a control plane for your portfolio of coding-agent projects. Ask in natural language, and the orchestrator routes the request to the right project's agent — non-blocking, with results reported back asynchronously.
 
 ## Why
 

@@ -28,7 +28,7 @@ That philosophy lines up exactly with how central-mcp is built:
 - **Log-driven** — `cmcp watch <project>` is just a tail of the per-project event stream, with sticky headers and color. cmux gives that a real GUI window per pane, with native font rendering, GPU-accelerated scrolling, and macOS-style Cmd-key copy/paste.
 - **Agent-driven setup** — central-mcp's runtime guidance (`~/.central-mcp/AGENTS.md`) tells the orchestrator how to call `cmux new-split` itself, so layout work is one natural-language instruction (*"set up watch panes for the current workspace"*) rather than a config file.
 
-The end result: you're inside a real macOS app, your agent (Claude Code / Codex / Gemini / opencode) is already running in one cmux pane talking to central-mcp, and one sentence later there's a clean grid of project panes around it, each tailing live dispatch output. No tmux config, no key bindings to memorize, no terminal-emulator overhead.
+The end result: you're inside a real macOS app, your agent (Claude Code / Codex / Gemini / opencode / Hermes Agent) is already running in one cmux pane talking to central-mcp, and one sentence later there's a clean grid of project panes around it, each tailing live dispatch output. No tmux config, no key bindings to memorize, no terminal-emulator overhead.
 
 ---
 

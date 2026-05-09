@@ -38,7 +38,7 @@ curl -fsSL https://central-mcp.org/install.sh | sh
 cmcp
 ```
 
-선호 orchestrator(claude / codex / gemini / opencode 중 하나)를 골라 띄우고, 그 안으로 central-mcp의 MCP 도구가 자동 노출됩니다. 이후 작업은 모두 이 세션 안에서 자연어로 진행합니다.
+선호 orchestrator(claude / codex / gemini / opencode / hermes 중 하나)를 골라 띄우고, 그 안으로 central-mcp의 MCP 도구가 자동 노출됩니다. 이후 작업은 모두 이 세션 안에서 자연어로 진행합니다.
 
 ## 3. 프로젝트 등록 (말로 던지기)
 

@@ -1,6 +1,6 @@
 ---
 title: central-mcp
-description: central-mcp turns any MCP-capable client into a parallel control plane for Claude Code, Codex, Gemini, and opencode — fan out work across every project at once and let the hub absorb the context switching.
+description: central-mcp turns any MCP-capable client into a parallel control plane for Claude Code, Codex, Gemini, opencode, and Hermes Agent — fan out work across every project at once and let the hub absorb the context switching.
 hide:
   - toc
 ---
@@ -21,7 +21,7 @@ hide:
 
 <h1 class="cmcp-hero-title">Tokenmaxxing, <span class="cmcp-hero-emph">disciplined.</span></h1>
 
-<p class="cmcp-hero-sub">Fan out Claude Code, Codex, Gemini, opencode across every project in parallel. central-mcp absorbs the context switching — tokens climb to <span class="cmcp-hero-counter" data-min="10" data-max="100">10×</span>, your focus stays put.</p>
+<p class="cmcp-hero-sub">Fan out Claude Code, Codex, Gemini, opencode, and Hermes Agent across every project in parallel. central-mcp absorbs the context switching — tokens climb to <span class="cmcp-hero-counter" data-min="10" data-max="100">10×</span>, your focus stays put.</p>
 
 [Get started](quickstart.md){ .md-button .md-button--primary }
 [GitHub](https://github.com/andy5090/central-mcp){ .md-button }
@@ -60,6 +60,20 @@ Run several projects in parallel, watch them all live. central-mcp ships an obse
 cmux gets a deliberate first-class treatment: its design philosophy ("agents manage their own panes") aligns with central-mcp's stateless, log-driven model. One sentence to the orchestrator — *"set up watch panes for the current workspace"* — produces a clean grid of live `cmcp watch <project>` panes around the orchestrator pane, no config files involved.
 
 [Observation guide →](observation.md){ .md-button }
+
+## agentOS-friendly — Hermes integration
+
+[Hermes Agent](https://github.com/NousResearch/hermes-agent) (Nous Research) is a self-improving agentOS — built-in cron, skills curation, and multi-platform delivery (Telegram, Discord, Slack, WhatsApp). It also speaks MCP both ways: `hermes mcp add` to register external servers, `hermes mcp serve` to expose its own conversations. That makes it the most natural pairing partner central-mcp has outside the four core orchestrators.
+
+`cmcp install hermes` writes `mcp_servers.central` into `~/.hermes/config.yaml`, and from that moment Hermes sees `dispatch` / `list_projects` / `check_dispatch` as native tools. `cmcp run --agent hermes` makes Hermes the orchestrator; `add_project --agent hermes` makes a project's dispatch target Hermes. Bidirectional in one config edit.
+
+Compositions worth noticing:
+
+- **Autonomous portfolio summaries from your phone.** Send Hermes one line over Telegram — *"summarize what shipped across my projects today"* — and it drives `orchestration_history` + per-project dispatches without you opening a terminal.
+- **Cron-driven daily digests to Slack.** Hermes's built-in cron runs nightly, calls central-mcp's MCP tools, posts the rolled-up status to your team's channel — no extra bot to install.
+- **Hermes as a project's dispatch target.** Skills curation, web search, and multi-model fallback in front of the project — useful where a one-shot CLI isn't enough.
+
+Token usage is tracked too: the `SUBSCRIPTION QUOTA` block in the token HUD gained a `hermes [ledger]` line aggregating `~/.hermes/state.db` into hour / day / week token totals + cost.
 
 ## Install
 

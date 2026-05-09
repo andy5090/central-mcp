@@ -38,7 +38,7 @@ The installer:
 cmcp
 ```
 
-This picks your preferred orchestrator (claude / codex / gemini / opencode), launches it, and exposes central-mcp's MCP tools to it. Everything from here happens in natural language inside that session.
+This picks your preferred orchestrator (claude / codex / gemini / opencode / hermes), launches it, and exposes central-mcp's MCP tools to it. Everything from here happens in natural language inside that session.
 
 ## 3. Register a project (just ask)
 
