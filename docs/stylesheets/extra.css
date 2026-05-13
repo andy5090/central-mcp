@@ -64,11 +64,27 @@
   border-color: #6b3a17;
 }
 
-/* Logo crop — keeps the round seal feeling like an emblem in the header. */
-.md-header__button.md-logo img {
+/* Header logo — round seal emblem, sized up from Material's default
+   ~1.2rem to ~1.8rem so the sepia mark is readable, and the negative
+   right margin tightens the gap to the "CENTRAL MCP" wordmark. */
+.md-header__button.md-logo {
+  margin: 0;
+  padding: 0.2rem 0;
+  margin-right: -0.4rem;
+}
+.md-header__button.md-logo img,
+.md-header__button.md-logo svg {
   border-radius: 50%;
   background: white;
   padding: 2px;
+  width: 1.8rem;
+  height: 1.8rem;
+}
+
+/* Pull the brand title in toward the logo. Material's default leaves
+   ~0.8rem; 0.3rem reads as a single emblem-plus-wordmark unit. */
+.md-header__title {
+  margin-left: 0.3rem;
 }
 
 /* Header brand wordmark rendered as "CENTRAL MCP" (uppercase, space-
@@ -84,14 +100,6 @@
   content: "CENTRAL MCP";
   font-size: 1.125rem;
   letter-spacing: 0.04em;
-}
-
-/* Dark mode: swap to the gold-on-black logo variant + matching backdrop.
-   `content: url(...)` replaces the rendered img source while preserving
-   the alt attribute and the accessibility tree. */
-[data-md-color-scheme="slate"] .md-header__button.md-logo img {
-  background: #1d1814;
-  content: url("../logo-dark.png?v=0.11.0");
 }
 
 /* Hero logo on the index page: render both, hide one per scheme. */
