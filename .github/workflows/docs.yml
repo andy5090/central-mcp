@@ -62,12 +62,28 @@ jobs:
           R2_BUCKET:   ${{ secrets.R2_BUCKET }}
           R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
         run: |
-          # Bulk sync everything else with a 5-minute browser cache.
+          # Two-pass sync. `aws s3 sync --delete` schedules uploads and
+          # deletes concurrently, so a parallel pair like
+          #   upload: palette.ab4e12ef.min.css
+          #   delete: palette.ab4e12ef.min.css
+          # can race for the same key — whichever finishes last wins.
+          # We hit this on 2026-05-13: the palette CSS got deleted ~80ms
+          # after upload, breaking primary color on prod.
+          #
+          # Pass 1: upload-only (no --delete) so every new/changed object
+          # is on R2 before any delete runs.
+          aws s3 sync site/ "s3://${R2_BUCKET}/" \
+            --endpoint-url "${R2_ENDPOINT}" \
+            --exclude "install.sh" \
+            --cache-control "public, max-age=300"
+
+          # Pass 2: delete-only sweep for stale keys. `--delete` now has
+          # no upload work to race against.
           aws s3 sync site/ "s3://${R2_BUCKET}/" \
             --endpoint-url "${R2_ENDPOINT}" \
             --delete \
-            --exclude "install.sh" \
-            --cache-control "public, max-age=300"
+            --size-only \
+            --exclude "install.sh"
 
           # install.sh: shorter cache so users pick up fixes faster,
           # explicit content-type so browsers/curl handle it cleanly.
