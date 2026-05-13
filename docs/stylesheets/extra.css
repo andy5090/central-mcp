@@ -71,6 +71,21 @@
   padding: 2px;
 }
 
+/* Header brand wordmark rendered as "CENTRAL MCP" (uppercase, space-
+   separated) while leaving site_name lowercase-hyphenated so meta tags,
+   og:title, JSON-LD name, and the PyPI/repo identity stay canonical.
+   Scoped to the first .md-header__topic (the brand slot); the second
+   topic carries the current page title and must keep its real text. */
+.md-header__title .md-header__topic:not([data-md-component]) > .md-ellipsis {
+  font-size: 0;
+  letter-spacing: 0;
+}
+.md-header__title .md-header__topic:not([data-md-component]) > .md-ellipsis::before {
+  content: "CENTRAL MCP";
+  font-size: 1.125rem;
+  letter-spacing: 0.04em;
+}
+
 /* Dark mode: swap to the gold-on-black logo variant + matching backdrop.
    `content: url(...)` replaces the rendered img source while preserving
    the alt attribute and the accessibility tree. */
