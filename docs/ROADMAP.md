@@ -46,11 +46,11 @@ A self-contained terminal app that hosts the orchestrator agent inside a managed
 
 ✅ **Phase 0 (0.12.0) — `cmcp tui --experimental`, claude only.** Shipped 2026-05-03. `textual` for outer chrome (header / sidebar / footer / notifications), `pyte` for PTY emulation. Inside the main pane: claude REPL pass-through. Sidebar: `token_usage.summary_markdown` + active dispatches + recent completions. Daemon-style watcher on `dispatches.db` raises notifications inline. `--experimental` flag is required (no flag → actionable error). Optional install via `pip install 'central-mcp[tui]'`.
 
-✅ **Phase B (0.13.0) — codex.** Shipped 2026-05-03. Same chrome, second agent on the allowlist; `--agent claude|codex` now a constrained choice and the CSI / whitespace-emphasis fixes from Phase 0 cover both.
+✅ **Phase B (0.12.2) — codex.** Shipped 2026-05-10. Same chrome, second agent on the allowlist; `--agent claude|codex` now a constrained choice and the CSI / whitespace-emphasis fixes from Phase 0 cover both.
 
-📋 **Phase C (0.14.0) — gemini + opencode.** Round out the four orchestrators central-mcp already knows.
+📋 **Phase C (0.13.0) — gemini + opencode.** Round out the four orchestrators central-mcp already knows.
 
-📋 **Phase D (0.15.0–0.x) — stabilization.** Self-rendered scrollback / search / copy. Korean IME and double-width corner cases. Notification policy fine-tuning (`config.toml [tui].auto_inject = passive | hint | prompt`).
+📋 **Phase D (0.14.0–0.x) — stabilization.** Self-rendered scrollback / search / copy. Korean IME and double-width corner cases. Notification policy fine-tuning (`config.toml [tui].auto_inject = passive | hint | prompt`).
 
 🎉 **1.0.0 — TUI production-ready.** `--experimental` flag becomes a no-op (kept for backwards compatibility), API surface is locked, version-pinning windows close, breaking changes require a 2.0.
 
@@ -68,7 +68,7 @@ Today every dispatch is a fresh subprocess with `stdin=DEVNULL`, which forces `-
 
 The two modes share the same data model (`dispatches.db` + `dispatch.jsonl` with `mode="pty"` marker), so `cmcp watch`, the TUI sidebar, and `orchestration_history` all surface both kinds without modification.
 
-✅ **Building blocks (0.12.2 unreleased).** `PtyTerminal(project=, agent=, cwd=)` doubles as a dispatch event writer: `submit_prompt(text)` records `start` / `complete` rows in `dispatches.db` and matching events in `dispatch.jsonl`. A screen-stability watcher (cursor + bottom 6 rows hash-match for 1.5s) flips status to `complete`. PTY-mode dispatches are indistinguishable from MCP-mode dispatches to readers — only the `mode="pty"` marker differs.
+✅ **Building blocks (0.12.2).** `PtyTerminal(project=, agent=, cwd=)` doubles as a dispatch event writer: `submit_prompt(text)` records `start` / `complete` rows in `dispatches.db` and matching events in `dispatch.jsonl`. A screen-stability watcher (cursor + bottom 6 rows hash-match for 1.5s) flips status to `complete`. PTY-mode dispatches are indistinguishable from MCP-mode dispatches to readers — only the `mode="pty"` marker differs.
 
 📋 **`pty_sessions/<project>.json` lifecycle + dispatch guard.** PTY widget registers `{pid, agent, started_at}` on spawn, removes on unmount; stale-PID cleanup on read. `dispatch()` consults the registry and rejects calls into projects with an active PTY (`{ok: false, error: "...", mode: "pty"}`) so background fan-out can't inject prompts mid-conversation while a human is driving the pane.
 
@@ -106,7 +106,7 @@ Open the orchestrator to programmatic callers — personal autonomous agents (sc
 
 Today the orchestrator only exists as the interactive REPL launched by `cmcp run`. Upstream MCP clients can call `dispatch` directly, but doing so skips the orchestrator's routing / fallback / localization / conflict-detection layer — losing the value central-mcp adds. Closing that gap means giving the orchestrator a non-interactive entry channel.
 
-✅ **Hermes Agent (Nous Research) integration (0.12.2 unreleased).** Hermes is the OpenClaw successor — a self-improving agentOS with multi-platform delivery (Telegram / Discord / Slack), built-in cron, skill curation, and bidirectional MCP. The new `_Hermes` adapter wraps `hermes -z PROMPT` for dispatch (`--continue` / `--resume <id>` / `--yolo --accept-hooks` for bypass) and `cmcp install hermes` writes central-mcp into `~/.hermes/config.yaml` so Hermes's LLM sees `dispatch` / `list_projects` / `check_dispatch` as native tools. With `cmcp run --agent hermes` Hermes becomes the orchestrator; with `add_project --agent hermes` it becomes a dispatch target — chosen per project. Hermes's gateway layer is a natural place to surface dispatch completions to non-CLI surfaces (Telegram alert when a long dispatch finishes), and its cron lets daily / weekly central-mcp summaries land on chat platforms without us building a bot.
+✅ **Hermes Agent (Nous Research) integration (0.12.2).** Hermes is the OpenClaw successor — a self-improving agentOS with multi-platform delivery (Telegram / Discord / Slack), built-in cron, skill curation, and bidirectional MCP. The new `_Hermes` adapter wraps `hermes -z PROMPT` for dispatch (`--continue` / `--resume <id>` / `--yolo --accept-hooks` for bypass) and `cmcp install hermes` writes central-mcp into `~/.hermes/config.yaml` so Hermes's LLM sees `dispatch` / `list_projects` / `check_dispatch` as native tools. With `cmcp run --agent hermes` Hermes becomes the orchestrator; with `add_project --agent hermes` it becomes a dispatch target — chosen per project. Hermes's gateway layer is a natural place to surface dispatch completions to non-CLI surfaces (Telegram alert when a long dispatch finishes), and its cron lets daily / weekly central-mcp summaries land on chat platforms without us building a bot.
 
 📋 **`dispatch_orchestrator(prompt, agent=None, workspace=None)` MCP tool.** Spawns a fresh non-interactive orchestrator subprocess (claude `-p`, codex `exec`, gemini `-p`, opencode equivalent), loads central-mcp's MCP tools, hands it the prompt, and returns a `dispatch_id` mirroring `dispatch` semantics — caller polls `check_dispatch` for the final stdout. Reuses `_launch_dispatch` plumbing.
 
