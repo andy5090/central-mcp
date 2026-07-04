@@ -32,11 +32,13 @@ from central_mcp.tui.watcher import DispatchWatcher
 
 
 _AGENT_LAUNCH = {
-    # Phase 0 (0.12.0) shipped claude-only. Phase B (0.13.0) adds codex.
-    # gemini / opencode arrive in Phase C; their argv lives here so
-    # adding them stays one-line.
+    # Phase 0 (0.12.0) shipped claude-only. Phase B (0.12.2) added codex.
+    # Phase C (0.14.0) rounds out the four orchestrators with opencode
+    # and gemini.
     "claude": ["claude"],
     "codex": ["codex"],
+    "gemini": ["gemini"],
+    "opencode": ["opencode"],
 }
 
 SUPPORTED_AGENTS: frozenset[str] = frozenset(_AGENT_LAUNCH)

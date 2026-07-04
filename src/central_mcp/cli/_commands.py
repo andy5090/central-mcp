@@ -1497,12 +1497,11 @@ def cmd_tui(args: argparse.Namespace) -> int:
     agent = getattr(args, "agent", None) or "claude"
     # Mirrors `tui.app.SUPPORTED_AGENTS` but hardcoded so we don't import
     # the textual-heavy `tui.app` before the extras-availability check.
-    supported = ("claude", "codex")
+    supported = ("claude", "codex", "gemini", "opencode")
     if agent not in supported:
         sys.stderr.write(
-            f"error: tui agent {agent!r} not supported in 0.13.x — "
+            f"error: tui agent {agent!r} not supported — "
             f"supported: {', '.join(supported)}.\n"
-            "       gemini / opencode arrive in 0.14.0+ (see ROADMAP).\n"
         )
         return 2
 

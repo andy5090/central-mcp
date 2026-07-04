@@ -275,12 +275,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_tui = sub.add_parser(
         "tui",
-        help="experimental embedded TUI (claude / codex, requires --experimental)",
+        help=(
+            "experimental embedded TUI (claude / codex / gemini / opencode, "
+            "requires --experimental)"
+        ),
         description=(
             "Launch the embedded Textual UI: orchestrator agent in a managed "
             "PTY, surrounded by a sidebar with token usage / active "
-            "dispatches / recent completions. Phase B (0.13.0) supports "
-            "claude and codex; gemini / opencode arrive in 0.14+. "
+            "dispatches / recent completions. Phase C (0.14.0) supports all "
+            "four orchestrators: claude, codex, gemini, opencode. "
             "Explicitly opt-in via --experimental until the track "
             "graduates at 1.0. Requires the [tui] extra: "
             "`pip install 'central-mcp[tui]'`."
@@ -294,7 +297,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_tui.add_argument(
         "--agent",
         default="claude",
-        choices=["claude", "codex"],
+        choices=["claude", "codex", "gemini", "opencode"],
         help="agent CLI to embed (default: claude)",
     )
     p_tui.set_defaults(func=cmd_tui)

@@ -38,7 +38,7 @@ def test_requires_experimental_flag(capsys: pytest.CaptureFixture) -> None:
     assert "experimental" in err.lower()
 
 
-@pytest.mark.parametrize("agent", ["gemini", "opencode", "droid", "totally-fake"])
+@pytest.mark.parametrize("agent", ["droid", "hermes", "cursor", "totally-fake"])
 def test_unsupported_agent_rejected(
     agent: str, capsys: pytest.CaptureFixture
 ) -> None:
@@ -47,15 +47,15 @@ def test_unsupported_agent_rejected(
     err = capsys.readouterr().err
     assert agent in err
     # Lists every currently supported agent so the user knows what to retry.
-    assert "claude" in err
-    assert "codex" in err
+    for supported in ("claude", "codex", "gemini", "opencode"):
+        assert supported in err
 
 
-@pytest.mark.parametrize("agent", ["claude", "codex"])
+@pytest.mark.parametrize("agent", ["claude", "codex", "gemini", "opencode"])
 def test_supported_agents_pass_gate(
     agent: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The agent allowlist must include both claude and codex (Phase B).
+    """The agent allowlist covers all four orchestrators (Phase C).
 
     We stub `tui.app.run_tui` so the test doesn't actually spawn the
     agent's PTY child — only verifies cmd_tui's gate accepts the agent
