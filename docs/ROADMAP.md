@@ -54,9 +54,9 @@ A self-contained terminal app that hosts the orchestrator agent inside a managed
 
 ✅ **Phase B (0.12.2) — codex.** Shipped 2026-05-10. Same chrome, second agent on the allowlist; `--agent claude|codex` now a constrained choice and the CSI / whitespace-emphasis fixes from Phase 0 cover both.
 
-📋 **Phase C (0.13.0) — opencode + gemini.** Round out the four orchestrators central-mcp already knows. opencode goes first — its adoption curve (147k GitHub stars, ~6.5M monthly developers by spring 2026) makes it the most-requested gap, and its provider-agnostic design exercises the PTY chrome differently than the vendor CLIs do.
+📋 **Phase C (0.14.0) — opencode + gemini.** Round out the four orchestrators central-mcp already knows. opencode goes first — its adoption curve (147k GitHub stars, ~6.5M monthly developers by spring 2026) makes it the most-requested gap, and its provider-agnostic design exercises the PTY chrome differently than the vendor CLIs do.
 
-📋 **Phase D (0.14.0–0.x) — stabilization.** Self-rendered scrollback / search / copy. Korean IME and double-width corner cases. Notification policy fine-tuning (`config.toml [tui].auto_inject = passive | hint | prompt`).
+📋 **Phase D (0.15.0–0.x) — stabilization.** Self-rendered scrollback / search / copy. Korean IME and double-width corner cases. Notification policy fine-tuning (`config.toml [tui].auto_inject = passive | hint | prompt`).
 
 🎉 **1.0.0 — TUI production-ready.** `--experimental` flag becomes a no-op (kept for backwards compatibility), API surface is locked, version-pinning windows close, breaking changes require a 2.0.
 
