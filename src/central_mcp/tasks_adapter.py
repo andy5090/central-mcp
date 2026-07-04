@@ -89,10 +89,14 @@ def to_task(entry: dict[str, Any]) -> dict[str, Any]:
     keys `id`, `project`, `agent`, `status`, `started`, `result`.
     """
     status = task_status(entry.get("status"))
+    created_at = _iso_utc(entry.get("started"))
     task: dict[str, Any] = {
         "taskId": entry["id"],
         "status": status,
-        "createdAt": _iso_utc(entry.get("started")),
+        "createdAt": created_at,
+        "lastUpdatedAt": _iso_utc(entry.get("updated")) or created_at,
+        # Dispatch records persist in dispatches.db with no expiry.
+        "ttl": None,
         "pollInterval": POLL_INTERVAL_MS,
         "_meta": {
             META_KEY: {

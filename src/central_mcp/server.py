@@ -28,6 +28,7 @@ from fastmcp import FastMCP
 
 from central_mcp import config as user_config
 from central_mcp import dispatches_db, events, paths, pty_sessions, tokens_db
+from central_mcp import tasks_protocol
 from central_mcp.adapters import get_adapter
 from central_mcp.adapters.base import VALID_AGENTS, VALID_PERMISSION_MODES
 from central_mcp.registry import (
@@ -329,6 +330,20 @@ mcp = FastMCP("central-mcp", instructions=_build_mcp_instructions())
 # ---------- background dispatch state ----------
 _dispatches: dict[str, dict[str, Any]] = {}
 _dispatch_lock = threading.Lock()
+
+
+def _lookup_entry(dispatch_id: str) -> dict[str, Any] | None:
+    """Memory-first dispatch lookup with cross-process fallback.
+
+    If this central-mcp instance didn't start the dispatch (e.g. a
+    sub-agent spawned by the orchestrator has its own stdio child),
+    the id is looked up in the shared SQLite store.
+    """
+    with _dispatch_lock:
+        entry = _dispatches.get(dispatch_id)
+    if entry is None:
+        entry = dispatches_db.get(dispatch_id)
+    return entry
 
 
 def _collect_completed() -> list[dict[str, Any]]:
@@ -1034,13 +1049,7 @@ def check_dispatch(dispatch_id: str) -> dict[str, Any]:
     alive, or the full result (same shape as dispatch_query's return
     value) once it has exited.
     """
-    with _dispatch_lock:
-        entry = _dispatches.get(dispatch_id)
-    # Cross-process fallback: if this central-mcp instance didn't start
-    # the dispatch (e.g. a sub-agent spawned by the orchestrator has
-    # its own stdio child), look the id up in the shared SQLite store.
-    if entry is None:
-        entry = dispatches_db.get(dispatch_id)
+    entry = _lookup_entry(dispatch_id)
     if entry is None:
         return {"ok": False, "error": f"no dispatch with id {dispatch_id!r}"}
     if entry["status"] == "running":
@@ -1093,14 +1102,9 @@ def list_dispatches() -> list[dict[str, Any]]:
     return result
 
 
-@mcp.tool()
-def cancel_dispatch(dispatch_id: str) -> dict[str, Any]:
-    """Abort a running background dispatch. No-op if already finished.
-
-    Sets a cancel flag so `_run_bg` stops before the next fallback
-    attempt, then terminates the current subprocess. The background
-    thread finalizes the status to "cancelled".
-    """
+def _cancel_impl(dispatch_id: str) -> dict[str, Any]:
+    """Shared cancel logic for the cancel_dispatch tool and the
+    experimental Tasks protocol handler (tasks/cancel)."""
     with _dispatch_lock:
         entry = _dispatches.get(dispatch_id)
         if entry is None:
@@ -1119,6 +1123,23 @@ def cancel_dispatch(dispatch_id: str) -> dict[str, Any]:
         except Exception:
             pass
     return {"ok": True, "cancelled": dispatch_id}
+
+
+@mcp.tool()
+def cancel_dispatch(dispatch_id: str) -> dict[str, Any]:
+    """Abort a running background dispatch. No-op if already finished.
+
+    Sets a cancel flag so `_run_bg` stops before the next fallback
+    attempt, then terminates the current subprocess. The background
+    thread finalizes the status to "cancelled".
+    """
+    return _cancel_impl(dispatch_id)
+
+
+# Experimental MCP Tasks wire (`CENTRAL_MCP_TASKS=1`): serves tasks/get,
+# tasks/cancel, tasks/result from the same dispatch state as the tools
+# above. Additional protocol surface only — see central_mcp.tasks_protocol.
+tasks_protocol.maybe_setup(mcp, lookup=_lookup_entry, cancel=_cancel_impl)
 
 
 @mcp.tool()

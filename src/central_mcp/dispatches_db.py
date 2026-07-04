@@ -214,6 +214,12 @@ def _row_to_entry(row: sqlite3.Row | None) -> dict[str, Any] | None:
         ).timestamp()
     except Exception:
         started_epoch = time.time()
+    try:
+        updated_epoch = datetime.fromisoformat(
+            row["updated_at"].replace("Z", "+00:00")
+        ).timestamp()
+    except Exception:
+        updated_epoch = None
 
     result = {
         "ok": bool(row["ok"]) if row["ok"] is not None else None,
@@ -239,6 +245,7 @@ def _row_to_entry(row: sqlite3.Row | None) -> dict[str, Any] | None:
         "command":   row["command"],
         "status":    row["status"],
         "started":   started_epoch,
+        "updated":   updated_epoch,
         "process":   None,      # not shared across processes
         "result":    result,
         "attempts":  [],        # full attempt history not mirrored — keep
