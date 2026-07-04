@@ -8,6 +8,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 - **`cmcp tui --agent gemini|opencode --experimental` — TUI Phase C.** All four orchestrators are now embeddable: the agent allowlist (`tui.app._AGENT_LAUNCH`, the `cmd_tui` gate, and the argparse `--agent` choices) grows to claude / codex / gemini / opencode. A byte-level rendering probe (each CLI spawned in a real 120×40 PTY, startup output run through the leak filter and pyte) confirmed no unparseable sequences: gemini and codex emit a `\x1b[?u` kitty-keyboard query the filter doesn't strip, but pyte handles `?`-prefixed CSI cleanly — only the `<` / `>` private prefixes leak, and those were already filtered in Phase 0. No new filter rules needed.
 
+### Changed
+- **`cmcp tui` header icon: `≡ MENU`.** The 0.12.1 text-only "MENU" label gains a hamburger glyph. `≡` (U+2261) over `☰` (U+2630) deliberately — the trigram is ambiguous-width and missing from some monospace fonts, the same class of problem that killed the original `⭘` glyph.
+
 ### Notes
 - Tests: `test_unsupported_agent_rejected` re-parametrized over droid / hermes / cursor / fake (the still-unsupported names) and asserts the error lists all four supported agents; `test_supported_agents_pass_gate` walks all four through the gate with a stubbed `run_tui`.
 - The headless Pilot smoke stays claude-only — parametrizing it would spawn real gemini / opencode processes in the unit suite. Visual QA for the two new agents is a manual pass, same as Phases 0/B.
