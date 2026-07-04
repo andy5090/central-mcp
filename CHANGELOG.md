@@ -3,7 +3,7 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [0.13.0] — 2026-07-04
 
 ### Added
 - **`CENTRAL_MCP_TASKS=1` — experimental MCP Tasks wire (Ecosystem alignment Phase 2).** New `central_mcp.tasks_protocol` registers `tasks/get` / `tasks/cancel` / `tasks/result` handlers on the lowlevel SDK server (same registration pattern fastmcp uses for its docket tasks), backed by the exact same dispatch state as `check_dispatch` / `cancel_dispatch` — taskId is the dispatch_id. `tasks/cancel` shares `_cancel_impl` with the tool; `tasks/result` returns a tool-result-shaped payload (`content` / `isError`) once terminal and INVALID_PARAMS while running. `tasks/list` deliberately not served (removed in the 2026-07-28 release). Flag off → byte-identical server. Server-side refactor: `_lookup_entry` (memory-first, db-fallback) and `_cancel_impl` extracted and shared between tools and protocol handlers. `dispatches_db._row_to_entry` now carries an `updated` epoch so task objects get an honest `lastUpdatedAt`. Tests: `tests/test_tasks_protocol.py` (flag gate, get/cancel/result lifecycles, unknown-id errors, live-server wiring).
