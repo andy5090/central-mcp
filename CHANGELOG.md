@@ -3,6 +3,13 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+- **`central_mcp.tasks_adapter` — MCP Tasks-extension groundwork (Ecosystem alignment Phase 1).** Pure translation layer between the dispatch status vocabulary (`running` / `complete` / `error` / `timeout` / `cancelled`) and the MCP 2026-07-28 Tasks lifecycle (`working` / `completed` / `failed` / `cancelled`), plus `to_task()` rendering a dispatch entry as a spec-shaped task object (`taskId` / `status` / `statusMessage` / `createdAt` / `pollInterval`, project+agent in namespaced `_meta`). No SDK dependency and no change to existing tool behavior — this is the contract the Phase-2 extension wire-up will lean on. Unknown statuses deliberately map to `working` (never terminal) so future in-flight states can't strand pollers. Audit of the deprecating core trio (Roots / Sampling / Logging) came back clean; notes in `docs/architecture/mcp-2026-spec-prep.md`. Tests: `tests/test_tasks_adapter.py` (22) locks the mapping table, task shape, and a round-trip through the real `dispatches_db` writers.
+
+---
+
 ## [0.12.2] — 2026-05-10
 
 ### Added
