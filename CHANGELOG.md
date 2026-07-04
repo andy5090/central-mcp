@@ -8,6 +8,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 - **`cmcp tui --agent gemini|opencode --experimental` — TUI Phase C.** All four orchestrators are now embeddable: the agent allowlist (`tui.app._AGENT_LAUNCH`, the `cmd_tui` gate, and the argparse `--agent` choices) grows to claude / codex / gemini / opencode. A byte-level rendering probe (each CLI spawned in a real 120×40 PTY, startup output run through the leak filter and pyte) confirmed no unparseable sequences: gemini and codex emit a `\x1b[?u` kitty-keyboard query the filter doesn't strip, but pyte handles `?`-prefixed CSI cleanly — only the `<` / `>` private prefixes leak, and those were already filtered in Phase 0. No new filter rules needed.
 
+### Added (Hermes)
+- **`cmcp install hermes` now also installs a central-mcp orchestration skill into Hermes.** New bundled `data/hermes-skill.md` lands at `~/.hermes/skills/autonomous-ai-agents/central-mcp/SKILL.md` (Hermes picks it up as a local skill, enabled by default). Config registration made the MCP tools *callable*; the skill makes Hermes *good* at them — the non-blocking dispatch → check_dispatch loop with explicit don't-busy-wait guidance, `@workspace` fan-out, `orchestration_history` / `token_usage` portfolio digests wired to Hermes's cron + Telegram/Discord gateway, and bypass-mode cautions. Re-running the installer refreshes the skill in place (explicit install = intent to sync); the "already registered — no change" config path still installs/repairs the skill. Tests: 5 new cases in `test_install.py` (fresh write, repair-on-reinstall, idempotence, local-edit refresh, dry-run).
+
 ### Changed
 - **`cmcp tui` header icon: `≡ MENU`.** The 0.12.1 text-only "MENU" label gains a hamburger glyph. `≡` (U+2261) over `☰` (U+2630) deliberately — the trigram is ambiguous-width and missing from some monospace fonts, the same class of problem that killed the original `⭘` glyph.
 

@@ -276,3 +276,65 @@ def test_install_hermes_dry_run_does_not_write(fake_hermes_config: Path) -> None
     assert rc == 0
     assert fake_hermes_config.read_text() == text_before
 
+
+def _skill_path(cfg: Path) -> Path:
+    # fake_hermes_config yields <home>/.hermes/config.yaml
+    return (
+        cfg.parent / "skills" / "autonomous-ai-agents" / "central-mcp"
+        / "SKILL.md"
+    )
+
+
+def test_install_hermes_writes_skill(fake_hermes_config: Path) -> None:
+    assert install.install("hermes") == 0
+    skill = _skill_path(fake_hermes_config)
+    assert skill.exists()
+    text = skill.read_text()
+    # Frontmatter must carry the skill's registry identity.
+    assert "name: central-mcp" in text
+    # Core workflow guidance the skill exists to deliver.
+    assert "check_dispatch" in text
+    assert "@workspace" in text
+
+
+def test_install_hermes_skill_installed_even_when_config_already_registered(
+    fake_hermes_config: Path,
+) -> None:
+    # First run registers config + skill; delete the skill and re-run —
+    # the "already registered — no change" path must still restore it.
+    assert install.install("hermes") == 0
+    skill = _skill_path(fake_hermes_config)
+    skill.unlink()
+    assert install.install("hermes") == 0
+    assert skill.exists()
+
+
+def test_install_hermes_skill_idempotent(
+    fake_hermes_config: Path, capsys: pytest.CaptureFixture
+) -> None:
+    assert install.install("hermes") == 0
+    capsys.readouterr()
+    assert install.install("hermes") == 0
+    out = capsys.readouterr().out
+    assert "skill up to date" in out
+
+
+def test_install_hermes_skill_refreshes_local_edits(
+    fake_hermes_config: Path,
+) -> None:
+    # Explicit `cmcp install hermes` is user intent to sync — local
+    # edits to the skill file are overwritten with the shipped content.
+    assert install.install("hermes") == 0
+    skill = _skill_path(fake_hermes_config)
+    skill.write_text("# user hacked this\n")
+    assert install.install("hermes") == 0
+    assert "name: central-mcp" in skill.read_text()
+
+
+def test_install_hermes_dry_run_does_not_write_skill(
+    fake_hermes_config: Path,
+) -> None:
+    rc = install.install("hermes", dry_run=True)
+    assert rc == 0
+    assert not _skill_path(fake_hermes_config).exists()
+

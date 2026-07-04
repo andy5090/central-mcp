@@ -367,7 +367,7 @@ def _install_hermes(*, dry_run: bool) -> int:
         and list(existing.get("args") or []) == LAUNCH_ARGS
     ):
         _say(f"already registered in {cfg} — no change")
-        return 0
+        return _install_hermes_skill(dry_run=dry_run)
 
     servers[SERVER_NAME] = {"command": LAUNCH_COMMAND, "args": list(LAUNCH_ARGS)}
 
@@ -377,13 +377,56 @@ def _install_hermes(*, dry_run: bool) -> int:
         yaml.dump(doc, buf)
         _say(f"Would write to {cfg}:")
         _say(buf.getvalue())
-        return 0
+        return _install_hermes_skill(dry_run=True)
 
     bak = _backup(cfg)
     with cfg.open("w") as fh:
         yaml.dump(doc, fh)
     _say(f"updated {cfg}")
     _say(f"backup: {bak}")
+    return _install_hermes_skill(dry_run=False)
+
+
+def _install_hermes_skill(*, dry_run: bool) -> int:
+    """Install the central-mcp orchestration skill into Hermes.
+
+    Hermes teaches its LLM per-tool workflows through skills — markdown
+    files scanned from ``~/.hermes/skills/<category>/<name>/SKILL.md``.
+    Registering our MCP server in config.yaml makes the tools *callable*;
+    this skill makes Hermes actually *good* at using them (non-blocking
+    poll pattern, @workspace fan-out, orchestration_history digests via
+    Hermes cron, bypass-mode cautions).
+
+    The shipped content lives at ``central_mcp/data/hermes-skill.md``.
+    Re-running ``cmcp install hermes`` refreshes the skill in place —
+    an explicit install command is user intent to sync, so local edits
+    to the skill file are overwritten (unlike ~/.central-mcp/user.md,
+    which is scaffold-once).
+    """
+    from importlib.resources import files
+
+    try:
+        content = (
+            files("central_mcp").joinpath("data", "hermes-skill.md")
+            .read_text(encoding="utf-8")
+        )
+    except Exception as exc:
+        print(f"error: bundled hermes-skill.md unreadable: {exc}", file=sys.stderr)
+        return 1
+
+    skill = (
+        Path.home() / ".hermes" / "skills"
+        / "autonomous-ai-agents" / "central-mcp" / "SKILL.md"
+    )
+    if skill.exists() and skill.read_text(encoding="utf-8") == content:
+        _say(f"skill up to date: {skill}")
+        return 0
+    if dry_run:
+        _say(f"Would write skill: {skill}")
+        return 0
+    skill.parent.mkdir(parents=True, exist_ok=True)
+    skill.write_text(content, encoding="utf-8")
+    _say(f"installed skill: {skill}")
     return 0
 
 

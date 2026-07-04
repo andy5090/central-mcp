@@ -65,7 +65,7 @@ cmux gets a deliberate first-class treatment: its design philosophy ("agents man
 
 [Hermes Agent](https://github.com/NousResearch/hermes-agent) (Nous Research) is a self-improving agentOS — built-in cron, skills curation, and multi-platform delivery (Telegram, Discord, Slack, WhatsApp). It also speaks MCP both ways: `hermes mcp add` to register external servers, `hermes mcp serve` to expose its own conversations. That makes it the most natural pairing partner central-mcp has outside the four core orchestrators.
 
-`cmcp install hermes` writes `mcp_servers.central` into `~/.hermes/config.yaml`, and from that moment Hermes sees `dispatch` / `list_projects` / `check_dispatch` as native tools. `cmcp run --agent hermes` makes Hermes the orchestrator; `add_project --agent hermes` makes a project's dispatch target Hermes. Bidirectional in one config edit.
+`cmcp install hermes` writes `mcp_servers.central` into `~/.hermes/config.yaml`, and from that moment Hermes sees `dispatch` / `list_projects` / `check_dispatch` as native tools. It also drops a **central-mcp skill** into Hermes's skill library (`skills/autonomous-ai-agents/central-mcp/`) — the non-blocking dispatch loop, `@workspace` fan-out, and cron-digest patterns, so Hermes doesn't just *have* the tools, it knows how to orchestrate with them. `cmcp run --agent hermes` makes Hermes the orchestrator; `add_project --agent hermes` makes a project's dispatch target Hermes. Bidirectional in one config edit.
 
 Compositions worth noticing:
 
