@@ -1,6 +1,6 @@
 ---
 title: central-mcp
-description: central-mcp turns any MCP-capable client into a parallel control plane for Claude Code, Codex, Gemini, opencode, and Hermes Agent — fan out work across every project at once and let the hub absorb the context switching.
+description: central-mcp turns any MCP-capable client into a parallel control plane for Claude Code, Codex, Gemini, opencode, Hermes Agent, and gajae-code — fan out work across every project at once and let the hub absorb the context switching.
 hide:
   - toc
 ---
@@ -21,7 +21,7 @@ hide:
 
 <h1 class="cmcp-hero-title">Tokenmaxxing, <span class="cmcp-hero-emph">disciplined.</span></h1>
 
-<p class="cmcp-hero-sub">Fan out Claude Code, Codex, Gemini, opencode, and Hermes Agent across every project in parallel. central-mcp absorbs the context switching — tokens climb to <span class="cmcp-hero-counter" data-min="10" data-max="100">10×</span>, your focus stays put.</p>
+<p class="cmcp-hero-sub">Fan out Claude Code, Codex, Gemini, opencode, Hermes Agent, and gajae-code across every project in parallel. central-mcp absorbs the context switching — tokens climb to <span class="cmcp-hero-counter" data-min="10" data-max="100">10×</span>, your focus stays put.</p>
 
 [Get started](quickstart.md){ .md-button .md-button--primary }
 [GitHub](https://github.com/andy5090/central-mcp){ .md-button }

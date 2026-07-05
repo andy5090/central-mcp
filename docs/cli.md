@@ -22,7 +22,7 @@ When invoked with no subcommand, `central-mcp` is equivalent to `central-mcp run
 ## Launching the orchestrator
 
 ### `central-mcp run`
-Launch the configured orchestrator (claude / codex / gemini / opencode). Probes PyPI for newer releases on every launch and offers an interactive upgrade picker. Walks the fallback chain if the preferred orchestrator is over its quota threshold.
+Launch the configured orchestrator (claude / codex / gemini / opencode / hermes / gjc). Probes PyPI for newer releases on every launch and offers an interactive upgrade picker. Walks the fallback chain if the preferred orchestrator is over its quota threshold.
 
 ### `central-mcp serve`
 Run as an MCP stdio server. This is what MCP clients invoke; you rarely call it directly.
@@ -46,8 +46,8 @@ Tail a project's `dispatch.jsonl` with human-readable formatting (ANSI colors, c
 ### `central-mcp monitor`
 Curses portfolio dashboard: per-agent quota bars, dispatch stats by project.
 
-### `central-mcp tui --experimental [--agent claude|codex]` (0.13.0+)
-Embedded Textual app: orchestrator agent runs inside a managed PTY in the main pane, surrounded by a sidebar (token usage HUD + active dispatches + recent completions). Reacts to dispatch completion immediately by polling `dispatches.db` directly — no MCP-client notification forwarding needed. Requires the optional `[tui]` extras: `pip install 'central-mcp[tui]'`. The `--experimental` flag is mandatory until the track graduates at 1.0; gemini / opencode adapters land in 0.14+.
+### `central-mcp tui --experimental [--agent claude|codex|gemini|opencode]` (0.12.0+)
+Embedded Textual app: orchestrator agent runs inside a managed PTY in the main pane, surrounded by a sidebar (token usage HUD + active dispatches + recent completions). Reacts to dispatch completion immediately by polling `dispatches.db` directly — no MCP-client notification forwarding needed. Requires the optional `[tui]` extras: `pip install 'central-mcp[tui]'`. The `--experimental` flag is mandatory until the track graduates at 1.0. All four orchestrators are supported as of 0.14.0 (Phase C).
 
 ---
 
@@ -95,7 +95,7 @@ Unassign.
 ## MCP client setup
 
 ### `central-mcp install <client>`
-Register central-mcp as an MCP server with a client. Choices: `claude`, `codex`, `gemini`, `opencode`, `all`.
+Register central-mcp as an MCP server with a client. Choices: `claude`, `codex`, `gemini`, `opencode`, `hermes`, `gjc`, `all`. The `hermes` target also installs a central-mcp orchestration skill into Hermes's skill library; the `gjc` target writes `mcpServers.central` into `~/.gjc/agent/mcp.json`.
 
 ### `central-mcp alias [name]`
 Print or create the `cmcp` short alias.

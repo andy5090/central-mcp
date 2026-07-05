@@ -1,6 +1,6 @@
 ---
 title: central-mcp
-description: central-mcp는 어떤 MCP 클라이언트든 Claude Code · Codex · Gemini · opencode · Hermes Agent가 모든 프로젝트에서 동시에 일하는 병렬 컨트롤 플레인으로 바꿔줍니다. 컨텍스트 스위칭은 허브가 대신 짊어집니다.
+description: central-mcp는 어떤 MCP 클라이언트든 Claude Code · Codex · Gemini · opencode · Hermes Agent · gajae-code가 모든 프로젝트에서 동시에 일하는 병렬 컨트롤 플레인으로 바꿔줍니다. 컨텍스트 스위칭은 허브가 대신 짊어집니다.
 hide:
   - toc
 ---
@@ -21,7 +21,7 @@ hide:
 
 <h1 class="cmcp-hero-title">Tokenmaxxing을 <span class="cmcp-hero-emph">영리하게.</span></h1>
 
-<p class="cmcp-hero-sub">Claude Code · Codex · Gemini · opencode · Hermes Agent를 모든 프로젝트에 한꺼번에 풀어두세요. 컨텍스트 스위칭은 central-mcp가 대신 — 토큰은 <span class="cmcp-hero-counter" data-min="10" data-max="100">10×</span>까지, 집중력은 그대로.</p>
+<p class="cmcp-hero-sub">Claude Code · Codex · Gemini · opencode · Hermes Agent · gajae-code를 모든 프로젝트에 한꺼번에 풀어두세요. 컨텍스트 스위칭은 central-mcp가 대신 — 토큰은 <span class="cmcp-hero-counter" data-min="10" data-max="100">10×</span>까지, 집중력은 그대로.</p>
 
 [시작하기](quickstart.md){ .md-button .md-button--primary }
 [GitHub](https://github.com/andy5090/central-mcp){ .md-button }

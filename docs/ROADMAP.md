@@ -54,7 +54,7 @@ A self-contained terminal app that hosts the orchestrator agent inside a managed
 
 ✅ **Phase B (0.12.2) — codex.** Shipped 2026-05-10. Same chrome, second agent on the allowlist; `--agent claude|codex` now a constrained choice and the CSI / whitespace-emphasis fixes from Phase 0 cover both.
 
-📋 **Phase C (0.14.0) — opencode + gemini.** Round out the four orchestrators central-mcp already knows. opencode goes first — its adoption curve (147k GitHub stars, ~6.5M monthly developers by spring 2026) makes it the most-requested gap, and its provider-agnostic design exercises the PTY chrome differently than the vendor CLIs do.
+✅ **Phase C (0.14.0) — opencode + gemini.** Shipped 2026-07-04. All four orchestrators are now embeddable. A byte-level PTY rendering probe (real CLIs through the leak filter + pyte) confirmed no new filter rules were needed — the `<`/`>` private-prefix CSI filter from Phase 0 already covers everything the new agents emit.
 
 📋 **Phase D (0.15.0–0.x) — stabilization.** Self-rendered scrollback / search / copy. Korean IME and double-width corner cases. Notification policy fine-tuning (`config.toml [tui].auto_inject = passive | hint | prompt`).
 
@@ -152,7 +152,7 @@ That lifecycle is *exactly* the `dispatch` → `check_dispatch` → `cancel_disp
 
 It turned out we didn't even need the v2 beta to start: the installed stack (fastmcp 3.x on mcp 1.x) already carries the experimental Tasks protocol types from the 2025-11-25 spec, so Phases 1–2 shipped on it directly. Phasing:
 
-✅ **Phase 1 — task-model groundwork, no SDK dependency.** Shipped: `tasks_adapter` module translating the dispatch status vocabulary onto the Tasks lifecycle (`working` / `input_required` / `completed` / `failed` / `cancelled`) and rendering dispatch entries as spec-shaped task objects. Audit of the deprecating trio (Roots / Sampling / Logging — 12-month window) came back clean. Notes in `docs/architecture/mcp-2026-spec-prep.md`.
+✅ **Phase 1 — task-model groundwork, no SDK dependency.** Shipped: `tasks_adapter` module translating the dispatch status vocabulary onto the Tasks lifecycle (`working` / `input_required` / `completed` / `failed` / `cancelled`) and rendering dispatch entries as spec-shaped task objects. Audit of the deprecating trio (Roots / Sampling / Logging — 12-month window) came back clean. Notes in [architecture/mcp-2026-spec-prep](architecture/mcp-2026-spec-prep.md).
 
 ✅ **Phase 2 — Tasks wire, behind a flag.** Shipped: with `CENTRAL_MCP_TASKS=1`, the server registers `tasks/get` / `tasks/cancel` / `tasks/result` handlers backed by the same `dispatches.db` state — taskId is the dispatch_id. `check_dispatch` / `cancel_dispatch` stay as-is indefinitely; the extension is an additional wire shape over the same state, not a replacement. `tasks/list` is deliberately not served (the 2026-07-28 release removes it). Flag-off default is byte-identical to before.
 

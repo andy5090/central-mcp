@@ -89,3 +89,15 @@ Overwrite `~/.central-mcp/user.md`.
 ## How the orchestrator is told to use these
 
 The runtime guidance lives in [`src/central_mcp/data/AGENTS.md`](https://github.com/andy5090/central-mcp/blob/main/src/central_mcp/data/AGENTS.md) and is shipped to `~/.central-mcp/AGENTS.md` on first launch. The MCP server also injects a compact summary as part of its `instructions` payload, so MCP clients see the same guidance.
+
+---
+
+## Experimental: MCP Tasks wire (0.13.0+)
+
+Set `CENTRAL_MCP_TASKS=1` in the server's environment and central-mcp additionally serves the MCP Tasks protocol — `tasks/get`, `tasks/cancel`, and `tasks/result` — backed by the exact same dispatch state as the tools above. The `taskId` is the `dispatch_id` returned by `dispatch`, so a Tasks-speaking MCP client can drive a dispatch through the protocol's native polling lifecycle instead of calling `check_dispatch`.
+
+- `tasks/get` returns the task object (`working` / `completed` / `failed` / `cancelled`, with `pollInterval: 3000`).
+- `tasks/result` returns the final output once terminal, and an error while still running.
+- `tasks/list` is deliberately not served — the 2026-07-28 MCP release removes it; `list_dispatches` covers the need.
+
+`check_dispatch` / `cancel_dispatch` are unchanged either way — the extension is an additional wire shape over the same state, not a replacement. Flag off (the default) leaves the server byte-identical to before. See the [roadmap's Ecosystem alignment track](ROADMAP.md#ecosystem-alignment) for where this is headed.
