@@ -172,6 +172,8 @@ dispatch("my-app", "add error handling to auth")
 | `gemini` | `gemini -p "<prompt>"` | `--yolo` | — |
 | `droid` | `droid exec "<prompt>"` | `--skip-permissions-unsafe` | — |
 | `opencode` | `opencode run "<prompt>" --continue` | `--dangerously-skip-permissions` | — |
+| `hermes` | `hermes -z "<prompt>" --continue` | `--yolo --accept-hooks` | — |
+| `gjc` | `gjc -p --mode=json -c "<prompt>"` | — (print mode runs tools unattended) | — |
 
 Agent names are validated at registration time — typos like `cursor-agent` are caught immediately, not at dispatch time.
 
@@ -398,7 +400,7 @@ central-mcp install CLIENT         # register with claude | codex | gemini | ope
 central-mcp alias [NAME]           # short-name symlink (default: cmcp)
 central-mcp unalias [NAME]
 central-mcp init [PATH]            # scaffold registry.yaml (default: ~/.central-mcp)
-central-mcp add NAME PATH [--agent claude|codex|gemini|droid|opencode]
+central-mcp add NAME PATH [--agent claude|codex|gemini|droid|opencode|hermes|gjc]
 central-mcp remove NAME
 central-mcp reorder NAME [NAME ...]  # reorder projects — unlisted ones keep relative order
 central-mcp list                   # one-line registry dump

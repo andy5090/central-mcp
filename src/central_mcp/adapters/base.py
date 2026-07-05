@@ -767,6 +767,82 @@ class _Hermes(Adapter):
         return argv
 
 
+class _Gjc(Adapter):
+    """gajae-code (gjc) — `gjc -p --mode=json PROMPT` one-shot mode.
+
+    `--mode=json` emits JSONL session events. Assistant `message_end`
+    events carry the reply as `message.content[].text` parts plus a
+    `usage` block (`input` / `output` / `totalTokens`); intermediate
+    streaming events duplicate the payload and are skipped. Print mode
+    executes tools without interactive approval, so bypass needs no
+    extra flag — permission_mode "bypass" is a no-op here. Session
+    resumption uses gjc's own `-c` (latest) and `-r <id>` flags.
+    `--no-session` is deliberately NOT passed: dispatches should leave
+    a resumable session behind, same as every other agent in this table.
+    """
+
+    def exec_argv(
+        self,
+        prompt: str,
+        *,
+        resume: bool = True,
+        permission_mode: str = "restricted",
+        session_id: str | None = None,
+    ) -> list[str] | None:
+        argv = ["gjc", "-p", "--mode=json"]
+        if session_id:
+            argv += ["-r", session_id]
+        elif resume:
+            argv.append("-c")
+        argv.append(prompt)
+        return argv
+
+    def parse_output(
+        self, stdout: str
+    ) -> tuple[str, dict[str, int] | None]:
+        """Display = text of the LAST assistant `message_end` (the final
+        answer after any tool loops). Tokens = summed usage across all
+        assistant `message_end` events — each is one API turn."""
+        display = ""
+        total_in = total_out = total_all = 0
+        saw_usage = False
+        for ln in stdout.splitlines():
+            line = ln.strip()
+            if not line:
+                continue
+            try:
+                r = json.loads(line)
+            except Exception:
+                continue
+            if r.get("type") != "message_end":
+                continue
+            msg = r.get("message") or {}
+            if msg.get("role") != "assistant":
+                continue
+            texts = [
+                c.get("text") for c in (msg.get("content") or [])
+                if isinstance(c, dict) and c.get("type") == "text" and c.get("text")
+            ]
+            if texts:
+                display = "\n".join(str(t) for t in texts)
+            usage = msg.get("usage") or {}
+            inp = usage.get("input")
+            out = usage.get("output")
+            tot = usage.get("totalTokens")
+            if inp or out or tot:
+                saw_usage = True
+                total_in += int(inp or 0)
+                total_out += int(out or 0)
+                total_all += int(tot) if tot else int(inp or 0) + int(out or 0)
+        if not display:
+            return stdout, None
+        tokens = (
+            {"input": total_in, "output": total_out, "total": total_all}
+            if saw_usage else None
+        )
+        return display, tokens
+
+
 _ADAPTERS: dict[str, Adapter] = {
     "claude":   _Claude("claude",   launch=("claude",),   has_exec=True, supports_auto=True),
     "codex":    _Codex("codex",     launch=("codex",),    has_exec=True),
@@ -774,6 +850,7 @@ _ADAPTERS: dict[str, Adapter] = {
     "droid":    _Droid("droid",     launch=("droid",),    has_exec=True),
     "opencode": _OpenCode("opencode", launch=("opencode",), has_exec=True),
     "hermes":   _Hermes("hermes",   launch=("hermes",),   has_exec=True),
+    "gjc":      _Gjc("gjc",         launch=("gjc",),      has_exec=True),
 }
 
 _FALLBACK_ADAPTER = Adapter("(unknown)", launch=(), has_exec=False)

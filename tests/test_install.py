@@ -338,3 +338,63 @@ def test_install_hermes_dry_run_does_not_write_skill(
     assert rc == 0
     assert not _skill_path(fake_hermes_config).exists()
 
+
+# ─── gjc (gajae-code) ─────────────────────────────────────────────────
+
+
+@pytest.fixture
+def fake_gjc_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Seed `$HOME/.gjc/agent/mcp.json` with a pre-existing server so the
+    test can verify merge behavior. Returns the mcp.json path."""
+    home = tmp_path / "home"
+    (home / ".gjc" / "agent").mkdir(parents=True)
+    cfg = home / ".gjc" / "agent" / "mcp.json"
+    cfg.write_text(
+        '{"mcpServers": {"other": {"type": "stdio", '
+        '"command": "other-binary", "args": ["serve"]}}}\n'
+    )
+    monkeypatch.setenv("HOME", str(home))
+    return cfg
+
+
+def test_install_gjc_adds_entry(fake_gjc_home: Path) -> None:
+    import json as _json
+
+    assert install.install("gjc") == 0
+    data = _json.loads(fake_gjc_home.read_text())
+    entry = data["mcpServers"]["central"]
+    assert entry == {"type": "stdio", "command": "central-mcp", "args": ["serve"]}
+    # Preserves the pre-existing server entry.
+    assert "other" in data["mcpServers"]
+
+
+def test_install_gjc_is_idempotent(fake_gjc_home: Path) -> None:
+    assert install.install("gjc") == 0
+    text_before = fake_gjc_home.read_text()
+    assert install.install("gjc") == 0
+    assert fake_gjc_home.read_text() == text_before
+
+
+def test_install_gjc_creates_missing_mcp_json(fake_gjc_home: Path) -> None:
+    import json as _json
+
+    fake_gjc_home.unlink()  # ~/.gjc exists, mcp.json doesn't (fresh gjc)
+    assert install.install("gjc") == 0
+    data = _json.loads(fake_gjc_home.read_text())
+    assert "central" in data["mcpServers"]
+
+
+def test_install_gjc_refuses_if_no_gjc_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    assert install.install("gjc") == 1
+
+
+def test_install_gjc_dry_run_does_not_write(fake_gjc_home: Path) -> None:
+    text_before = fake_gjc_home.read_text()
+    assert install.install("gjc", dry_run=True) == 0
+    assert fake_gjc_home.read_text() == text_before
+

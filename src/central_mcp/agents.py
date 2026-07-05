@@ -71,6 +71,22 @@ AGENTS: dict[str, AgentCapabilities] = {
         mcp_installable=False,
         has_quota_api=False, has_session_reader=False,
     ),
+    "gjc": AgentCapabilities(
+        name="gjc", binary="gjc", label="gajae-code",
+        # gjc is a provider-agnostic coding CLI (bun-distributed). Its
+        # `-p --mode=json` print mode executes tools without interactive
+        # approval and emits JSONL events with per-turn usage, so both
+        # dispatch and token accounting work first-class. `gjc mcp add`
+        # persists to ~/.gjc/agent/mcp.json, which the installer writes
+        # directly.
+        can_dispatch=True,
+        can_orchestrate=True,
+        mcp_installable=True,
+        has_quota_api=False,
+        # Sessions land under ~/.gjc/agent/sessions/<path-slug>/*.jsonl;
+        # reader wiring is a follow-up spike.
+        has_session_reader=False,
+    ),
     "hermes": AgentCapabilities(
         name="hermes", binary="hermes", label="Hermes Agent",
         # Hermes is Nous Research's self-improving agentOS (OpenClaw

@@ -3,10 +3,13 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [0.14.0] — 2026-07-04
 
 ### Added
 - **`cmcp tui --agent gemini|opencode --experimental` — TUI Phase C.** All four orchestrators are now embeddable: the agent allowlist (`tui.app._AGENT_LAUNCH`, the `cmd_tui` gate, and the argparse `--agent` choices) grows to claude / codex / gemini / opencode. A byte-level rendering probe (each CLI spawned in a real 120×40 PTY, startup output run through the leak filter and pyte) confirmed no unparseable sequences: gemini and codex emit a `\x1b[?u` kitty-keyboard query the filter doesn't strip, but pyte handles `?`-prefixed CSI cleanly — only the `<` / `>` private prefixes leak, and those were already filtered in Phase 0. No new filter rules needed.
+
+### Added (gjc)
+- **gajae-code (`gjc`) joins the agent lineup.** New `_Gjc` adapter wraps `gjc -p --mode=json PROMPT` for one-shot dispatch — print mode executes tools without interactive approval (verified live), so bypass needs no extra flag. `-c` / `-r <id>` cover resume semantics. The JSONL event parser extracts the final assistant message as display text and sums per-turn `usage` blocks into token accounting. Registered as dispatch-capable, orchestrate-capable, and MCP-installable: new `cmcp install gjc` writes `mcpServers.central` into `~/.gjc/agent/mcp.json` (same shape `gjc mcp add` produces; file created if missing, merge-preserving, idempotent, dry-run aware). Quota API and session reader are off pending follow-up spikes. Tests: 9 adapter cases (argv shapes, JSONL parsing incl. multi-turn usage summing, capability flags) + 5 installer cases; adapter contract also verified end-to-end against the real gjc binary (dispatch → parse → tokens).
 
 ### Added (Hermes)
 - **`cmcp install hermes` now also installs a central-mcp orchestration skill into Hermes.** New bundled `data/hermes-skill.md` lands at `~/.hermes/skills/autonomous-ai-agents/central-mcp/SKILL.md` (Hermes picks it up as a local skill, enabled by default). Config registration made the MCP tools *callable*; the skill makes Hermes *good* at them — the non-blocking dispatch → check_dispatch loop with explicit don't-busy-wait guidance, `@workspace` fan-out, `orchestration_history` / `token_usage` portfolio digests wired to Hermes's cron + Telegram/Discord gateway, and bypass-mode cautions. Re-running the installer refreshes the skill in place (explicit install = intent to sync); the "already registered — no change" config path still installs/repairs the skill. Tests: 5 new cases in `test_install.py` (fresh write, repair-on-reinstall, idempotence, local-edit refresh, dry-run).

@@ -44,6 +44,7 @@ def _installer_for(client: str):
         "gemini": _install_gemini,
         "opencode": _install_opencode,
         "hermes": _install_hermes,
+        "gjc": _install_gjc,
     }.get(client)
 
 
@@ -385,6 +386,71 @@ def _install_hermes(*, dry_run: bool) -> int:
     _say(f"updated {cfg}")
     _say(f"backup: {bak}")
     return _install_hermes_skill(dry_run=False)
+
+
+def _install_gjc(*, dry_run: bool) -> int:
+    """Register central-mcp inside gajae-code's MCP config.
+
+    gjc persists user-level MCP servers at ``~/.gjc/agent/mcp.json``
+    (same shape ``gjc mcp add`` writes):
+
+        {"mcpServers": {"central": {"type": "stdio",
+                                    "command": "central-mcp",
+                                    "args": ["serve"]}}}
+
+    Idempotent. Requires ``~/.gjc`` to exist (created on gjc's first
+    launch) — we don't fabricate the tree because gjc seeds other
+    defaults during its own setup. The mcp.json file itself is created
+    if missing.
+    """
+    gjc_dir = Path.home() / ".gjc"
+    if not gjc_dir.exists():
+        print(
+            f"error: {gjc_dir} does not exist — run 'gjc' once first",
+            file=sys.stderr,
+        )
+        return 1
+    cfg = gjc_dir / "agent" / "mcp.json"
+
+    doc: dict = {}
+    if cfg.exists():
+        try:
+            doc = json.loads(cfg.read_text(encoding="utf-8")) or {}
+        except Exception as exc:
+            print(f"error: {cfg} is not valid JSON: {exc}", file=sys.stderr)
+            return 1
+        if not isinstance(doc, dict):
+            print(f"error: {cfg} root must be a JSON object", file=sys.stderr)
+            return 1
+
+    servers = doc.setdefault("mcpServers", {})
+    if not isinstance(servers, dict):
+        print(f"error: {cfg} mcpServers must be an object", file=sys.stderr)
+        return 1
+
+    desired = {
+        "type": "stdio",
+        "command": LAUNCH_COMMAND,
+        "args": list(LAUNCH_ARGS),
+    }
+    if servers.get(SERVER_NAME) == desired:
+        _say(f"already registered in {cfg} — no change")
+        return 0
+
+    servers[SERVER_NAME] = desired
+
+    if dry_run:
+        _say(f"Would write to {cfg}:")
+        _say(json.dumps(doc, indent=2))
+        return 0
+
+    bak = _backup(cfg) if cfg.exists() else None
+    cfg.parent.mkdir(parents=True, exist_ok=True)
+    cfg.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
+    _say(f"updated {cfg}")
+    if bak:
+        _say(f"backup: {bak}")
+    return 0
 
 
 def _install_hermes_skill(*, dry_run: bool) -> int:

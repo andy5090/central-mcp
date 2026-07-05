@@ -490,3 +490,78 @@ class TestParseOutput:
         display, tokens = get_adapter("shell").parse_output("hello world")
         assert display == "hello world"
         assert tokens is None
+
+
+class TestGjc:
+    """gajae-code — `gjc -p --mode=json PROMPT` one-shot mode."""
+
+    def test_basic(self) -> None:
+        argv = get_adapter("gjc").exec_argv("plan the day")
+        assert argv == ["gjc", "-p", "--mode=json", "-c", "plan the day"]
+
+    def test_no_resume(self) -> None:
+        argv = get_adapter("gjc").exec_argv("fresh start", resume=False)
+        assert argv == ["gjc", "-p", "--mode=json", "fresh start"]
+
+    def test_bypass_is_a_noop(self) -> None:
+        # gjc print mode executes tools without interactive approval —
+        # there is no separate bypass flag to add (verified live: -p
+        # writes files without prompting).
+        restricted = get_adapter("gjc").exec_argv("x", resume=False)
+        bypass = get_adapter("gjc").exec_argv(
+            "x", resume=False, permission_mode="bypass",
+        )
+        assert restricted == bypass
+
+    def test_session_id_replaces_continue(self) -> None:
+        argv = get_adapter("gjc").exec_argv("x", session_id="019f32bb")
+        assert "-c" not in argv
+        i = argv.index("-r")
+        assert argv[i + 1] == "019f32bb"
+
+    def test_prompt_is_last(self) -> None:
+        # MESSAGES are positional in gjc's CLI; flags must precede them.
+        argv = get_adapter("gjc").exec_argv("do the thing", session_id="abc")
+        assert argv[-1] == "do the thing"
+
+    def test_parse_output_extracts_text_and_usage(self) -> None:
+        stdout = "\n".join([
+            '{"type":"session","version":3,"id":"019f"}',
+            '{"type":"message_end","message":{"role":"user","content":[{"type":"text","text":"hi"}]}}',
+            '{"type":"message_update","assistantMessageEvent":{"type":"text_delta"}}',
+            '{"type":"message_end","message":{"role":"assistant","content":'
+            '[{"type":"thinking","thinking":""},{"type":"text","text":"OK"}],'
+            '"usage":{"input":13053,"output":24,"totalTokens":13077}}}',
+        ])
+        display, tokens = get_adapter("gjc").parse_output(stdout)
+        assert display == "OK"
+        assert tokens == {"input": 13053, "output": 24, "total": 13077}
+
+    def test_parse_output_multi_turn_sums_usage_keeps_last_text(self) -> None:
+        stdout = "\n".join([
+            '{"type":"message_end","message":{"role":"assistant","content":'
+            '[{"type":"text","text":"running tests..."}],'
+            '"usage":{"input":100,"output":10,"totalTokens":110}}}',
+            '{"type":"message_end","message":{"role":"assistant","content":'
+            '[{"type":"text","text":"All tests pass."}],'
+            '"usage":{"input":200,"output":20,"totalTokens":220}}}',
+        ])
+        display, tokens = get_adapter("gjc").parse_output(stdout)
+        assert display == "All tests pass."
+        assert tokens == {"input": 300, "output": 30, "total": 330}
+
+    def test_parse_output_non_json_falls_through(self) -> None:
+        display, tokens = get_adapter("gjc").parse_output("plain text output")
+        assert display == "plain text output"
+        assert tokens is None
+
+    def test_capabilities_registered(self) -> None:
+        from central_mcp import agents
+        cap = agents.AGENTS["gjc"]
+        assert cap.can_dispatch is True
+        assert cap.can_orchestrate is True
+        assert cap.mcp_installable is True
+        assert cap.has_quota_api is False
+        assert cap.has_session_reader is False
+        assert "gjc" in VALID_AGENTS
+        assert "gjc" in _ADAPTERS
