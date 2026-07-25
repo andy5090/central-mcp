@@ -1,5 +1,5 @@
 ---
-description: central-mcp의 앞으로 계획 — Visibility, Routing, Upstream agents, Workspaces, Ecosystem alignment, Distribution, Architecture 트랙. 제안은 GitHub 이슈로.
+description: central-mcp의 앞으로 계획 — 포트폴리오 PM이라는 본질을 중심으로 재편. Pulse 브리핑, 상태 장부, 멀티에이전트 협업, 보고 표면, dispatch 코어, 생태계 정렬. 제안은 GitHub 이슈로.
 ---
 
 # 로드맵
@@ -10,185 +10,200 @@ central-mcp의 앞으로 계획만 모았습니다. 이미 출시된 변경은 [
 
 표기: 📋 계획 · 💭 아이디어 · 🚧 진행 중
 
-## 2026년 스택에서 central-mcp의 자리
+## 본질 — 디스패치 허브가 아니라 포트폴리오 PM
 
-코딩 에이전트 생태계는 3계층 구조로 정리됐습니다: 실시간 협업은 **IDE 에이전트**, 터미널 실행은 **로컬 CLI 에이전트**, 비동기 위임은 **클라우드 에이전트**. 오케스트레이션도 표준화 중입니다 — Claude Code는 레포 내부 병렬화를 위한 네이티브 agent teams를 내놨고, 크로스 벤더 프로토콜(MCP Tasks 확장, A2A 1.0)이 장기 실행 위임 작업을 커버하기 시작했습니다.
+*2026-07 재정의. 이전 포지셔닝 — "터미널 네이티브 허브 하나에서 크로스 프로젝트, 크로스 벤더 dispatch" — 은 수단을 설명했습니다. 이번 것은 일 자체를 설명합니다.*
 
-central-mcp의 차선은 그 어디에도 없는 것입니다: **터미널 네이티브 허브 하나에서 크로스 프로젝트, 크로스 벤더 dispatch.** agent teams는 한 벤더 아래 한 레포를 병렬화하지만, central-mcp는 포트폴리오 전체를 각 프로젝트가 쓰는 에이전트 CLI로 라우팅합니다. 아래 우선순위가 이 포지셔닝에서 나옵니다 — 표준이 선 곳(Tasks, A2A)은 프로토콜 정렬, 단일 벤더 도구가 못 주는 visibility/routing 레이어는 더 깊게.
+central-mcp는 한 가지 인간의 문제를 위해 존재합니다: **에이전트 기반 프로젝트를 4개 이상 동시에 굴리는 사람은 반드시 맥락을 잃습니다.** 에이전트가 느려서가 아니라 — 그 어느 때보다 빠릅니다 — 아무도 PM 역할을 하지 않기 때문입니다. 컨텍스트 스위칭마다 재적응 비용이 청구됩니다: *내가 자리 비운 사이 여기서 무슨 일이 있었지? 지금 어떤 상태지? 다음에 뭘 하려고 했었지?*
 
----
+central-mcp의 일은 그 PM이 되는 것입니다. 등록된 모든 프로젝트에 대해 **무슨 일이 있었고, 지금 어디에 있고, 다음이 무엇인지**를 항상 말할 수 있어야 하고 — 필요한 순간에 말해줘야 합니다: 프로젝트로 복귀할 때, 뭔가 끝나거나 실패했을 때, 그리고 정기 다이제스트 주기마다. 성공 지표는 단순합니다: 프로젝트 복귀 시 재적응 시간이 0에 수렴하고, 새는 일감이 없을 것.
 
-## Visibility
+이 페이지의 나머지 전부가 그 일을 위해 존재합니다:
 
-포트폴리오 뷰가 모든 화면에서 같은 모양이 되도록 정리하고, "dispatch가 돌고는 있는데 뭘 하는지 안 보인다" 갭을 메웁니다.
+- **Dispatch** (크로스 프로젝트, 크로스 벤더)는 PM의 *손* — 위임한 일이 실제로 처리되는 방법.
+- **Surfaces** (TUI 관제탑, watch 페인, 라이브 PTY 페인)는 PM의 *보고 채널*.
+- **멀티에이전트 협업**은 PM이 한 프로젝트에 계약자 한 명 대신 *팀*을 투입하는 것.
+- **생태계 엔드포인트** (MCP Tasks, A2A)는 사람만이 아니라 다른 에이전트도 PM에게 물어볼 수 있게 하는 것.
 
-### 결과 retrieval
+이번 재정의가 정면으로 마주하는 갭: 지금 허브는 자기를 *거쳐간* 일만 압니다 — `orchestration_history`는 dispatch 이벤트를 읽으므로, 직접 커밋·인터랙티브 에이전트 세션·수동 편집은 보이지 않습니다. 진짜 PM은 상태 보고를 기다리지 않고 레포를 직접 읽습니다. 이 갭을 메우는 것이 아래 [Portfolio PM](#portfolio-pm) 트랙의 첫 항목입니다.
 
-📋 **`tail_dispatch(dispatch_id, since_ts=null)` MCP 도구.** 진행 중인 dispatch의 최근 출력 청크를 시각 기준으로 받아옵니다. 지금 `check_dispatch`은 subprocess가 끝나야 `output`이 채워져서, orchestrator(와 TUI 사이드바)가 진행 중 출력을 보려면 `dispatch.jsonl`을 직접 파싱해야 합니다. 이걸 캡슐화.
-
-📋 **`dispatches` 테이블 progress 컬럼.** `last_output_ts`, `output_bytes`, `attempt_count` 추가. 출력 청크마다 싸게 update, 읽기는 "이 dispatch가 살아있나 멈췄나" 표시기로 모든 관찰 화면에서 활용.
-
-💭 **`wait_for_dispatch(dispatch_id, timeout_sec=300)` MCP 도구.** 서버 사이드에서 dispatch 종료 시점까지 폴링한 뒤 row 반환. "codex / gemini는 지속 폴링이 약하다" 갭을 메움 — LLM이 폴링 루프 대신 도구 호출 한 번. claude는 잘 해왔으니 이건 다른 두 에이전트용. [MCP Tasks 정렬](#ecosystem-alignment)이 먼저 끝나면, Tasks 확장을 말하는 클라이언트는 이 동작을 네이티브로 얻게 되어 이 도구는 호환 shim으로 축소됩니다.
-
-### 시각화
-
-📋 **TUI 사이드바 expanded row.** 선택된 dispatch row가 펼쳐져서: 마지막 N줄 라이브 tail, elapsed, 토큰 델타, "마지막 output Xs 전" 헬스 힌트. 다른 row는 collapsed. `tail_dispatch` + 새 schema 컬럼 위에 바로 얹힘.
-
-📋 **`token_usage.summary_markdown`을 monitor와 watch에서도 그대로 씁니다.** 0.10.18에서 만든 HUD가 지금은 orchestrator에서만 보입니다. 같은 렌더러를 curses monitor와 watch sticky 헤더에도 끼우면 화면 간 표기 차이가 사라집니다.
-
-📋 **토큰 예산 + 알림.** `config.toml`에 프로젝트 / 워크스페이스 단위 토큰 캡을 두고, 임계 도달 시 dispatch 시작 시점에 노란 배너. 90% 넘으면 기존 quota fallback 체인이 토큰 예산도 같이 보고 다른 에이전트로 빠집니다.
-
-💭 **휴리스틱 progress markers.** 출력 스트림에서 의미 있는 이벤트를 정규식으로 추출 — 파일 읽기/쓰기, 도구 호출, 테스트 실행, 빌드 단계 — dispatch당 작은 stripe로 표시("I/O: 2 reads · Tools: 5 · Tests: 3✓"). 패턴은 에이전트별로 다르니 `agents.AGENTS` adapter record에 `progress_markers: list[regex]` 필드로 들어감.
-
-💭 **Dispatch 상세 화면.** TUI 키바인딩 (Enter)로 row → 전체 화면. prompt / output / chain / tokens / duration / progress-marker 타임라인. output이 markdown이면 markdown 렌더, 아니면 raw text.
-
-💭 **Watch 모드에 누적 사용량 한 줄.** 지금은 `+ 42s`만 보이는데, `+ 42s · 8.97M tokens` 식으로 long-running dispatch의 비용이 한 눈에 들어오게.
+2026년 스택에서의 자리를 압축하면: 벤더의 agent teams는 *한 벤더 아래 한 레포*를 병렬화하고, 클라우드 에이전트는 비동기 단일 작업을 흡수하고, IDE 에이전트는 실시간 페어링을 맡습니다. central-mcp는 그 누구도 차지하지 않은 층 — 벤더를 가로지르는 포트폴리오 전체 — 을 유지하면서, 이제 한 단계 더 깊이 들어갑니다: **한 프로젝트 안에서의 크로스 벤더 협업**, 어떤 단일 벤더 팀 기능도 제공할 수 없는 조합입니다.
 
 ---
 
-## TUI · 1.0 마일스톤
+## 1.0 마일스톤 — PM이 작동하는 순간
 
-자체 터미널 앱이 PTY로 orchestrator 에이전트를 안에 띄우고, 그 주변을 우리 chrome (token HUD, 활성 dispatch, 알림)으로 둘러싸는 트랙입니다. dispatch 완료에 *즉시* 반응 — MCP 클라이언트가 `notifications/resources/updated`를 forward해 주든 말든 우리가 직접 채널을 잡으니 무관해집니다. 이 트랙이 4개 orchestrator 모두에서 안정적으로 끝나는 시점이 **1.0 마일스톤**: central-mcp가 0.x를 졸업하고 1.0.0으로 올라가면서 SemVer 약속이 시작됩니다.
+이전에는 TUI 안정화 단독이 1.0을 정의했습니다. 재정의: **4개 orchestrator 전부에서 PM 루프가 실제로 작동하는 시점에 1.0을 출시합니다.**
 
-✅ **Phase 0 (0.12.0) — `cmcp tui --experimental`, claude 단독.** 2026-05-03 출시. `textual`로 outer chrome (header / sidebar / footer / 알림), `pyte`로 PTY emulation. 메인 페인 안: claude REPL pass-through. 사이드바: `token_usage.summary_markdown` + 활성 dispatch + 최근 완료. `dispatches.db`를 watch하는 데몬 형태의 watcher가 알림을 인라인으로 띄워줍니다. `--experimental` 플래그 강제 (없으면 actionable 에러). 설치는 옵션으로 `pip install 'central-mcp[tui]'`.
+1. **복귀 브리핑** — `project_pulse` + 브리핑 레시피가 어떤 프로젝트에 대해서든 신뢰할 수 있는 "무슨 일이 있었고 / 지금 어디고 / 다음이 뭔지"를 내놓음. central-mcp 밖에서 이뤄진 작업 포함.
+2. **관제탑** — TUI가 4개 orchestrator를 안정적으로 호스팅(Phase D 완료)하고 포트폴리오 인지 사이드바를 갖춤.
+3. **다이제스트** — 정기 포트폴리오 다이제스트가 실제로 눈이 가는 곳(터미널, 또는 Hermes 브릿지 경유 chat)에 도착.
 
-✅ **Phase B (0.12.2) — codex 추가.** 2026-05-10 출시. 같은 chrome, 두 번째 에이전트가 allowlist에 합류. `--agent claude|codex`가 constrained choice가 되고 Phase 0의 CSI / 공백 emphasis fix가 codex에도 그대로 적용.
-
-✅ **Phase C (0.14.0) — opencode + gemini.** 2026-07-04 출시. 4개 orchestrator 전부 임베딩 가능. 바이트 레벨 PTY 렌더링 프로브(실제 CLI → leak 필터 + pyte)로 새 필터 규칙이 필요 없음을 확인 — Phase 0의 `<`/`>` private-prefix CSI 필터가 새 에이전트들의 출력까지 이미 커버합니다.
-
-📋 **Phase D (0.15.0–0.x) — 안정화.** 자체 scrollback / search / copy. 한국어 IME와 더블폭 문자 corner case. 알림 정책 미세 조정 (`config.toml [tui].auto_inject = passive | hint | prompt`).
-
-🎉 **1.0.0 — TUI production.** `--experimental` 플래그는 no-op (하위 호환), API 표면 잠김, 버전 pin 윈도우 닫힘, breaking change는 2.0 대상.
-
-💭 **Open questions**
-- 멀티 페인 레이아웃 — TUI 안에서 watch 페인을 여러 개 호스팅할지, 아니면 단일 페인 유지하고 사용자가 cmux / tmux / zellij로 위에 올리게 둘지.
-- prompt injection을 얼마나 투명하게 할지. `hint` 모드는 사이드바에만 메시지를 띄우고 멈춤; `prompt` 모드는 그 hint를 에이전트 stdin에 그대로 타이핑. "도움됨"과 "방해됨" 사이 선이 흐림.
+1.0 시점에 TUI의 `--experimental` 플래그는 no-op이 되고(하위 호환 유지), API 표면이 잠기고, breaking change는 2.0 대상이 됩니다.
 
 ---
 
-## Live agent panes
+## Portfolio PM
 
-두 번째 실행 모드 — opt-in, 세션 단위, 기본 비대화 dispatch 경로의 보완재.
+새 무게중심 트랙입니다. 아키텍처는 의도적으로 2단계 — **pulse 먼저(stateless), 장부는 그 다음(durable)** — 라서 PM의 ground truth는 항상 레포에서 새로 계산되고, 저장 상태는 하중을 받지 않는 부가물로 남습니다.
 
-지금 모든 dispatch는 `stdin=DEVNULL`으로 떨어진 fresh subprocess라, 권한 프롬프트가 떠도 답할 수 없어서 `--dangerously-skip-permissions` (bypass 모드)가 사실상 강제였습니다. PTY 모드는 에이전트를 실제 TTY pair 안에서 돌려서, 권한 프롬프트가 라이브 패널에 그대로 떠 사용자가 실시간 답변, 대화 컨텍스트는 턴 사이에 유지, prompt cache는 warm하게 유지됩니다. 트레이드오프는 active 프로젝트당 상주 에이전트 프로세스 1개 — 그래서 100개 포트폴리오 전체가 아니라, 지금 실제로 옆에서 supervising하는 2~3개에만 띄우는 모델입니다.
+📋 **`project_pulse(project)` MCP 도구 + `cmcp pulse [project]`.** 프로젝트에 대해 *지금* 알 수 있는 모든 것의 stateless 즉석 집계: git(현재 브랜치, 최근 커밋, dirty 파일, upstream 대비 ahead/behind), dispatch 이력(최근 결과, 토큰), 기존 에이전트별 session reader를 통한 세션 활동, `gh`가 있으면 열린 PR 상태까지. 새 저장소 없음 — pulse는 매 호출마다 새로 계산되므로, central-mcp를 전혀 거치지 않은 작업(직접 커밋, 인터랙티브 세션)도 git이 진실의 원천이기 때문에 잡힙니다. 다른 모든 PM 기능이 딛고 서는 데이터 척추입니다.
 
-두 모드는 같은 데이터 모델(`dispatches.db` + `dispatch.jsonl`, `mode="pty"` 마커만 다름)을 공유하므로 `cmcp watch`, TUI 사이드바, `orchestration_history` 모두 두 종류 dispatch를 구분 없이 보여줍니다.
+📋 **복귀 브리핑.** PM의 대표 순간: 며칠 만에 프로젝트로 돌아오면 "무슨 일이 있었고 / 지금 어디고 / 다음이 뭔지"를 한 번에 받습니다. `cmcp brief`가 registry 나열에서 pulse 기반 포트폴리오 다이제스트로 승격되고, `data/{CLAUDE,AGENTS}.md`의 레시피가 orchestrator에게 사용자가 프로젝트로 컨텍스트 스위칭할 때마다 `project_pulse`로 내러티브 브리핑을 합성하도록 가르칩니다.
 
-✅ **Building blocks (0.12.2 unreleased).** `PtyTerminal(project=, agent=, cwd=)`이 dispatch event writer 역할 겸비: `submit_prompt(text)`이 `dispatches.db`에 `start` / `complete` 행 + `dispatch.jsonl`에 매칭 이벤트를 기록. 화면 안정성 watcher (커서 + 하단 6행 해시가 1.5s 동안 일치)가 status를 `complete`로 전환. PTY-mode dispatch는 reader 입장에서 MCP-mode dispatch와 구분 불가 — `mode="pty"` 마커만 차이.
+📋 **상태 장부 (phase 2).** `~/.central-mcp/projects/<name>/STATUS.md` — 프로젝트별 영속 기억: dispatch 완료 시 덧붙는 구조화된 델타(뭘 했고 뭐가 남았는지), 열린 질문들, 그리고 세션과 orchestrator를 넘어 살아남는 "다음 할 일" 목록. `cmcp note <project> "…"`로 수동 항목 추가. 이후 브리핑은 장부(의도, 다음 할 일)와 pulse(ground truth)를 결합하고 둘 사이의 드리프트를 표시합니다. registry와 같은 평문 파일 — 요청 간 stateless 불변식은 유지됩니다.
 
-📋 **`pty_sessions/<project>.json` 라이프사이클 + dispatch 가드.** PTY 위젯이 spawn 시 `{pid, agent, started_at}` 등록, unmount 시 제거; 읽기 시 stale-PID 청소. `dispatch()`이 이 registry를 참조해서 active PTY 프로젝트는 거부 (`{ok: false, error: "...", mode: "pty"}`). 사람이 패널 운전 중인데 백그라운드 fan-out이 prompt를 끼워넣는 사고를 차단.
+📋 **푸시 보고.** 일간/주간 다이제스트와 이벤트 알림(dispatch 실패, 장시간 dispatch 완료)을 새 데몬 없이 배달: TUI watcher가 로컬에서 surface하고, Hermes 브릿지(cron + Telegram/Discord gateway, 0.12.2–0.14.0 출하)가 터미널 밖으로 운반합니다. Hermes skill의 스케치를 pulse 기반 다이제스트 포맷을 갖춘 1급 레시피로 승격.
 
-📋 **PTY 모드용 output capture.** `pyte.HistoryScreen` (10000행 scrollback)을 `_capture_text()` helper와 묶어서 `_mark_complete` 시점에 전체 세션 텍스트를 `dispatches.output`에 스냅샷. 0.12.2에 명시한 "PTY-mode는 output 빈 문자열" 갭 해소. `check_dispatch(did)`이 실행 모드 무관하게 같은 shape 반환.
+💭 **물으면 답하는 비서 강화.** `orchestration_history`에 git 인지 결합 — 포트폴리오 답변이 더 이상 dispatch 이벤트에 갇히지 않습니다. 프로젝트별 저비용 pulse 읽기를 fan-out하는 `include_pulse` 플래그가 유력.
 
-📋 **`pty_inbox` 큐 + `pty_submit(project, prompt)` MCP 도구.** 프로세스 경계 넘는 prompt 라우팅: orchestrator가 어느 프로세스에서든 `pty_submit` 호출 → 작은 SQLite 큐 테이블에 INSERT. TUI의 PtyTerminal이 250ms 주기로 자기 프로젝트 행만 폴링 → `submit_prompt()`로 라우팅. SQLite를 transport로 쓰는 이유는 `dispatches.db`로 같은 패턴이 이미 검증됨 — MCP는 API 표면에만 머물고 transport에는 안 끼어듦.
-
-📋 **`list_projects`에 mode 노출.** 각 row가 `pty_sessions/` registry에서 파생된 `mode: "pty" | "mcp"` 캐리. orchestrator가 한 눈에 어느 프로젝트가 PTY-bound인지 보고 `pty_submit` vs `dispatch`을 선택. `data/CLAUDE.md`에 한 줄 정책 ("mode=pty 프로젝트는 dispatch 호출 금지")도 추가해서 LLM 가이드와 registry 강제가 일치.
-
-💭 **tmux / zellij / cmux 레이아웃의 옵션 PTY 패널.** 지금 `cmcp tmux` / `cmcp zellij`은 프로젝트 패널을 `central-mcp watch <p>` (passive jsonl tail)로 채움. `--mode=pty` 같은 플래그나 프로젝트별 오버라이드로 그 패널을 프로젝트의 에이전트 CLI 자체로 채우면, 사용자가 passive 로그 tail 대신 라이브 인터랙티브 supervision 패널을 받음. watch 경로는 에이전트 상주가 부담스러운 프로젝트용으로 그대로.
-
-💭 **Persistent REPL 대화 컨텍스트.** Long-lived 에이전트 REPL이면 후속 dispatch가 직전 상태를 잃지 않음 — 캐시 자동, `--resume` 플러밍 불필요. 트레이드오프: 상태 drift / 컨텍스트 비대. "/clear" 훅 또는 세션 회전 정책 필요. opt-in이 합리적.
-
-💭 **권한 프롬프트 가시성.** PTY 모드에서는 에이전트가 `--dangerously-skip-permissions` **없이** 돌 수 있음 — 권한 프롬프트가 사용자가 답할 수 있는 패널에 그대로 뜨니까. 향후 `[live].permissions = ask | bypass` config가 프로젝트별 디폴트를 결정, `ask`이 진짜로 더 안전(이전엔 구조적으로 불가능했던) 선택지로 들어감.
+💭 **워크스페이스별 overlay.** `~/.central-mcp/workspaces/<name>/AGENTS.md`가 그 워크스페이스의 orchestrator 가이드를 보강하고, 워크스페이스 단위 `user.md`가 그 안의 모든 dispatch에 얹힙니다. 포트폴리오 그룹핑은 PM 개념이므로 이제 여기 삽니다(구 Workspaces 트랙에서 이동).
 
 ---
 
-## Routing
+## Multi-agent collaboration
 
-"매번 사용자가 에이전트를 고른다"에서 "central-mcp가 추천한다"로 점진 이동합니다.
+**명시적 non-goal에서 승격.** 예전 논리 — 레포 내부 병렬화는 벤더들의 홈그라운드 — 는 *단일 벤더* 팀(Claude Code agent teams, Codex 멀티에이전트)에는 여전히 참입니다. 놓쳤던 것: **크로스 벤더** 조합. 한 에이전트가 구현하고 다른 벤더의 에이전트가 리뷰하는 것 — central-mcp가 이미 소유한 크로스 벤더 라우팅을 한 단계 깊이 적용한 것일 뿐입니다. 어떤 벤더 팀 기능도 못 하는 일입니다.
 
-이 트랙의 근거는 더 강해졌습니다: 프런티어 CLI들의 순수 능력이 수렴하면서(Terminal-Bench 2.1에서 Codex CLI와 Claude Code가 0.5포인트 이내), 흥미로운 라우팅 신호는 더 이상 "어느 에이전트가 더 똑똑한가"가 아니라 **비용, 쿼터 여유, 작업 형태, 프로젝트 적합도** — 정확히 central-mcp가 이미 에이전트별로 추적하는 상태들입니다.
+📋 **순차 역할 체인 먼저.** `dispatch_chain(project, steps)` — 각 step이 에이전트와 역할 프롬프트를 지정하고, 이전 step의 출력이 다음 step의 컨텍스트로 주입됩니다. 대표 체인: 구현(에이전트 A) → 리뷰(에이전트 B) → 리뷰 반영(에이전트 A). step들은 `chain_id`를 공유하는 연결된 dispatch로 이력에 나타나고, 체인을 폴링하면 step별 상태가 돌아옵니다. 기존 dispatch 배관 위에 거의 그대로 얹히기 때문에 먼저 갑니다.
 
-📋 **`suggest_dispatch(project, prompt)` MCP 도구.** dispatch는 안 하고 `{agent, model, reasoning, fallback}`만 돌려줍니다. orchestrator가 추천을 보여주면 사용자가 받아들이거나 무시할 수 있습니다. 처음엔 휴리스틱(프롬프트 길이, 키워드, 현재 quota)으로 가다가, 데이터가 쌓이면 LLM 보조 분류기를 얹습니다.
+📋 **동시 병렬 스웜.** 같은 레포에 N개 에이전트가 동시 작업하되 git worktree로 격리 — `dispatch(..., isolation="worktree")`가 각 dispatch에 `~/.central-mcp/worktrees/<project>/<dispatch_id>` 아래 자기 체크아웃을 줍니다. central-mcp가 dispatch별 worktree를 추적하고 결과 안착을 돕습니다: 병합 순서, 충돌 표시 — 자동 병합이 아니라 보고 후 orchestrator/사람이 결정하는 쪽. 체인 다음 단계로 phasing; 충돌 UX가 어려운 부분입니다.
 
-📋 **예산 기반 fallback.** 지금은 quota 임계만 보고 다른 에이전트로 넘기는데, 토큰 예산도 같이 봐서 막히지 않게 합니다. Visibility의 예산 작업과 묶입니다.
-
-💭 **`auto_dispatch` opt-in.** classify + dispatch를 한 번에. `config.toml [routing].auto = true`로만 켜집니다. `suggest_dispatch` 추천 수락률이 70% 넘는다는 게 데이터로 보이면 그때.
-
-💭 **워크스페이스별 routing 오버라이드.** 워크스페이스마다 선호 에이전트가 다를 수 있으니 (`client-a`는 claude, `client-b`는 codex).
+💭 **역할 프리셋.** 자주 쓰는 체인(구현→리뷰→수정, 리서치→구현, 테스트 작성→통과까지 구현)을 `config.toml`의 이름 붙은 프리셋으로 — 표준 체인이 step 목록 수작업 대신 프리셋 이름 하나로.
 
 ---
 
-## Upstream agents
+## Surfaces
 
-오케스트레이터를 외부 호출자에게 엽니다 — 개인용 자율 에이전트(스케줄 데몬, persistent self-referential 루프, 챗 / 브라우저 브릿지)가 사용자가 REPL 앞에 없어도 central-mcp에 작업을 위임할 수 있도록.
+PM의 보고 채널: TUI 관제탑, 감독 세션용 라이브 PTY 페인, 외부 멀티플렉서의 watch 페인.
 
-지금은 오케스트레이터가 `cmcp run`으로 띄우는 인터랙티브 REPL로만 존재합니다. upstream MCP 클라이언트가 `dispatch`를 직접 부를 수는 있지만, 그러면 오케스트레이터의 routing / fallback / localization / 충돌 감지 레이어를 우회 — central-mcp가 더하는 가치를 잃습니다. 이 갭을 메우려면 오케스트레이터에 비대화 진입 채널이 필요합니다.
+### 관제탑 (TUI)
 
-✅ **Hermes Agent (Nous Research) 통합 (0.12.2).** Hermes는 OpenClaw 후계 — 멀티플랫폼 delivery (Telegram / Discord / Slack), 내장 cron, skill curation, 양방향 MCP를 갖춘 self-improving agentOS. 신규 `_Hermes` 어댑터가 `hermes -z PROMPT`을 dispatch용으로 감싸고 (`--continue` / `--resume <id>` / bypass용 `--yolo --accept-hooks`), `cmcp install hermes`이 `~/.hermes/config.yaml`의 `mcp_servers.central`에 central-mcp를 등록해서 Hermes의 LLM이 `dispatch` / `list_projects` / `check_dispatch`를 자기 도구로 봅니다. `cmcp run --agent hermes`로 Hermes를 오케스트레이터로 띄우거나 `add_project --agent hermes`로 dispatch 대상으로 등록 — 프로젝트별 선택. Hermes의 gateway 층은 dispatch 완료를 비-CLI 표면에 surface하기 자연스러운 곳이고 (장시간 dispatch 끝났을 때 Telegram alert), cron으로 daily / weekly central-mcp 요약을 봇 인프라 없이 chat 플랫폼에 보낼 수 있습니다.
+새 본질 아래 TUI의 역할: **항상 켜져 있는 관제탑** — 포트폴리오 전체가 한눈에 보이고 dispatch 완료가 즉시 surface되는 표면입니다(watcher가 `dispatches.db`를 직접 폴링하므로 MCP 클라이언트 협조가 필요 없습니다).
 
-📋 **`dispatch_orchestrator(prompt, agent=None, workspace=None)` MCP 도구.** 비대화 오케스트레이터 서브프로세스(claude `-p`, codex `exec`, gemini `-p`, opencode 동등 옵션)를 띄우고, central-mcp MCP 도구를 로드하고, 프롬프트를 전달한 뒤 `dispatch_id`를 즉시 반환 — 호출자는 `check_dispatch`로 최종 stdout을 폴링. `_launch_dispatch` 배관을 그대로 재활용.
+✅ **Phase 0 (0.12.0) — `cmcp tui --experimental`, claude 단독.** `textual` chrome (header / sidebar / footer / 알림), `pyte` PTY emulation, 사이드바에 `token_usage.summary_markdown` + 활성 dispatch + 최근 완료.
 
-📋 **`cmcp ask "<prompt>"` CLI.** MCP를 안 쓰는 upstream 에이전트용 동기 셸 래퍼. 에이전트 resolution은 `cmcp run`과 동일.
+✅ **Phase B (0.12.2) — codex.** 같은 chrome, 두 번째 에이전트가 allowlist에 합류.
 
-💭 **에이전트별 비대화 모드 MCP 로딩 검증.** claude `-p` / codex `exec`는 확정 경로, gemini `-p` / opencode는 짧은 스파이크 필요. phasing은 TUI 트랙과 동일 — claude 먼저, 나머지 후속.
+✅ **Phase C (0.14.0) — opencode + gemini.** 4개 orchestrator 전부 임베딩 가능. Phase 0의 CSI leak 필터가 새 에이전트들의 출력까지 이미 커버.
 
-💭 **Persistent 오케스트레이터 세션.** 매 ask마다 서브프로세스를 띄우는 대신 long-lived 오케스트레이터를 재사용. 사용 데이터가 spawn 비용이 LLM 지연 대비 무시할 수 없다는 걸 보여줄 때만 정당화.
+📋 **Phase D — 안정화.** 자체 scrollback / search / copy. 한국어 IME와 더블폭 문자 corner case. 알림 정책 미세 조정 (`config.toml [tui].auto_inject = passive | hint | prompt`). 1.0 게이트에 들어가는 항목.
 
-💭 **오케스트레이터 A2A 엔드포인트.** A2A가 Linux Foundation 아래에서 150+ 기관의 지지를 받으며 1.0에 도달 — 에이전트 간 위임의 공용어가 되어가고 있고, MCP와는 보완 관계입니다(에이전트 사이는 A2A, 에이전트와 도구 사이는 MCP). `dispatch_orchestrator`를 얇은 A2A 서버 뒤에 노출하면 A2A를 말하는 어떤 에이전트든(엔터프라이즈 프레임워크, 클라우드 에이전트, 남의 데몬) MCP나 우리 CLI를 몰라도 포트폴리오 작업을 central-mcp에 위임할 수 있습니다. `dispatch_orchestrator`가 먼저 출시되고 구체적인 upstream 소비자가 나타나야 착수 — 호출자가 없는데 엔드포인트부터 만들지는 않습니다.
+📋 **포트폴리오 사이드바.** 사이드바를 dispatch 중심에서 PM 중심으로 진화: dispatch 피드만이 아니라 `project_pulse` 기반 프로젝트별 상태 라인(브랜치, 마지막 활동, 장부의 다음 할 일 힌트).
 
-💭 **클라우드 에이전트를 dispatch 타깃으로.** 2026년 스택은 작업을 로컬 CLI와 비동기 클라우드 에이전트(Codex cloud task, Claude Code cloud 세션)로 나눕니다. 지금 dispatch는 항상 "프로젝트 cwd의 로컬 subprocess"인데, `target: cloud` 변형이 프롬프트를 에이전트의 클라우드 백엔드에 넘기고 PID 대신 API를 폴링하게 할 수 있습니다. `dispatch_id` / `check_dispatch` 계약은 동일, executor만 다름. 벤더별 API가 안정화된 후에 — 표면이 아직 출렁입니다.
+📋 **Expanded dispatch row.** 선택된 row가 펼쳐져서 마지막 N줄 라이브 tail, elapsed, 토큰 델타, "마지막 output Xs 전" 헬스 힌트. [Dispatch 코어](#dispatch-core-routing) 트랙의 `tail_dispatch` + progress 컬럼 위에 얹힘.
 
----
+📋 **`token_usage.summary_markdown`을 `cmcp monitor`와 `cmcp watch`에서도 재사용.** 사전 렌더링된 HUD가 지금은 orchestrator에서만 보입니다. curses monitor와 watch 페인 sticky 헤더에 끼우면 표면 간 렌더링 드리프트가 사라집니다.
 
-## Workspaces
+💭 **Dispatch 상세 화면.** row에서 Enter로 전체 화면 진입: prompt / output / chain / tokens / duration / progress-marker 타임라인.
 
-per-process 워크스페이스 스코프(`CMCP_WORKSPACE`)는 0.11.0에서 출시했습니다. 다음은 세션 단위 가시성과 shared context.
+💭 **휴리스틱 progress markers.** 출력 스트림에서 의미 있는 이벤트(파일 쓰기, 도구 호출, 테스트 실행)를 추출해 dispatch별 배지 stripe로. 패턴은 에이전트별이라 `agents.AGENTS`의 `progress_markers`에 삽니다.
 
-📋 **영속 세션 ID.** `cmcp run` 인스턴스마다 `id`, `workspace`, `started_at`, `last_seen_at`, `pid`, `terminal_kind`을 추적하는 새 `sessions` 테이블. 새 `cmcp sessions ls` 명령의 backend가 되고, 각 `dispatch_id`를 시작한 세션과 링크합니다. 워크스페이스 3개 이상을 동시에 굴릴 때 어느 터미널이 어느 dispatch를 띄웠는지 구별이 필요해지면 유용합니다.
+💭 **Watch 모드에 누적 사용량.** `+ 42s` 대신 `+ 42s · 8.97M tokens`.
 
-📋 **세션별 history.** `orchestration_history(session=<id>)`로 그 세션이 시작한 dispatch만 보기. opt-in, 디폴트 off — 대부분은 워크스페이스 단위 격리만 있어도 충분합니다.
+💭 **Open questions.** TUI 내부 멀티 페인 vs 외부 멀티플렉서와의 조합; prompt injection을 얼마나 투명하게 할지(`hint` vs `prompt` 모드).
 
-💭 **워크스페이스별 `CLAUDE.md` / `AGENTS.md` overlay.** `~/.central-mcp/workspaces/<name>/AGENTS.md`가 그 워크스페이스로 launch 시 base orchestrator 가이드에 추가됩니다. 클라이언트마다 작업 합의가 다를 때 유용합니다.
+### Live agent panes
 
-💭 **워크스페이스별 user 프롬프트.** 그 워크스페이스 안의 모든 dispatch에 적용되는 워크스페이스 전용 `user.md` overlay.
+opt-in, 세션 단위의 두 번째 실행 모드로, 기본 비대화 dispatch의 보완재입니다. PTY 모드는 에이전트를 실제 TTY pair 안에서 돌립니다: 권한 프롬프트가 사용자가 답할 수 있는 라이브 페인에 뜨고, 대화 컨텍스트가 턴 사이에 유지되고, prompt cache가 warm하게 유지됩니다. 트레이드오프는 활성 프로젝트당 상주 프로세스 1개 — 포트폴리오 전체가 아니라 지금 실제로 감독 중인 2~3개 프로젝트용입니다. 두 모드는 같은 데이터 모델(`dispatches.db` + `dispatch.jsonl`, `mode="pty"` 마커)을 공유하므로 모든 관찰 표면이 수정 없이 양쪽을 보여줍니다.
 
----
+✅ **Building blocks + 세션 registry (0.12.2).** `PtyTerminal`이 dispatch event writer 겸업(`submit_prompt`가 start/complete 기록, 화면 안정성 watcher가 상태 전환). `pty_sessions/<project>.json` 라이프사이클 + stale-PID 청소, 그리고 `dispatch()`가 라이브 PTY 페인이 있는 프로젝트 호출을 거부해서 백그라운드 fan-out이 대화 중간에 prompt를 끼워넣지 못합니다.
 
-## Ecosystem alignment
+📋 **PTY 모드 output capture.** `pyte.HistoryScreen` scrollback을 완료 시점에 `dispatches.output`으로 스냅샷 — 0.12.2에 명시한 갭 해소. `check_dispatch`가 실행 모드 무관하게 같은 shape을 반환하게 됩니다.
 
-MCP 스펙이 출시 이후 최대 개편을 지나고 있습니다 — **2026-07-28 릴리즈**가 프로토콜 코어를 stateless로 만들고(`initialize` 핸드셰이크·세션 헤더 제거, capability는 매 요청 `_meta`에), 장기 실행 작업을 공식 **Tasks 확장**으로 승격합니다: 서버가 `tools/call`에 task handle로 답하고, 클라이언트가 `tasks/get` / `tasks/update` / `tasks/cancel`로 구동하는 구조.
+📋 **`pty_inbox` 큐 + `pty_submit(project, prompt)` MCP 도구.** 작은 SQLite inbox를 통한 프로세스 경계 넘는 prompt 라우팅; TUI의 PtyTerminal이 자기 프로젝트 행만 폴링해 `submit_prompt()`로 라우팅.
 
-이 라이프사이클은 central-mcp가 첫날부터 출하한 `dispatch` → `check_dispatch` → `cancel_dispatch` 패턴과 *정확히* 같습니다 — 프로토콜이 방금 표준화한 설계에 우리가 독자적으로 수렴해 있었던 셈입니다. 정렬 비용은 낮고, 네이티브 클라이언트 지원이 따라옵니다.
+📋 **`list_projects`에 mode 노출.** 각 row가 `mode: "pty" | "mcp"`를 캐리해 orchestrator가 `pty_submit` vs `dispatch`를 한눈에 선택, `data/CLAUDE.md`에 대응 정책 한 줄.
 
-v2 베타를 기다릴 필요도 없었습니다: 설치된 스택(fastmcp 3.x / mcp 1.x)이 2025-11-25 스펙의 experimental Tasks 프로토콜 타입을 이미 싣고 있어서, Phase 1–2를 그 위에 바로 출하했습니다. Phasing:
+💭 **tmux / zellij / cmux 레이아웃의 옵션 PTY 페인.** `--mode=pty` 플래그나 프로젝트별 오버라이드로 페인을 passive `watch` tail 대신 프로젝트의 에이전트 CLI로 채움.
 
-✅ **Phase 1 — task 모델 기반 작업, SDK 의존성 없음.** 출하 완료: dispatch 상태 어휘를 Tasks 라이프사이클(`working` / `input_required` / `completed` / `failed` / `cancelled`)에 매핑하고 dispatch entry를 스펙 형태의 task 객체로 렌더링하는 `tasks_adapter` 모듈. deprecated 3종(Roots / Sampling / Logging — 12개월 유예) 의존성 감사는 깨끗. 노트는 [architecture/mcp-2026-spec-prep](architecture/mcp-2026-spec-prep.md).
+💭 **Persistent REPL 대화 컨텍스트.** long-lived REPL이면 dispatch 간 컨텍스트가 공짜로 유지됩니다. 컨텍스트 비대에 대비한 "/clear" 훅 또는 세션 회전 정책 필요.
 
-✅ **Phase 2 — Tasks wire, 플래그 뒤에.** 출하 완료: `CENTRAL_MCP_TASKS=1`이면 서버가 같은 `dispatches.db` 상태를 백엔드로 `tasks/get` / `tasks/cancel` / `tasks/result` 핸들러를 등록 — taskId가 곧 dispatch_id. `check_dispatch` / `cancel_dispatch`는 무기한 유지; 확장은 같은 상태 위의 추가 wire shape이지 대체가 아닙니다. `tasks/list`는 의도적으로 미제공(2026-07-28 릴리즈에서 제거). 플래그 off 기본값은 이전과 바이트 단위로 동일.
-
-📋 **Phase 3 (stable v2 출시 시) — shape 마이그레이션 + 기본값 전환.** fastmcp / 공식 SDK가 최종 확장 모델을 출시하면: Phase-2 핸들러를 experimental core-protocol shape에서 공식 Tasks 확장으로 마이그레이션(capability 광고, `tools/call`의 task handle 반환), 플래그 제거, 기계적 stateless-core conformance 스윕. central-mcp는 설계상 이미 요청 간 stateless(load-bearing 불변식)라 아키텍처 작업은 없을 전망입니다.
-
-💭 **Agent-teams 보완 노트.** Claude Code의 네이티브 agent teams(experimental)는 *한 레포, 한 벤더 안에서* 팀원을 병렬화합니다. 둘은 경쟁이 아니라 조합입니다: team lead 세션이 central-mcp MCP 도구를 들고 팀 세션 중간에 크로스 프로젝트 작업을 dispatch할 수 있습니다. agent teams가 experimental을 졸업하면 `data/CLAUDE.md`에 짧은 레시피로 — cmux 레시피와 같은 패턴, 코드가 아니라 문서.
+💭 **권한 프롬프트 가시성.** 사람이 페인을 보고 있으면 에이전트가 bypass 모드 *없이* 돌 수 있습니다: 프로젝트별 `[live].permissions = ask | bypass`, PTY 모드가 비로소 가능하게 만든 진짜 더 안전한 선택지가 `ask`입니다.
 
 ---
 
-## Distribution
+## Dispatch core & routing
 
-📋 **CLI / MCP 도구 레퍼런스 자동 생성.** 지금은 [CLI](cli.md), [MCP 도구](mcp-tools.md) 페이지가 손으로 큐레이션 중입니다. `scripts/gen_docs.py`가 `argparse._SubParsersAction`을 walk하고 `server.py`에 `inspect.signature`를 돌려서 페이지를 만들면, CI 가드가 소스와 drift 발생 시 빌드를 실패시킵니다.
+PM의 손: dispatch 파이프라인 자체와, 일을 어디로 보낼지에 대한 지능. 프런티어 CLI들의 순수 능력이 수렴했으므로, 흥미로운 라우팅 신호는 비용·쿼터 여유·작업 형태·프로젝트 적합도 — central-mcp가 이미 추적하는 상태들입니다.
 
-💭 **Windows 인스톨러 (PowerShell).** 지금 `install.sh`는 macOS / Linux만 커버합니다. 평행선으로 PowerShell 버전이 있으면 Windows 진입이 풀립니다.
+📋 **`tail_dispatch(dispatch_id, since_ts=null)` MCP 도구.** 완료를 기다리지 않고 시각 기준 최근 출력 청크 반환 — 지금은 subprocess가 끝나야 `output`이 채워져서 `dispatch.jsonl`을 직접 파싱하지 않으면 진행 중 출력을 보여줄 수 없습니다.
+
+📋 **`dispatches` 테이블 progress 컬럼.** `last_output_ts`, `output_bytes`, `attempt_count` — 청크마다 싼 쓰기; 읽기는 모든 표면의 "살아있나 멈췄나" 표시기를 구동.
+
+📋 **토큰 예산 + 알림.** `config.toml`의 프로젝트/워크스페이스별 캡; 임계 도달 시 dispatch 시작 시점에 배너.
+
+📋 **`suggest_dispatch(project, prompt)` MCP 도구.** dispatch 없이 `{agent, model, reasoning, fallback}` 반환 — orchestrator가 추천을 보여주고 사용자가 수락하거나 무시. 휴리스틱 먼저; LLM 보조 분류기는 값어치가 증명되면.
+
+📋 **예산 인지 fallback 체인.** quota 인지 체인(저장된 선호 → fallback → 남은 설치본)이 설정된 토큰 예산을 초과한 에이전트도 건너뜁니다.
+
+📋 **영속 세션 ID.** `cmcp run` 인스턴스별 `sessions` 테이블(`id`, `workspace`, `started_at`, `pid`, `terminal_kind`) — `cmcp sessions ls`의 backend가 되고 각 dispatch를 시작한 세션과 링크. 워크스페이스 3개를 동시에 굴릴 때 유용.
+
+📋 **세션별 history.** `orchestration_history(session=<id>)`로 그 세션의 dispatch만 필터.
+
+💭 **`wait_for_dispatch(dispatch_id, timeout_sec=300)` MCP 도구.** 지속 폴링에 약한 클라이언트용 서버 사이드 blocking 폴링. MCP Tasks 정렬이 먼저 끝나면 Tasks를 말하는 클라이언트는 네이티브로 얻고 이 도구는 shim으로 축소.
+
+💭 **`auto_dispatch` opt-in.** `[routing].auto = true` 뒤의 classify + dispatch 결합 — `suggest_dispatch` 수락률 70% 초과가 데이터로 보인 뒤에만.
+
+💭 **워크스페이스별 routing 오버라이드.** 워크스페이스마다 다른 선호 에이전트(워크스페이스 `client-a`는 이 벤더, `client-b`는 저 벤더).
+
+💭 **에이전트 capability registry override.** `config.toml`의 `[agents.<name>]` 블록으로 호스트별 capability 플래그 오버라이드(예: OAuth 흐름이 깨진 환경에서 `has_quota_api = false`).
 
 ---
 
-## Architecture
+## Ecosystem & distribution
 
-천천히 결정할 변경들. 사용 데이터가 복잡성을 정당화할 때만 실제로 손댑니다.
+바깥을 향한 얼굴들: 프로토콜 정렬, PM을 프로그램적으로 쓰려는 upstream 호출자, 패키징.
 
-💭 **MCP push notifications.** 완료된 dispatch에 대한 server-initiated `notifications/resources/updated` 이벤트. 2026-07-28 스펙 방향은 이게 실현되지 *않는* 쪽을 가리킵니다: 프로토콜 코어가 stateless·poll-first로 갔고(Tasks 확장이 push 스타일 결과를 `tasks/get` 폴링으로 의도적으로 대체), 클라이언트의 server-initiated 알림 지원은 늘기보다 줄어들 가능성이 큽니다. `cmcp tui`(직접 db 폴링)가 권장 알림 경로로 유지되고, MCP 호출자에게는 [Tasks 매핑](#ecosystem-alignment)이 표준 트랙의 답입니다. 어떤 클라이언트가 알림 surface를 1급으로 출시할 경우를 대비해 아이디어로만 유지.
+### MCP Tasks alignment
 
-💭 **에이전트 capability registry override.** 지금은 `agents.AGENTS`가 단일 진실의 원천. `config.toml`의 `[agents.<name>]` 블록으로 호스트별 capability 오버라이드를 허용합니다 (예: 일부 환경에서 OAuth 흐름이 깨진 codex의 `has_quota_api = false` 처리).
+MCP 2026-07-28 릴리즈가 프로토콜 코어를 stateless로 만들고 장기 실행 작업을 공식 **Tasks 확장**으로 승격합니다 — central-mcp가 첫날부터 출하한 `dispatch` → `check_dispatch` → `cancel_dispatch` 라이프사이클과 정확히 같습니다. 정렬 비용은 낮고 네이티브 클라이언트 지원이 따라옵니다.
+
+✅ **Phase 1 — task 모델 기반 작업 (0.13.0).** dispatch 상태를 Tasks 라이프사이클에 매핑하는 `tasks_adapter`; deprecated 3종(Roots / Sampling / Logging) 감사는 깨끗.
+
+✅ **Phase 2 — 플래그 뒤의 Tasks wire (0.13.0).** `CENTRAL_MCP_TASKS=1`이 같은 dispatch 상태를 백엔드로 `tasks/get` / `tasks/cancel` / `tasks/result`를 등록 — taskId가 곧 dispatch_id. 플래그 off 기본값은 바이트 단위 동일.
+
+📋 **Phase 3 — shape 마이그레이션 + 기본값 전환.** 공식 SDK가 최종 확장 모델을 출시하면: capability 광고, `tools/call`의 task handle 반환, 플래그 제거, 기계적 stateless-core conformance 스윕(central-mcp는 설계상 이미 요청 간 stateless).
+
+### Upstream agents
+
+오케스트레이터를 프로그램적 호출자에게 엽니다 — 사람이 REPL 앞에 없어도 포트폴리오 작업을 위임하고 싶은 개인용 자율 에이전트들. `dispatch`를 직접 부르면 오케스트레이터의 routing / fallback / 충돌 감지 레이어를 우회합니다; 아래 항목들은 upstream 호출자에게 온전한 오케스트레이터를 줍니다.
+
+✅ **Hermes Agent 브릿지 (0.12.2–0.14.0).** `_Hermes` 어댑터(dispatch 대상 *겸* orchestrator), Hermes 설정에 central-mcp를 등록하는 `cmcp install hermes` + 번들 orchestration skill, quota HUD의 Hermes 사용량. Hermes의 cron + Telegram/Discord gateway가 [Portfolio PM 푸시 보고](#portfolio-pm) 항목의 배달 레일입니다.
+
+📋 **`dispatch_orchestrator(prompt, agent=None, workspace=None)` MCP 도구.** central-mcp 도구를 로드한 fresh 비대화 orchestrator(claude `-p`, codex `exec`, …)를 띄우고 `dispatch`와 같은 의미의 `dispatch_id` 반환.
+
+📋 **`cmcp ask "<prompt>"` CLI.** MCP를 안 쓰는 upstream 에이전트용 `dispatch_orchestrator` 동기 셸 래퍼.
+
+💭 **에이전트별 비대화 MCP 로딩 검증.** claude `-p` / codex `exec`는 확정; gemini `-p`와 opencode는 스파이크 필요.
+
+💭 **Persistent orchestrator 세션.** 여러 upstream 호출에 걸친 long-lived orchestrator 1개 — spawn 비용이 무시 못 할 수준으로 증명되면.
+
+💭 **A2A 엔드포인트.** `dispatch_orchestrator` 위의 얇은 A2A 서버로 A2A를 말하는 어떤 에이전트든 MCP나 우리 CLI를 몰라도 포트폴리오 작업을 위임 가능. `dispatch_orchestrator` 출시와 구체적 upstream 소비자의 존재가 선행 조건.
+
+💭 **클라우드 에이전트를 dispatch 타깃으로.** 프롬프트를 벤더의 클라우드 백엔드에 넘기고 PID 대신 API를 폴링하는 `target: cloud` 변형 — 같은 `dispatch_id` / `check_dispatch` 계약, 다른 executor. 벤더별 API 안정화가 먼저.
+
+💭 **Agent-teams 보완 노트.** team lead 세션이 central-mcp 도구를 들고 팀 세션 중간에 크로스 프로젝트 작업을 dispatch할 수 있습니다; 벤더 agent teams가 experimental을 졸업하면 `data/CLAUDE.md`에 짧은 레시피로.
+
+💭 **MCP push notifications.** 2026-07-28 스펙 방향이 반대를 가리킵니다(stateless, poll-first 코어); 어떤 클라이언트가 알림 surface를 1급으로 출시할 경우에 대비한 아이디어로만 유지. TUI watcher와 Tasks 폴링이 답으로 유지됩니다.
+
+### Distribution
+
+📋 **CLI / MCP 도구 레퍼런스 자동 생성.** `scripts/gen_docs.py`가 argparse + `server.py`의 `inspect.signature`를 walk; drift 시 CI 실패.
+
+💭 **Windows 인스톨러 (PowerShell).** 순수 Python 코어는 이미 돌아갑니다; 마찰은 설치 + alias 셋업.
 
 ---
 
 ## 안 할 것들
 
-이건 의도적으로 "안 합니다" — 사용자 시간 + 우리 시간 양쪽을 아끼는 결정입니다.
+의도적인 "안 합니다" — 모두의 시간을 아끼는 결정입니다:
 
-- **브라우저 UI.** central-mcp는 터미널 네이티브. 관찰은 tmux/zellij 페인이나 로그 tail로.
-- **에이전트 상태 동기화.** 각 에이전트 CLI가 자기 대화 상태를 갖습니다. central-mcp는 dispatch를 orchestrate, 라이프사이클을 관찰, 토큰 사용량을 집계 — 세션 history를 복제하지는 않습니다.
-- **`dispatch()`에 인터랙티브 승인을 베이크인.** 기본 dispatch는 non-interactive 유지 — `stdin=DEVNULL`, bypass 모드, 사람이 루프에 없음. 중간 승인은 [Live agent panes](#live-agent-panes) 트랙으로, 세션 단위 opt-in (PTY 패널). 두 경로는 데이터와 registry를 공유하고, 정책 선택은 글로벌이 아니라 프로젝트 단위.
-- **레포 내부 agent teams / swarm.** 한 레포 안에서 에이전트 여럿을 병렬화하는 건 벤더들의 홈그라운드입니다(Claude Code agent teams, Codex 멀티 에이전트, 그리고 붐비는 커뮤니티 오케스트레이터들). central-mcp는 한 단계 위에 머뭅니다: 프로젝트당 dispatch 하나, 프로젝트와 벤더를 가로질러. 한 레포에 에이전트 5개가 필요하면 central-mcp가 dispatch한 프로젝트 안에서 벤더의 team 기능을 돌리세요.
-- **별도 daemon 프로세스.** `cmcp tui`가 long-running watcher 역할을 합니다 — asyncio task가 LLM 턴과 무관하게 `dispatches.db`를 tail하고 완료를 바로 surface합니다. 추가로 설치·관리·디버깅할 두 번째 프로세스 없음.
+- **브라우저 UI.** central-mcp는 터미널 네이티브. 관찰은 TUI, 멀티플렉서 페인, 로그 tail로.
+- **에이전트 상태 동기화.** 각 에이전트 CLI가 자기 대화 상태를 소유합니다. pulse는 브리핑을 위해 세션 활동과 git 이력을 *읽을* 뿐 — 에이전트 세션을 복제하거나 변경하지 않습니다.
+- **`dispatch()`에 인터랙티브 승인 베이크인.** 기본 dispatch는 비대화 유지(`stdin=DEVNULL`, bypass 모드). 중간 승인은 [Live agent panes](#live-agent-panes) 트랙에서 세션 단위 opt-in.
+- **단일 벤더 레포 내부 팀.** *(2026-07 개정 — 이전에는 레포 내부 멀티에이전트 작업 전체가 금지 대상이었습니다.)* 한 벤더의 자체 팀 기능으로 한 레포를 병렬화하는 건 여전히 벤더 몫입니다; 한 벤더의 팀원 5명이 필요하면 dispatch된 세션 안에서 그 벤더의 팀 기능을 돌리세요. 범위 안으로 들어온 것은 **크로스 벤더** 버전 — 벤더를 섞는 역할 체인과 worktree 스웜 — 으로, 이제 [멀티에이전트 협업](#multi-agent-collaboration) 트랙입니다.
+- **별도 daemon 프로세스.** `cmcp tui`가 long-running watcher이고, 터미널 밖 스케줄링은 Hermes cron이 커버합니다. 추가로 설치·관리·디버깅할 두 번째 프로세스 없음.
 
 ---
 

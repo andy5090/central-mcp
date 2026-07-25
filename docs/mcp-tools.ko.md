@@ -100,4 +100,4 @@ dispatch 상태 폴링: `running` / `complete` / `error` / `cancelled`. 완료�
 - `tasks/result` — 종료 후 최종 출력 반환, 실행 중에는 에러
 - `tasks/list` — 의도적으로 미제공 (2026-07-28 MCP 릴리즈에서 제거되는 메서드; `list_dispatches`로 충분)
 
-`check_dispatch` / `cancel_dispatch`는 어느 쪽이든 그대로입니다 — 확장은 같은 상태 위의 추가 wire shape이지 대체가 아닙니다. 플래그를 끄면(기본값) 서버는 이전과 완전히 동일합니다. 방향성은 [로드맵의 Ecosystem alignment 트랙](ROADMAP.md#ecosystem-alignment) 참고.
+`check_dispatch` / `cancel_dispatch`는 어느 쪽이든 그대로입니다 — 확장은 같은 상태 위의 추가 wire shape이지 대체가 아닙니다. 플래그를 끄면(기본값) 서버는 이전과 완전히 동일합니다. 방향성은 [로드맵의 MCP Tasks alignment 섹션](ROADMAP.md#mcp-tasks-alignment) 참고.

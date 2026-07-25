@@ -100,4 +100,4 @@ Set `CENTRAL_MCP_TASKS=1` in the server's environment and central-mcp additional
 - `tasks/result` returns the final output once terminal, and an error while still running.
 - `tasks/list` is deliberately not served — the 2026-07-28 MCP release removes it; `list_dispatches` covers the need.
 
-`check_dispatch` / `cancel_dispatch` are unchanged either way — the extension is an additional wire shape over the same state, not a replacement. Flag off (the default) leaves the server byte-identical to before. See the [roadmap's Ecosystem alignment track](ROADMAP.md#ecosystem-alignment) for where this is headed.
+`check_dispatch` / `cancel_dispatch` are unchanged either way — the extension is an additional wire shape over the same state, not a replacement. Flag off (the default) leaves the server byte-identical to before. See the [roadmap's MCP Tasks alignment section](ROADMAP.md#mcp-tasks-alignment) for where this is headed.

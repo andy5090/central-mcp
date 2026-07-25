@@ -1,7 +1,7 @@
 # MCP 2026-07-28 spec preparation
 
-Working notes for the [Ecosystem alignment](../ROADMAP.md#ecosystem-alignment)
-roadmap track. The 2026-07-28 MCP release makes the protocol core
+Working notes for the [MCP Tasks alignment](../ROADMAP.md#mcp-tasks-alignment)
+roadmap section. The 2026-07-28 MCP release makes the protocol core
 stateless and moves long-running work to an official **Tasks
 extension** — the same `handle → poll → cancel` lifecycle central-mcp's
 `dispatch` / `check_dispatch` / `cancel_dispatch` tools have used since
