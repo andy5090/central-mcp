@@ -26,7 +26,7 @@ import json
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Collection
 
 from central_mcp import paths
 
@@ -204,12 +204,31 @@ def read_archive_summary(archive_path: Path) -> dict[str, Any] | None:
         return None
 
 
-def read_jsonl(path: Path) -> list[dict[str, Any]]:
+def read_jsonl(
+    path: Path,
+    *,
+    only_events: Collection[str] | None = None,
+) -> list[dict[str, Any]]:
     """Read a jsonl file written by this module into a list of records.
 
     Skips unparseable lines rather than failing — a partially written
     final line is normal for a log that is appended to concurrently.
     Returns [] for a missing or unreadable file.
+
+    `only_events` keeps just the records whose `event` is in the given
+    set. Beyond filtering, it skips the JSON parse entirely for lines
+    that cannot match, via a substring test against the exact
+    serialization `log_event` emits. That matters because a project's
+    dispatch log is dominated by per-line `output` chunks and grows
+    without bound (these files reach tens of MB in a working install),
+    while every reader here wants only the handful of lifecycle
+    records. The test lives in this module deliberately: it depends on
+    the writer's format, so both sides stay in one file.
+
+    The pre-filter can only produce false positives — a prompt
+    containing the literal marker text — and those are dropped by the
+    exact check after parsing. A genuine record can never be missed,
+    because `json.dumps` always emits the marker verbatim.
     """
     try:
         if not path.exists():
@@ -217,17 +236,30 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
         raw = path.read_text(errors="replace")
     except OSError:
         return []
+
+    markers = (
+        tuple(f'"event": "{e}"' for e in only_events)
+        if only_events is not None
+        else ()
+    )
+    wanted = frozenset(only_events) if only_events is not None else None
+
     out: list[dict[str, Any]] = []
     for line in raw.splitlines():
         line = line.strip()
         if not line:
             continue
+        if markers and not any(m in line for m in markers):
+            continue
         try:
             record = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if isinstance(record, dict):
-            out.append(record)
+        if not isinstance(record, dict):
+            continue
+        if wanted is not None and record.get("event") not in wanted:
+            continue
+        out.append(record)
     return out
 
 

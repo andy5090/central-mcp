@@ -8,7 +8,7 @@ central-mcp의 앞으로 계획만 모았습니다. 이미 출시된 변경은 [
 
 > **제안하실 게 있으신가요?** [GitHub 이슈](https://github.com/andy5090/central-mcp/issues)로 던져주세요. 모든 이슈 읽고 있습니다.
 
-표기: 📋 계획 · 💭 아이디어 · 🚧 진행 중
+표기: 📋 계획 · 💭 아이디어 · 🚧 진행 중 · ✅ 출시 · ❌ 철회(판단 근거를 기록으로 남기기 위해 유지)
 
 ## 본질 — 디스패치 허브가 아니라 포트폴리오 PM
 
@@ -49,7 +49,9 @@ central-mcp의 일은 그 PM이 되는 것입니다. 등록된 모든 프로젝�
 
 ✅ **`project_pulse(project)` MCP 도구 + `cmcp pulse [project]` (0.15.0).** 프로젝트에 대해 *지금* 알 수 있는 모든 것의 stateless 즉석 집계: git(브랜치, 최근 커밋, 워킹 트리 변경, upstream 대비 ahead/behind), dispatch(진행 중·stale·최근 결과·카운트), 기존 에이전트별 session reader를 통한 세션 활동, `gh` 경유 열린 PR 상태. 새 저장소 없음 — pulse는 매 호출마다 새로 계산되므로, central-mcp를 전혀 거치지 않은 작업(직접 커밋, 인터랙티브 세션)도 git이 진실의 원천이기 때문에 잡힙니다. 각 섹션이 `reason`과 함께 독립적으로 degrade하므로 신호 하나가 빠져도 pulse 전체가 무너지지 않습니다. 다른 모든 PM 기능이 딛고 서는 데이터 척추입니다.
 
-📋 **복귀 브리핑.** PM의 대표 순간: 며칠 만에 프로젝트로 돌아오면 "무슨 일이 있었고 / 지금 어디고 / 다음이 뭔지"를 한 번에 받습니다. `cmcp brief`가 registry 나열에서 pulse 기반 포트폴리오 다이제스트로 승격되고, `data/{CLAUDE,AGENTS}.md`의 레시피가 orchestrator에게 사용자가 프로젝트로 컨텍스트 스위칭할 때마다 `project_pulse`로 내러티브 브리핑을 합성하도록 가르칩니다.
+✅ **복귀 브리핑 (0.15.0).** PM의 대표 순간: 며칠 만에 프로젝트로 돌아오면 "무슨 일이 있었고 / 지금 어디고 / 다음이 뭔지"를 한 번에 받습니다. 전달 경로 두 개가 모두 출시됐습니다 — 사용자가 프로젝트를 지목하면 orchestrator가 `project_pulse`로 브리핑을 합성하고(`data/{CLAUDE,AGENTS}.md`의 레시피), 인자 없는 `cmcp pulse`가 워크스페이스 전체를 필요할 때 훑습니다.
+
+❌ **철회: `cmcp brief`의 pulse 기반 다이제스트화.** 원래 여기 계획돼 있었으나 측정 후 철회했습니다. `brief`는 55ms(YAML 한 번 읽기), 전체 pulse 스윕은 2.5초에 git 프로세스 수십 개입니다. SessionStart 훅이 orchestrator를 띄울 **때마다** `brief`를 실행하므로 시작 비용이 45배가 됩니다 — 게다가 대부분 버려지는 계산입니다. 세션을 여는 건 17개가 아니라 한두 개 프로젝트를 만지기 위해서니까요. 올바른 분리는 **세션 시작은 "무엇이 있는지"만 싸게 알리고, "어떤 상태인지"는 사용자가 프로젝트를 지목한 순간에 가져오는 것**입니다. 양쪽 모두 이제 존재하므로 `brief`는 registry 나열로 남습니다.
 
 📋 **상태 장부 (phase 2).** `~/.central-mcp/projects/<name>/STATUS.md` — 프로젝트별 영속 기억: dispatch 완료 시 덧붙는 구조화된 델타(뭘 했고 뭐가 남았는지), 열린 질문들, 그리고 세션과 orchestrator를 넘어 살아남는 "다음 할 일" 목록. `cmcp note <project> "…"`로 수동 항목 추가. 이후 브리핑은 장부(의도, 다음 할 일)와 pulse(ground truth)를 결합하고 둘 사이의 드리프트를 표시합니다. registry와 같은 평문 파일 — 요청 간 stateless 불변식은 유지됩니다.
 
@@ -75,9 +77,17 @@ central-mcp의 일은 그 PM이 되는 것입니다. 등록된 모든 프로젝�
 
 ## Surfaces
 
-PM의 보고 채널: TUI 관제탑, 감독 세션용 라이브 PTY 페인, 외부 멀티플렉서의 watch 페인.
+"관측(observation)"이라는 한 이름 아래 서로 다른 두 가지 일이 계속 묶여 있었고, 이 트랙은 이제 그 둘을 분리하는 것을 중심으로 재편됐습니다.
 
-### 관제탑 (TUI)
+**지도(map)** 는 *전체가 어디 있나?* 에 답합니다 — 포트폴리오 전체를 프로젝트당 한 줄로. `cmcp pulse`, TUI 사이드바, orchestrator의 브리핑이 지도입니다.
+
+**현미경(microscope)** 은 *지금 이거 하나가 뭘 하고 있나?* 에 답합니다 — 원본 그대로, 실시간, 요약 없이. `cmcp watch`, 펼쳐진 dispatch 행, 라이브 PTY 페인이 현미경입니다.
+
+더 좋은 지도가 생겨도 현미경은 없어지지 않습니다. 두 가지 이유가 있습니다. orchestrator에게 묻는 건 턴 하나, 토큰, 그리고 주의의 전환을 쓰지만 시야 가장자리의 페인은 공짜입니다 — 주변 인지는 요청/응답 루프와 다른 종류의 것입니다. 그리고 더 근본적으로, 서술된 pulse는 **LLM이 요약한 것**입니다. 에이전트가 "테스트 통과"라고 할 때 가끔은 진짜 테스트 출력을 봐야 합니다. 더 좋은 요약도 여전히 요약입니다. 이 격차는 빠진 기능이 아니라 범주의 차이이고, dispatch가 bypass 모드로 무인 실행되는 시스템에서는 덜이 아니라 더 중요해집니다.
+
+역사적으로 잘못된 건 **현미경을 지도 스케일에 적용한 것**이었습니다. `cmcp tmux`가 등록된 프로젝트마다 watch 페인을 깔았고, 그래서 큰 포트폴리오에서는 대부분의 페인이 죽어 있고 정작 읽을 가치가 있는 하나는 세 창 너머에 있었습니다. 지도 역할에 이제 제대로 된 주인이 생겼으니, 그리드는 다시 포커스 도구로 돌아갑니다.
+
+### 관제탑 (TUI) — 지도
 
 새 본질 아래 TUI의 역할: **항상 켜져 있는 관제탑** — 포트폴리오 전체가 한눈에 보이고 dispatch 완료가 즉시 surface되는 표면입니다(watcher가 `dispatches.db`를 직접 폴링하므로 MCP 클라이언트 협조가 필요 없습니다).
 
@@ -103,13 +113,25 @@ PM의 보고 채널: TUI 관제탑, 감독 세션용 라이브 PTY 페인, 외�
 
 💭 **Open questions.** TUI 내부 멀티 페인 vs 외부 멀티플렉서와의 조합; prompt injection을 얼마나 투명하게 할지(`hint` vs `prompt` 모드).
 
+### Focused panes — 현미경
+
+`cmcp watch <project>`는 프로젝트의 `dispatch.jsonl`을 tail하며 이벤트를 실시간 렌더링합니다. 역할을 이제 명시합니다: **지금 신경 쓰는 dispatch 하나를 향한 라이브 창**이지 포트폴리오 표면이 아닙니다. 요약되지 않은 원본이고, 곁눈질하는 데 비용이 들지 않습니다.
+
+✅ **관측 페인 기본값이 포커스로 (0.16.0).** `cmcp up` / `tmux` / `zellij`가 더 이상 등록된 전 프로젝트를 타일링하지 않습니다. 한 창에 다 들어가면 동작은 그대로고, 넘칠 때는 들어갈 수 있는 만큼 **가장 최근에 활동한** 프로젝트로 페인을 열고 빠진 것과 보는 방법을 함께 출력합니다. `--projects a,b,c`로 직접 고르고, `--all-projects`로 기존 전체 타일링을 복원합니다. 활동 랭킹은 pulse 신호를 재사용하므로(`pulse.rank_by_activity`), "최근"이 dispatch 기록만이 아니라 git 커밋을 포함한 진짜 작업을 뜻합니다.
+
+📋 **TUI 안의 라이브 출력.** 사이드바가 실행 중인 dispatch의 출력을 도착하는 대로 보여줄 수 있습니다. 데이터는 처음부터 거기 있었습니다. `dispatch()`의 reader 스레드가 이미 줄마다 `output` 이벤트를 실시간으로 `dispatch.jsonl`에 씁니다 — `watch`가 렌더링하는 게 바로 그것입니다 — 그런데 `DispatchWatcher`는 `dispatches.db`를 폴링하고, db의 `output` 컬럼은 프로세스 종료 시에만 채워집니다. 즉 TUI가 실행 중에 아무것도 못 보는 이유는 출력을 얻기 어려워서가 아니라 **엉뚱한 파일을 보고 있어서**입니다. 필요한 offset 기반 tail(잘림 처리 포함)은 `watch._tail_forever`에 이미 구현돼 있습니다.
+
+> 이걸 명시하는 이유는, 진짜로 어려운 문제와 계속 혼동돼 왔기 때문입니다. **PTY 모드 출력 캡처**(아래)는 애초에 청크 이벤트 스트림 자체가 없고, 원본 ANSI 화면에서 구조화된 청크를 복원하는 게 진짜 난점입니다. 둘은 무관한 문제입니다. MCP dispatch 쪽은 배선이고, PTY 쪽은 연구 과제입니다.
+
+📋 **공용 캡슐화로서의 `tail_dispatch`.** 표면마다 jsonl 파싱을 가르치는 대신, [Dispatch 코어](#dispatch-core-routing) 트랙의 `tail_dispatch` 도구가 orchestrator·TUI 사이드바·그 외 무엇이든 "이 dispatch가 T 이후로 뭘 내놨나?"를 묻는 단일한 방법을 제공합니다.
+
 ### Live agent panes
 
 opt-in, 세션 단위의 두 번째 실행 모드로, 기본 비대화 dispatch의 보완재입니다. PTY 모드는 에이전트를 실제 TTY pair 안에서 돌립니다: 권한 프롬프트가 사용자가 답할 수 있는 라이브 페인에 뜨고, 대화 컨텍스트가 턴 사이에 유지되고, prompt cache가 warm하게 유지됩니다. 트레이드오프는 활성 프로젝트당 상주 프로세스 1개 — 포트폴리오 전체가 아니라 지금 실제로 감독 중인 2~3개 프로젝트용입니다. 두 모드는 같은 데이터 모델(`dispatches.db` + `dispatch.jsonl`, `mode="pty"` 마커)을 공유하므로 모든 관찰 표면이 수정 없이 양쪽을 보여줍니다.
 
 ✅ **Building blocks + 세션 registry (0.12.2).** `PtyTerminal`이 dispatch event writer 겸업(`submit_prompt`가 start/complete 기록, 화면 안정성 watcher가 상태 전환). `pty_sessions/<project>.json` 라이프사이클 + stale-PID 청소, 그리고 `dispatch()`가 라이브 PTY 페인이 있는 프로젝트 호출을 거부해서 백그라운드 fan-out이 대화 중간에 prompt를 끼워넣지 못합니다.
 
-📋 **PTY 모드 output capture.** `pyte.HistoryScreen` scrollback을 완료 시점에 `dispatches.output`으로 스냅샷 — 0.12.2에 명시한 갭 해소. `check_dispatch`가 실행 모드 무관하게 같은 shape을 반환하게 됩니다.
+📋 **PTY 모드 output capture.** 진짜로 어려운 쪽이고, 0.12.2의 보류 노트가 가리키던 것입니다. PTY로 띄운 에이전트는 줄 스트림이 아니라 계속 다시 그려지는 ANSI 화면을 만들기 때문에, 기록할 청크 이벤트도 저장할 깨끗한 텍스트도 존재하지 않습니다 — 둘 중 무엇을 얻든 터미널 이스케이프 시퀀스에서 구조를 복원해야 합니다. 첫 단계는 값싼 근사입니다: 완료 시점에 `pyte.HistoryScreen` scrollback을 `dispatches.output`으로 스냅샷해서 `check_dispatch`가 실행 모드 무관하게 같은 shape을 반환하게 만드는 것. PTY 모드의 실시간 청크 이벤트는 계속 열린 문제로 둡니다.
 
 📋 **`pty_inbox` 큐 + `pty_submit(project, prompt)` MCP 도구.** 작은 SQLite inbox를 통한 프로세스 경계 넘는 prompt 라우팅; TUI의 PtyTerminal이 자기 프로젝트 행만 폴링해 `submit_prompt()`로 라우팅.
 
@@ -127,7 +149,7 @@ opt-in, 세션 단위의 두 번째 실행 모드로, 기본 비대화 dispatch�
 
 PM의 손: dispatch 파이프라인 자체와, 일을 어디로 보낼지에 대한 지능. 프런티어 CLI들의 순수 능력이 수렴했으므로, 흥미로운 라우팅 신호는 비용·쿼터 여유·작업 형태·프로젝트 적합도 — central-mcp가 이미 추적하는 상태들입니다.
 
-📋 **`tail_dispatch(dispatch_id, since_ts=null)` MCP 도구.** 완료를 기다리지 않고 시각 기준 최근 출력 청크 반환 — 지금은 subprocess가 끝나야 `output`이 채워져서 `dispatch.jsonl`을 직접 파싱하지 않으면 진행 중 출력을 보여줄 수 없습니다.
+📋 **`tail_dispatch(dispatch_id, since_ts=null)` MCP 도구.** 완료를 기다리지 않고 시각 기준 최근 출력 청크 반환. `dispatches.db`의 `output` 컬럼은 subprocess 종료 시에만 쓰이므로, 실행 중 진행 상황을 보려는 표면은 전부 `dispatch.jsonl`을 직접 파싱해야 합니다 — 줄 단위 `output` 이벤트는 TUI가 생기기 훨씬 전부터 거기에 실시간으로 쌓이고 있었습니다. 이 도구가 그 경로를 임시 리더 세 개가 아닌 하나의 지원되는 방법으로 만듭니다. 왜 이게 어려운 문제가 아니라 배선인지는 [Focused panes](#focused-panes) 참고.
 
 📋 **`dispatches` 테이블 progress 컬럼.** `last_output_ts`, `output_bytes`, `attempt_count` — 청크마다 싼 쓰기; 읽기는 모든 표면의 "살아있나 멈췄나" 표시기를 구동.
 

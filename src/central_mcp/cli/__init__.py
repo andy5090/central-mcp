@@ -40,6 +40,30 @@ from central_mcp.cli._commands import (
 )
 
 
+def _add_pane_focus_args(parser: argparse.ArgumentParser) -> None:
+    """Which projects get an observation pane (`up` / `tmux` / `zellij`).
+
+    A watch pane shows one project closely; the portfolio view belongs
+    to `cmcp pulse` and the TUI sidebar. So the grid stays focused by
+    default once it would overflow a single window.
+    """
+    parser.add_argument(
+        "--projects",
+        metavar="A,B,C",
+        default=None,
+        help="comma-separated projects to give panes to (overrides the default pick)",
+    )
+    parser.add_argument(
+        "--all-projects",
+        action="store_true",
+        help=(
+            "give every project in the workspace a pane, spilling into extra "
+            "windows. Default: all of them when they fit in one window, "
+            "otherwise the most recently active that do."
+        ),
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="central-mcp",
@@ -141,6 +165,7 @@ def build_parser() -> argparse.ArgumentParser:
             "agent-readable floor). Overflow spills to cmcp-2, cmcp-3, …"
         ),
     )
+    _add_pane_focus_args(p_up)
     p_up.set_defaults(func=cmd_up)
 
     p_watch = sub.add_parser(
@@ -240,6 +265,7 @@ def build_parser() -> argparse.ArgumentParser:
                         help="show only projects in this workspace (default: current workspace)")
     p_tmux.add_argument("--all", action="store_true",
                         help="create sessions for all workspaces")
+    _add_pane_focus_args(p_tmux)
     p_tmux.set_defaults(func=cmd_tmux)
 
     p_zellij = sub.add_parser(
@@ -272,6 +298,7 @@ def build_parser() -> argparse.ArgumentParser:
                           help="show only projects in this workspace (default: current workspace)")
     p_zellij.add_argument("--all", action="store_true",
                           help="create sessions for all workspaces")
+    _add_pane_focus_args(p_zellij)
     p_zellij.set_defaults(func=cmd_zellij)
 
     p_tui = sub.add_parser(

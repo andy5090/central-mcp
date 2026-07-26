@@ -8,7 +8,7 @@ What's planned for central-mcp. This page is **forward-looking only** — for wh
 
 > **Have a suggestion?** Open an issue at [github.com/andy5090/central-mcp/issues](https://github.com/andy5090/central-mcp/issues). We read every one.
 
-Status legend: 📋 planned · 💭 idea · 🚧 in progress
+Status legend: 📋 planned · 💭 idea · 🚧 in progress · ✅ shipped · ❌ retracted (kept so the reasoning stays on the record)
 
 ## The essence — a portfolio PM, not just a dispatch hub
 
@@ -49,7 +49,9 @@ The new center-of-gravity track. Architecture is deliberately two-phase — **pu
 
 ✅ **`project_pulse(project)` MCP tool + `cmcp pulse [project]` (0.15.0).** Stateless, on-demand aggregation of everything knowable about a project *right now*: git (branch, recent commits, working-tree dirt, upstream ahead/behind), dispatches (in-flight, stale, recent outcomes, counts), agent-session activity via the existing per-agent session readers, and open-PR state via `gh`. No new storage — the pulse is computed fresh on every call, so work done entirely outside central-mcp (direct commits, interactive sessions) shows up because git is the source of truth. Every section degrades independently with a `reason`, so one missing signal never sinks the pulse. This is the data spine every other PM feature stands on.
 
-📋 **Return briefing.** The flagship PM moment: come back to a project after days away and get "what happened / where it stands / what's next" in one shot. `cmcp brief` upgrades from a registry listing to a pulse-powered portfolio digest, and a recipe in `data/{CLAUDE,AGENTS}.md` teaches orchestrators to synthesize a narrative briefing from `project_pulse` whenever the user switches context to a project.
+✅ **Return briefing (0.15.0).** The flagship PM moment: come back to a project after days away and get "what happened / where it stands / what's next" in one shot. Two delivery paths, both shipped — the orchestrator synthesizes a briefing from `project_pulse` whenever the user names a project (recipe in `data/{CLAUDE,AGENTS}.md`), and `cmcp pulse` with no argument sweeps the whole workspace on demand.
+
+❌ **Retracted: `cmcp brief` as a pulse-powered digest.** Originally planned here, then measured: `brief` costs 55ms (one YAML read), a full pulse sweep costs 2.5s and spawns dozens of git processes. The SessionStart hook runs `brief` on **every** orchestrator launch, so that's a 45× tax on startup — and most of it is discarded work, because you open a session to touch one or two projects, not seventeen. The right split is that session start says cheaply *what exists*, and *what state it's in* is fetched the moment the user names a project. Both halves now exist, so `brief` stays a registry listing.
 
 📋 **Status ledger (phase 2).** `~/.central-mcp/projects/<name>/STATUS.md` — durable per-project memory: a structured delta appended when a dispatch completes (what was done, what was left), open questions, and a "next steps" list that survives across sessions and orchestrators. `cmcp note <project> "…"` adds manual entries. Briefings then combine ledger (intent, next steps) with pulse (ground truth) and flag drift between the two. Plain files, same as the registry — the stateless-between-requests invariant holds.
 
@@ -75,9 +77,17 @@ The new center-of-gravity track. Architecture is deliberately two-phase — **pu
 
 ## Surfaces
 
-The PM's reporting channels: the TUI control tower, live PTY panes for supervised sessions, and the watch panes in external multiplexers.
+Two different jobs have always been filed together under "observation", and separating them is what this track is now organized around.
 
-### Control tower (TUI)
+A **map** answers *where is everything?* — the whole portfolio at a glance, a line per project. `cmcp pulse`, the TUI sidebar, and the orchestrator's briefing are maps.
+
+A **microscope** answers *what is this one thing doing right now?* — raw, live, unsummarized. `cmcp watch`, an expanded dispatch row, and a live PTY pane are microscopes.
+
+A better map never removes the need for a microscope, for two reasons. Asking the orchestrator costs a turn, tokens, and a context switch, while a pane in your peripheral vision costs nothing — ambient awareness is a different thing from a request/response loop. And more fundamentally, a narrated pulse is *an LLM summarizing*: when an agent reports "tests pass", sometimes you need the actual test output. A better summary is still a summary. That gap is categorical, not a missing feature — and it matters more, not less, in a system where dispatches run unattended in bypass mode.
+
+What went wrong historically was applying the microscope at map scale. `cmcp tmux` tiled one watch pane per registered project, so on a large portfolio most panes sat dead and the one worth reading was three windows away. The map job now has proper owners, so the grid goes back to being focused.
+
+### Control tower (TUI) — the map
 
 The TUI's role under the new essence: the **always-on control tower** — the surface where the whole portfolio is visible at a glance and dispatch completions surface immediately (its watcher polls `dispatches.db` directly, no MCP client cooperation needed).
 
@@ -103,13 +113,25 @@ The TUI's role under the new essence: the **always-on control tower** — the su
 
 💭 **Open questions.** Multi-pane inside the TUI vs. composing with an external multiplexer; how transparent prompt-injection should be (`hint` vs `prompt` mode).
 
+### Focused panes — the microscope
+
+`cmcp watch <project>` tails a project's `dispatch.jsonl` and renders each event live. Its role is now stated plainly: **a live window on the one dispatch you care about**, not a portfolio surface. Ground truth, unsummarized, free to glance at.
+
+✅ **Observation panes default to focus (0.16.0).** `cmcp up` / `tmux` / `zellij` no longer tile every registered project. When the workspace fits in one window nothing changes; past that they open panes for the most recently active projects that do fit, and print what was left out plus how to get it. `--projects a,b,c` picks explicitly, `--all-projects` restores full tiling. Activity ranking reuses the pulse signals (`pulse.rank_by_activity`), so "most recent" means real work — git commits included — not just dispatch traffic.
+
+📋 **Live output inside the TUI.** The sidebar can show a running dispatch's output as it arrives; the data has been there all along. `dispatch()`'s reader threads already write one `output` event per line into `dispatch.jsonl` in real time — that is exactly what `watch` renders — but `DispatchWatcher` polls `dispatches.db`, whose `output` column is only written when the process exits. So the TUI is blind mid-run because it watches the wrong file, not because the output is hard to obtain. `watch._tail_forever` already implements the offset-based tail with truncation handling that this needs.
+
+> This is worth stating explicitly because it has been conflated with a genuinely hard problem: **PTY-mode output capture** (below) has no per-chunk event stream at all, since reconstructing structured chunks from a raw ANSI screen is the actual difficulty. The two are unrelated. The MCP-dispatch case is wiring; the PTY case is a research question.
+
+📋 **`tail_dispatch` as the shared encapsulation.** Rather than teaching each surface to parse jsonl, the [Dispatch core](#dispatch-core-routing) track's `tail_dispatch` tool gives orchestrators, the TUI sidebar, and anything else one supported way to ask "what has this dispatch emitted since T?".
+
 ### Live agent panes
 
 Opt-in, session-scoped second execution mode, complementary to the default non-interactive dispatch. PTY mode runs the agent in a real TTY pair: permission prompts surface in a live pane the user can answer, conversation context persists across turns, and prompt-cache stays warm. The trade-off is one resident process per active project — for the 2–3 projects you're actively supervising, not the whole portfolio. Both modes share the same data model (`dispatches.db` + `dispatch.jsonl` with `mode="pty"`), so every observation surface shows both without modification.
 
 ✅ **Building blocks + session registry (0.12.2).** `PtyTerminal` doubles as a dispatch event writer (`submit_prompt` records start/complete; a screen-stability watcher flips status). `pty_sessions/<project>.json` lifecycle with stale-PID sweep, and `dispatch()` rejects calls into projects with a live PTY pane so background fan-out can't inject prompts mid-conversation.
 
-📋 **Output capture for PTY mode.** `pyte.HistoryScreen` scrollback feeds a snapshot into `dispatches.output` on completion, closing the documented 0.12.2 gap — `check_dispatch` then returns the same shape regardless of execution mode.
+📋 **Output capture for PTY mode.** The genuinely hard one, and the source of the 0.12.2 deferral note. A PTY-hosted agent produces a repainting ANSI screen, not a line stream, so there is no per-chunk `output` event to record and no clean text to store — deriving either means reconstructing structure from terminal escape sequences. First step is the cheap approximation: snapshot `pyte.HistoryScreen`'s scrollback into `dispatches.output` on completion so `check_dispatch` returns the same shape regardless of execution mode. Live per-chunk events for PTY mode stay open.
 
 📋 **`pty_inbox` queue + `pty_submit(project, prompt)` MCP tool.** Cross-process prompt routing through a small SQLite inbox; the TUI's PtyTerminal polls its own project's rows and routes them through `submit_prompt()`.
 
@@ -127,7 +149,7 @@ Opt-in, session-scoped second execution mode, complementary to the default non-i
 
 The PM's hands: the dispatch pipeline itself, and the intelligence about where to send work. Frontier CLIs have converged on raw capability, so the interesting routing signals are cost, quota headroom, task shape, and project fit — state central-mcp already tracks.
 
-📋 **`tail_dispatch(dispatch_id, since_ts=null)` MCP tool.** Recent output chunks since a timestamp, without waiting for completion — today `output` only fills when the subprocess exits, so nothing can show progress text mid-run without parsing `dispatch.jsonl` by hand.
+📋 **`tail_dispatch(dispatch_id, since_ts=null)` MCP tool.** Recent output chunks since a timestamp, without waiting for completion. `dispatches.db`'s `output` column is only written when the subprocess exits, so every surface that wants mid-run progress has to parse `dispatch.jsonl` itself — where the per-line `output` events have been landing in real time since long before the TUI existed. This tool makes that one supported path instead of three ad-hoc readers. See [Focused panes](#focused-panes-the-microscope) for why this is wiring rather than a hard problem.
 
 📋 **`dispatches` table progress columns.** `last_output_ts`, `output_bytes`, `attempt_count` — cheap writes on every chunk; reads power the "alive vs. wedged?" indicators in every surface.
 

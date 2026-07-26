@@ -17,7 +17,7 @@ central-mcp exposes the following MCP tools to the orchestrator. The full source
 List registered projects in the current workspace by default. Pass `workspace="<name>"` for a specific one, or `workspace="__all__"` (alias `"*"`) for every project across all workspaces.
 
 ### `project_status(name)`
-Registry info for one project — agent, path, workspace membership.
+Registry info for one project — agent, path, workspace membership. `project_pulse` returns all of this too; use `project_status` when metadata is all you need, since it costs one file read and spawns no subprocesses.
 
 ### `project_pulse(name, commits=5, history=5, include_pr=True)` (0.15.0+)
 What actually happened in a project, where it stands, and what's still live. Use it when returning to a project after time away, or when asked "what's the state of X?".
@@ -63,7 +63,7 @@ Abort a running dispatch.
 All active + recently completed dispatches.
 
 ### `dispatch_history(name, limit=20)`
-Last N dispatches for one project, with `prompt_preview` and `output_preview` slices.
+Last N dispatches for one project, with `prompt_preview` and `output_preview` slices. Reads the same log as `project_pulse`'s `dispatches` section, but goes as deep as you ask — the pulse deliberately shows only the last few, alongside git and session context. Briefing → pulse; digging → this.
 
 ---
 

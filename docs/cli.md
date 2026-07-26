@@ -31,11 +31,13 @@ Run as an MCP stdio server. This is what MCP clients invoke; you rarely call it 
 
 ## Observation layer
 
-### `central-mcp up [--workspace NAME] [--all] [--backend tmux|zellij]`
-Set up a multiplexer session with one pane per project (running `cmcp watch <project>`) and the orchestrator on the side.
+### `central-mcp up [--workspace NAME] [--all] [--backend tmux|zellij] [--projects A,B,C] [--all-projects]`
+Set up a multiplexer session with a pane per project (running `cmcp watch <project>`) and the orchestrator on the side.
+
+Which projects get panes (0.16.0+): all of them when they fit in one window, otherwise the most recently active that do — the command prints what it left out. A pane is for following one project closely; for the portfolio view use [`central-mcp pulse`](#central-mcp-pulse-name-commits-n-history-n-pr-no-pr-json-0150). `--projects a,b,c` picks explicitly, `--all-projects` tiles everything and spills into extra windows as before.
 
 ### `central-mcp tmux` / `central-mcp zellij`
-Backend-specific session creators. Use these when you want to skip the picker.
+Backend-specific session creators. Use these when you want to skip the picker. Same `--projects` / `--all-projects` behavior as `up`.
 
 ### `central-mcp down`
 Tear down the observation session.

@@ -17,7 +17,7 @@ central-mcp가 orchestrator에 노출하는 MCP 도구 목록입니다. 정식 �
 디폴트로 활성 워크스페이스의 프로젝트만 보여줍니다. 다른 워크스페이스는 `workspace="<name>"`, 모든 워크스페이스를 가로지르려면 `workspace="__all__"` (alias `"*"`).
 
 ### `project_status(name)`
-프로젝트 하나의 레지스트리 정보 — 에이전트, 경로, 워크스페이스 멤버십.
+프로젝트 하나의 레지스트리 정보 — 에이전트, 경로, 워크스페이스 멤버십. `project_pulse`도 이 값들을 전부 담고 있으니, 메타데이터만 필요할 때 쓰세요. 파일 한 번 읽고 끝이라 subprocess를 띄우지 않습니다.
 
 ### `project_pulse(name, commits=5, history=5, include_pr=True)` (0.15.0+)
 프로젝트에서 실제로 무슨 일이 있었고, 지금 어디에 있고, 뭐가 아직 돌고 있는지. 오래 비웠던 프로젝트로 복귀할 때, 또는 "X 상태 어때?"라는 질문에 씁니다.
@@ -63,7 +63,7 @@ dispatch 상태 폴링: `running` / `complete` / `error` / `cancelled`. 완료�
 진행 중 + 최근 완료된 dispatch 전체.
 
 ### `dispatch_history(name, limit=20)`
-프로젝트 한 곳의 최근 N개 dispatch (`prompt_preview`, `output_preview` 포함).
+프로젝트 한 곳의 최근 N개 dispatch (`prompt_preview`, `output_preview` 포함). `project_pulse`의 `dispatches` 섹션과 같은 로그를 읽지만 원하는 만큼 깊이 들어갑니다 — pulse는 git·세션 맥락과 함께 최근 몇 건만 의도적으로 보여줍니다. 브리핑은 pulse, 파고들 땐 이쪽.
 
 ---
 

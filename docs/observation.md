@@ -6,7 +6,11 @@ description: Live multi-pane view of dispatches across cmux (macOS GUI), tmux, a
 
 central-mcp dispatches are non-blocking. You ask the orchestrator to send work to three projects, get three `dispatch_id`s in <100ms, and keep talking. The agents run in the background, in their own project directories, and stream output to per-project event logs.
 
-The observation layer is what lets you **watch all those streams at once** — one pane per project, the orchestrator on the side, everything live.
+The observation layer is what lets you **watch those streams live** — a pane per project you're actively following, the orchestrator on the side.
+
+> **A pane is a microscope, not a map.** It earns its screen space by showing one project closely, unsummarized. The portfolio question — *where does everything stand?* — is answered by [`cmcp pulse`](cli.md) and the TUI sidebar, which read git as well as the dispatch log. So since 0.16.0 the backends don't tile every registered project by default: when the workspace fits in one window they all appear, and past that you get the most recently active that fit, plus a note naming the rest. `--projects a,b,c` chooses explicitly; `--all-projects` restores full tiling.
+>
+> This split matters in the other direction too. A pulse briefing is an *LLM summarizing*; a watch pane is the raw output. When an agent reports "tests pass" and you want to see the actual test run, that's what the pane is for.
 
 Three backends, same shape:
 

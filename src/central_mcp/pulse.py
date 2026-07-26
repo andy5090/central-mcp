@@ -51,6 +51,11 @@ _MAX_PRS = 10
 # reports a dead process as live work.
 _STALE_AFTER_SEC = 2 * 3600
 
+# The dispatch-log records a pulse cares about. Everything else in the
+# file is per-line `output` chunk spam, which dwarfs these by orders of
+# magnitude — naming them lets the reader skip parsing the rest.
+_LIFECYCLE_EVENTS = frozenset({"start", "complete", "error", "cancelled"})
+
 # Unit separator between fields of one `git log` record. Chosen over a
 # printable delimiter because commit subjects routinely contain `|`,
 # `:` and friends; %s never contains a newline, so records stay
@@ -365,7 +370,9 @@ def dispatch_snapshot(project_name: str, *, history: int = 5) -> dict[str, Any]:
     except Exception:
         pass
 
-    records = events.read_jsonl(events.log_path(project_name))
+    records = events.read_jsonl(
+        events.log_path(project_name), only_events=_LIFECYCLE_EVENTS
+    )
     starts: dict[str, dict[str, Any]] = {}
     # Keep each terminal's line position: `ts` has millisecond precision,
     # so dispatches finishing inside the same millisecond tie. The log is
@@ -564,6 +571,70 @@ def pulse_for(
         "sessions": sessions,
         "pull_requests": prs,
     }
+
+
+def last_activity_at(project: Project) -> str | None:
+    """When anything last happened in a project, as a UTC ISO string.
+
+    A deliberately lean cousin of `pulse_for` — one `git log -1` plus
+    the dispatch log's lifecycle records, skipping sessions and PRs.
+    Callers that only need to *rank* projects (which observation panes
+    to open, which rows to show first) shouldn't pay for a full pulse
+    per project.
+    """
+    git_ts: str | None = None
+    repo = Path(project.path).expanduser()
+    if repo.is_dir() and shutil.which("git") is not None:
+        proc = _run(["git", "log", "-1", "--format=%cI"], repo, _GIT_TIMEOUT)
+        if proc is not None and proc.returncode == 0:
+            git_ts = (proc.stdout or "").strip() or None
+
+    dispatch_ts: str | None = None
+    records = events.read_jsonl(
+        events.log_path(project.name), only_events=_LIFECYCLE_EVENTS
+    )
+    for r in records:
+        ts = r.get("ts")
+        if ts and (dispatch_ts is None or ts > dispatch_ts):
+            dispatch_ts = ts
+
+    return _latest(git_ts, dispatch_ts)
+
+
+def rank_by_activity(
+    projects: list[Project],
+    *,
+    max_workers: int = 8,
+) -> list[tuple[Project, str | None]]:
+    """Order projects most-recently-active first; never-active ones last.
+
+    Ties and unknowns keep their registry order, so a portfolio where
+    nothing has happened renders exactly as the user arranged it.
+    """
+    if not projects:
+        return []
+
+    with ThreadPoolExecutor(max_workers=max(1, min(max_workers, len(projects)))) as pool:
+        stamps = list(pool.map(_safe_last_activity, projects))
+
+    def _key(item: tuple[int, tuple[Project, str | None]]) -> tuple[bool, float, int]:
+        index, (_, ts) = item
+        dt = _parse_iso(ts)
+        return (
+            dt is None,                        # unknown activity sorts last
+            -dt.timestamp() if dt else 0.0,    # newest first among the known
+            index,                             # registry order breaks ties
+        )
+
+    indexed = sorted(enumerate(zip(projects, stamps)), key=_key)
+    return [pair for _, pair in indexed]
+
+
+def _safe_last_activity(project: Project) -> str | None:
+    try:
+        return last_activity_at(project)
+    except Exception:
+        return None
 
 
 def pulse_many(

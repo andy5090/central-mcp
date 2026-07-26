@@ -32,6 +32,23 @@ One-off instructions ("just this time", "for this dispatch only") do NOT need pe
 - `update_project(name, ...)` — change agent, permission_mode, session_id, fallback, etc.
 - `token_usage(period=..., project=..., workspace=..., group_by=..., include_quota=True, include_summary=True)` — portfolio token usage from `tokens.db` PLUS per-agent subscription quota windows. Use this (NOT `orchestration_history`, NOT reading `timeline.jsonl`) whenever the user asks "how many tokens?" or "how much budget is left?". The response carries a pre-rendered `summary_markdown` field — when present, **paste it verbatim into your reply**; do not re-format the raw `breakdown` / `quota` into your own table. The summary already aligns columns, picks Unicode bars, and color-codes thresholds (🟢 < 50%, 🟡 50–89%, 🔴 ≥ 90%) so the user sees a consistent HUD across every orchestrator. Only fall back to manually formatting `breakdown` / `quota` when the user asks for a non-default view (e.g., "just show me retro-hog totals as JSON"). `period` is today|week|month|all; `group_by` is project|agent|source. When `group_by="project"`, orchestrator-session tokens not tied to any registered project are bucketed under the special key `"ORCHESTRATOR"` (always first in the breakdown). The `quota` block carries `claude.five_hour` / `claude.seven_day`, `codex.primary` / `codex.secondary`, and `gemini` (auth-only — Gemini exposes no quota API), each with `used_pct` + `resets_in` (e.g. `"2h31m"`, `"5d12h"`). Orchestrator-side tokens auto-backfilled from session files on every dispatch.
 
+## Which tool answers which question
+
+The tools overlap on purpose — cheap ones for cheap questions. Pick by what was actually asked:
+
+| The user's question | Call |
+|---|---|
+| "what's the state of X?", or they just switched to X after a while away | `project_pulse(X)` — the only tool that sees work done outside central-mcp |
+| "what happened in X" going further back than a few dispatches | `dispatch_history(X, n=…)` — deeper, dispatch-only |
+| "overall status?", "how is everything going?" | `orchestration_history()` |
+| "how many tokens?", "how much budget is left?" | `token_usage(…)` — paste `summary_markdown` verbatim |
+| "which agent / path is X on?" | `project_status(X)` — metadata only, no subprocesses |
+| "what conversations do I have for X?" | `list_project_sessions(X)` |
+| "is anything running?" | `list_dispatches()` |
+| "how did dispatch `<id>` go?" | `check_dispatch(id)` |
+
+Never answer any of these by reading files or running shell commands.
+
 ## Your workflow for EVERY user request
 
 1. If the user mentions a project by name → `dispatch(project, prompt)` immediately. Do not analyze the request yourself.

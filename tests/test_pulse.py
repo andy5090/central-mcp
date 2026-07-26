@@ -535,6 +535,92 @@ class TestReadJsonl:
         path.write_text('{"a": 1}\n{"b": ')
         assert events.read_jsonl(path) == [{"a": 1}]
 
+    def test_only_events_filters(self, fake_home: Path) -> None:
+        events.log_event("proj", "d1", "start", prompt="p")
+        events.log_event("proj", "d1", "output", chunk="noise")
+        events.log_event("proj", "d1", "complete", ok=True)
+        path = events.log_path("proj")
+
+        assert len(events.read_jsonl(path)) == 3
+        kept = events.read_jsonl(path, only_events={"start", "complete"})
+        assert [r["event"] for r in kept] == ["start", "complete"]
+
+    def test_only_events_never_drops_a_genuine_record(self, fake_home: Path) -> None:
+        """The fast-path substring test may over-match, never under-match.
+
+        A prompt that literally contains another event's marker must not
+        knock its own record out of the result.
+        """
+        events.log_event("proj", "d1", "start", prompt='contains "event": "output" inline')
+        kept = events.read_jsonl(events.log_path("proj"), only_events={"start"})
+        assert len(kept) == 1
+        assert kept[0]["event"] == "start"
+
+    def test_only_events_discards_substring_false_positives(self, fake_home: Path) -> None:
+        """An output chunk quoting a start marker is still an output event."""
+        events.log_event("proj", "d1", "output", chunk='echo \'"event": "start"\'')
+        assert events.read_jsonl(events.log_path("proj"), only_events={"start"}) == []
+
+
+# ---------- activity ranking (observation-pane selection) ----------
+
+@needs_git
+class TestActivityRanking:
+    def test_last_activity_reads_git_when_no_dispatches(
+        self, fake_home: Path, tmp_path: Path
+    ) -> None:
+        repo = _make_repo(tmp_path / "repo")
+        project = registry.Project(name="proj", path=str(repo), agent="hermes")
+        assert pulse.last_activity_at(project) is not None
+
+    def test_last_activity_prefers_the_newer_source(
+        self, fake_home: Path, tmp_path: Path
+    ) -> None:
+        repo = _make_repo(tmp_path / "repo")
+        project = registry.Project(name="proj", path=str(repo), agent="hermes")
+        git_only = pulse.last_activity_at(project)
+        events.log_event("proj", "d1", "complete", ok=True)
+        assert pulse._parse_iso(pulse.last_activity_at(project)) >= pulse._parse_iso(git_only)
+
+    def test_last_activity_none_for_untracked_empty_project(
+        self, fake_home: Path, tmp_path: Path
+    ) -> None:
+        plain = tmp_path / "plain"
+        plain.mkdir()
+        project = registry.Project(name="proj", path=str(plain), agent="hermes")
+        assert pulse.last_activity_at(project) is None
+
+    def test_rank_orders_newest_first(self, fake_home: Path, tmp_path: Path) -> None:
+        for name in ("old", "mid", "new"):
+            _make_repo(tmp_path / name)
+        projects = [
+            registry.Project(name=n, path=str(tmp_path / n), agent="hermes")
+            for n in ("old", "mid", "new")
+        ]
+        # Dispatch events are recorded in ascending order, so "new" ends last.
+        for name in ("old", "mid", "new"):
+            events.log_event(name, "d1", "complete", ok=True)
+            time.sleep(0.005)
+
+        ranked = pulse.rank_by_activity(projects)
+        assert [p.name for p, _ in ranked] == ["new", "mid", "old"]
+
+    def test_rank_puts_unknown_activity_last_in_registry_order(
+        self, fake_home: Path, tmp_path: Path
+    ) -> None:
+        _make_repo(tmp_path / "active")
+        (tmp_path / "quiet_a").mkdir()
+        (tmp_path / "quiet_b").mkdir()
+        projects = [
+            registry.Project(name=n, path=str(tmp_path / n), agent="hermes")
+            for n in ("quiet_a", "quiet_b", "active")
+        ]
+        ranked = pulse.rank_by_activity(projects)
+        assert [p.name for p, _ in ranked] == ["active", "quiet_a", "quiet_b"]
+
+    def test_rank_empty(self, fake_home: Path) -> None:
+        assert pulse.rank_by_activity([]) == []
+
 
 # ---------- MCP tool surface ----------
 

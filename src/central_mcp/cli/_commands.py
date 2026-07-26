@@ -179,6 +179,79 @@ def _resolve_max_panes(args: argparse.Namespace) -> int:
     return pick_panes_per_window()
 
 
+def _select_observation_projects(
+    projects: list,
+    args: argparse.Namespace,
+    panes_per_window: int,
+) -> tuple[list, list[str]]:
+    """Pick which projects get an observation pane.
+
+    A watch pane is a microscope — it earns its screen space by showing
+    one thing closely. Tiling every registered project applies it at
+    portfolio scale, which is where the panes go dead: with a large
+    registry most of them show nothing, and the ones that matter are
+    buried some windows away. The portfolio question belongs to `cmcp
+    pulse` and the TUI sidebar now, so the grid can go back to being
+    focused.
+
+    Resolution order:
+      `--projects a,b,c` → exactly those, in the order given
+      `--all-projects`   → every project (the pre-0.16 behavior)
+      otherwise          → all of them when they fit in one window;
+                           past that, the most recently active that do
+
+    Returns `(selected, notes)`; `notes` are user-facing lines naming
+    what was left out — a silently truncated grid reads as "this is
+    everything", which is exactly the wrong impression.
+    """
+    notes: list[str] = []
+    explicit = getattr(args, "projects", None)
+    if explicit:
+        wanted = [n.strip() for n in explicit.split(",") if n.strip()]
+        by_name = {p.name: p for p in projects}
+        selected = []
+        for name in wanted:
+            if name in by_name:
+                selected.append(by_name[name])
+            else:
+                notes.append(f"warning: no project named {name!r} in this workspace — skipped")
+        return selected, notes
+
+    if getattr(args, "all_projects", False) or len(projects) <= panes_per_window:
+        return list(projects), notes
+
+    from central_mcp import pulse as pulse_mod
+
+    ranked = pulse_mod.rank_by_activity(list(projects))
+    selected = [p for p, _ in ranked[:panes_per_window]]
+    dropped = [p.name for p, _ in ranked[panes_per_window:]]
+    notes.append(
+        f"showing the {len(selected)} most recently active of {len(projects)} projects "
+        f"({', '.join(p.name for p in selected)})"
+    )
+    notes.append(
+        f"not shown: {', '.join(dropped)} — use --all-projects for every project, "
+        f"--projects a,b,c to choose, or `cmcp pulse` for the portfolio view"
+    )
+    return selected, notes
+
+
+def _observation_projects(
+    ws: str,
+    args: argparse.Namespace,
+    panes_per_window: int,
+    *,
+    prefix: str = "",
+) -> list:
+    """`_select_observation_projects` for one workspace, notes printed."""
+    selected, notes = _select_observation_projects(
+        projects_in_workspace(ws), args, panes_per_window
+    )
+    for note in notes:
+        print(f"{prefix}{note}")
+    return selected
+
+
 def _orchestrator_pane_for_up(args: argparse.Namespace) -> layout.OrchestratorPane | None:
     """Pick an orchestrator for pane 0 or return None to skip.
 
@@ -581,7 +654,7 @@ def cmd_tmux(args: argparse.Namespace) -> int:
         attach_ws = current_workspace()
         for ws in workspaces:
             sname = layout.session_name_for_workspace(ws)
-            projs = projects_in_workspace(ws)
+            projs = _observation_projects(ws, args, panes_per_window, prefix=f"[{ws}] ")
             if tmux.has_session(sname):
                 _teardown_observation_session(sname)
             created, messages = layout.ensure_session(
@@ -598,7 +671,7 @@ def cmd_tmux(args: argparse.Namespace) -> int:
     else:
         ws = _resolve_workspace_for_tmux(args)
         sname = layout.session_name_for_workspace(ws)
-        projs = projects_in_workspace(ws)
+        projs = _observation_projects(ws, args, panes_per_window)
         if tmux.has_session(sname):
             _teardown_observation_session(sname)
         created, messages = layout.ensure_session(
@@ -622,7 +695,7 @@ def _cmd_tmux_switch(args: argparse.Namespace) -> int:
     if not tmux.has_session(sname):
         orchestrator = _orchestrator_pane_for_up(args)
         panes_per_window = _resolve_max_panes(args)
-        projs = projects_in_workspace(ws)
+        projs = _observation_projects(ws, args, panes_per_window)
         created, messages = layout.ensure_session(
             orchestrator=orchestrator,
             panes_per_window=panes_per_window,
@@ -661,7 +734,7 @@ def cmd_zellij(args: argparse.Namespace) -> int:
         attach_ws = current_workspace()
         for ws in workspaces:
             sname = layout.session_name_for_workspace(ws)
-            projs = projects_in_workspace(ws)
+            projs = _observation_projects(ws, args, panes_per_window, prefix=f"[{ws}] ")
             if zellij.has_session(sname):
                 _teardown_observation_session(sname)
             layout_path = paths.central_mcp_home() / f"zellij-layout-{sname}.kdl"
@@ -676,7 +749,7 @@ def cmd_zellij(args: argparse.Namespace) -> int:
     else:
         ws = _resolve_workspace_for_tmux(args)
         sname = layout.session_name_for_workspace(ws)
-        projs = projects_in_workspace(ws)
+        projs = _observation_projects(ws, args, panes_per_window)
         if zellij.has_session(sname):
             _teardown_observation_session(sname)
         layout_path = paths.central_mcp_home() / f"zellij-layout-{sname}.kdl"
@@ -696,7 +769,7 @@ def _cmd_zellij_switch(args: argparse.Namespace) -> int:
     if not zellij.has_session(sname):
         orchestrator = _orchestrator_pane_for_up(args)
         panes_per_window = _resolve_max_panes(args)
-        projs = projects_in_workspace(ws)
+        projs = _observation_projects(ws, args, panes_per_window)
         layout_path = paths.central_mcp_home() / f"zellij-layout-{sname}.kdl"
         zellij.write_layout(layout_path, orchestrator=orchestrator,
                             panes_per_window=panes_per_window, projects=projs)

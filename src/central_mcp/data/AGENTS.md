@@ -58,6 +58,23 @@ One-off instructions ("just this time", "for this dispatch only") do NOT need pe
 | `orchestration_history` | Portfolio snapshot (in-flight + recent + per-project stats). Does NOT carry token counts — use `token_usage` for those. |
 | `token_usage` | Portfolio token aggregation from `tokens.db` PLUS per-agent subscription quota windows. Use this for any "how many tokens?" / "how much budget is left?" question — NOT `orchestration_history`, NOT reading `timeline.jsonl` directly. Params: `period` (today/week/month/all), `project`, `workspace`, `group_by` (project/agent/source), `include_quota` (default True), `include_summary` (default True). Returns `breakdown` + `total` with {dispatch, orchestrator, total, input, output}, plus a `quota` block (claude five_hour/seven_day, codex primary/secondary, gemini auth-only) carrying `used_pct` and `resets_in` (e.g. `"2h31m"`), plus a pre-rendered `summary_markdown` HUD with Unicode bars and emoji color markers (🟢 < 50%, 🟡 50–89%, 🔴 ≥ 90%). **When the user asks for token usage / quota status, paste `summary_markdown` verbatim into your reply** — do NOT re-format the raw breakdown into your own table. The summary already handles alignment, color thresholds, and the ORCHESTRATOR bucket. Only fall back to formatting raw fields manually when the user asks for a specific non-default view. Orchestrator-side tokens auto-backfilled from session files on every dispatch. |
 
+## Which tool answers which question
+
+The tools overlap on purpose — cheap ones for cheap questions. Pick by what was actually asked:
+
+| The user's question | Call |
+|---|---|
+| "what's the state of X?", or they just switched to X after a while away | `project_pulse(X)` — the only tool that sees work done outside central-mcp |
+| "what happened in X" going further back than a few dispatches | `dispatch_history(X, n=…)` — deeper, dispatch-only |
+| "overall status?", "how is everything going?" | `orchestration_history()` |
+| "how many tokens?", "how much budget is left?" | `token_usage(…)` — paste `summary_markdown` verbatim |
+| "which agent / path is X on?" | `project_status(X)` — metadata only, no subprocesses |
+| "what conversations do I have for X?" | `list_project_sessions(X)` |
+| "is anything running?" | `list_dispatches()` |
+| "how did dispatch `<id>` go?" | `check_dispatch(id)` |
+
+Never answer any of these by reading files or running shell commands.
+
 ## For every request
 
 1. Identify the target project.

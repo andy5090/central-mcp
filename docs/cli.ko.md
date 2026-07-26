@@ -31,11 +31,13 @@ MCP stdio 서버로 동작합니다. MCP 클라이언트가 호출하는 진입�
 
 ## 관찰 모드
 
-### `central-mcp up [--workspace NAME] [--all] [--backend tmux|zellij]`
-프로젝트마다 페인 하나씩 깔고(`cmcp watch <project>`), orchestrator는 옆에 두는 multiplexer 세션을 만듭니다.
+### `central-mcp up [--workspace NAME] [--all] [--backend tmux|zellij] [--projects A,B,C] [--all-projects]`
+프로젝트마다 페인을 깔고(`cmcp watch <project>`), orchestrator는 옆에 두는 multiplexer 세션을 만듭니다.
+
+어떤 프로젝트가 페인을 받는지(0.16.0+): 한 창에 다 들어가면 전부, 넘치면 들어갈 수 있는 만큼 가장 최근에 활동한 것들 — 빠진 것은 출력으로 알려줍니다. 페인은 프로젝트 하나를 가까이 따라가기 위한 것이고, 포트폴리오 전체는 [`central-mcp pulse`](#central-mcp-pulse-name-commits-n-history-n-pr-no-pr-json-0150)로 봅니다. `--projects a,b,c`로 직접 고르고, `--all-projects`는 예전처럼 전부 타일링하며 창을 넘겨 채웁니다.
 
 ### `central-mcp tmux` / `central-mcp zellij`
-백엔드 직접 지정. 픽커를 건너뛰고 싶을 때.
+백엔드 직접 지정. 픽커를 건너뛰고 싶을 때. `--projects` / `--all-projects` 동작은 `up`과 동일합니다.
 
 ### `central-mcp down`
 관찰 세션 정리.

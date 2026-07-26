@@ -3,6 +3,26 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.16.0] — 2026-07-26
+
+### Changed
+- **Observation panes default to focus instead of tiling everything.** `cmcp up` / `tmux` / `zellij` no longer open a pane per registered project. When the workspace fits in one window nothing changes; past that they open panes for the most recently active projects that fit and print both what was selected and what was left out, with the flags to get it. New `--projects a,b,c` picks explicitly; new `--all-projects` restores the pre-0.16 full tiling (`--all` is unchanged and still means all *workspaces*). Rationale: a watch pane is a microscope — it earns its screen space by showing one project closely — and tiling it at portfolio scale is what made panes go dead on a large registry, with the one worth reading three windows away. The portfolio question now belongs to `cmcp pulse` and the TUI sidebar. Selection is shared by all three commands and both the main and `switch` subcommand paths.
+- **Runtime orchestrator guidance gains a tool-selection table.** `data/{CLAUDE,AGENTS}.md` now open with an explicit question → tool mapping. Tool descriptions alone don't tell an LLM *when* to prefer one overlapping tool over another, and that choice matters more than the descriptions: pulse for arrival briefings, `dispatch_history` for digging deeper, `project_status` when only metadata is needed, `token_usage` for budget.
+
+### Added
+- **`pulse.last_activity_at(project)` / `pulse.rank_by_activity(projects)`.** A lean cousin of `pulse_for` — one `git log -1` plus the dispatch log's lifecycle records, skipping sessions and PRs — for callers that only need to *rank* projects rather than describe them. Backs the observation-pane selection above, so "most recently active" counts real work including direct commits, not just dispatch traffic. Ranks 17 projects in ~136ms; unknown-activity projects sort last in registry order, so a quiet portfolio renders exactly as arranged.
+- **`events.read_jsonl(path, only_events=...)`.** Restricts parsing to the named lifecycle events, pre-filtering lines with a substring test against the exact serialization `log_event` emits. The filter lives beside the writer deliberately, since it depends on that format. It can only over-match (a prompt quoting a marker), never under-match, and the exact check after parsing drops the false positives.
+
+### Fixed
+- **Pulse no longer parses whole dispatch logs to find a handful of records.** `dispatch_snapshot` ran every line of `dispatch.jsonl` through `json.loads`, but those files are dominated by per-line `output` chunks and never rotate — a working install reaches tens of MB per project (71MB of logs here, 37MB in one file). Switching to the filtered read halves the cost on a 11.7MB log (77ms → 41ms) with identical results, and the saving grows with the file. Introduced in 0.15.0.
+
+### Notes
+- Tests: new `tests/test_observation_focus.py` (11) covering explicit selection, ordering, unknown names, the fits-in-one-window no-op, activity-ranked overflow, the dropped-projects notice, `--all-projects`, and a `Namespace` without the new attributes (the `switch` subcommands don't define them). New activity-ranking and event-filter cases in `tests/test_pulse.py`, including that a prompt containing another event's marker text is never dropped. 727 passing.
+- Roadmap: the Surfaces track is reorganized around the map/microscope split, `cmcp brief`'s planned promotion to a pulse-powered digest is **retracted** (measured: 55ms vs 2.5s on a hook that runs at every launch, mostly discarded work), and the "live output in the TUI" item now records that the data already streams into `dispatch.jsonl` — the sidebar polls `dispatches.db`, whose `output` column only fills at exit. That is wiring, and is unrelated to the genuinely hard PTY-mode capture problem it had been conflated with.
+- `data/{CLAUDE,AGENTS}.md` changed — existing installs need `rm ~/.central-mcp/{CLAUDE,AGENTS}.md` before the next orchestrator launch to pick up the new bundle (copy-on-miss).
+
+---
+
 ## [0.15.0] — 2026-07-26
 
 ### Added
