@@ -28,6 +28,7 @@ from fastmcp import FastMCP
 
 from central_mcp import config as user_config
 from central_mcp import dispatches_db, events, paths, pty_sessions, tokens_db
+from central_mcp import pulse as pulse_mod
 from central_mcp import tasks_protocol
 from central_mcp.adapters import get_adapter
 from central_mcp.adapters.base import VALID_AGENTS, VALID_PERMISSION_MODES
@@ -145,6 +146,22 @@ instead:
                              to list every registered project across
                              workspaces.
   - project_status         — registry info for one project
+  - project_pulse          — what actually happened in a project:
+                             git (branch, ahead/behind, uncommitted
+                             work, recent commits), in-flight + recent
+                             dispatches, resumable sessions, open PRs.
+                             Use this when the user returns to a
+                             project or asks "what's the state of X?".
+                             Unlike dispatch_history, it reads the
+                             repository itself, so work that never went
+                             through central-mcp — direct commits,
+                             interactive agent sessions, manual edits —
+                             shows up too. Pass include_pr=False when
+                             sweeping several projects (the `gh` lookup
+                             is the only network call). Sections
+                             degrade independently and carry a `reason`
+                             when unavailable, so a missing section
+                             never means "nothing happened".
   - dispatch               — run a one-shot agent in the project's cwd.
                              NON-BLOCKING: returns a dispatch_id immediately.
                              Pass name="@workspace" to fan-out the prompt
@@ -383,18 +400,7 @@ def _with_completed(response: Any) -> Any:
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
-    if not path.exists():
-        return []
-    out: list[dict[str, Any]] = []
-    for line in path.read_text(errors="replace").splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            out.append(json.loads(line))
-        except json.JSONDecodeError:
-            pass
-    return out
+    return events.read_jsonl(path)
 
 
 def _project_history(project: str, n: int) -> list[dict[str, Any]]:
@@ -486,6 +492,54 @@ def project_status(name: str) -> dict[str, Any]:
     if err:
         return err
     return _with_completed({"ok": True, "project": project.to_dict()})
+
+
+@mcp.tool()
+def project_pulse(
+    name: str,
+    commits: int = 5,
+    history: int = 5,
+    include_pr: bool = True,
+) -> dict[str, Any]:
+    """What actually happened in a project, where it stands, what's live.
+
+    Use this when the user returns to a project after time away, asks
+    "what's the state of X?", or before dispatching into a project you
+    haven't touched this session. Unlike `dispatch_history` /
+    `orchestration_history` — which only know about work that went
+    *through* central-mcp — a pulse reads the repository itself, so
+    direct commits, interactive agent sessions, and manual edits show up
+    too.
+
+    Sections (each degrades independently, with a `reason` when
+    unavailable — never assume a missing section means "nothing
+    happened"):
+      - `git`: branch, upstream ahead/behind, working-tree dirt with a
+        bounded file sample, and the last `commits` commits.
+      - `dispatches`: in-flight work, the last `history` outcomes with
+        prompts and previews, and all-time success/failure counts.
+        `stale` holds rows still marked running after hours — a crashed
+        or restarted server never wrote their terminal state, so report
+        them as unfinished, not as live work.
+      - `sessions`: resumable agent conversations, when the project's
+        agent has a session reader.
+      - `pull_requests`: open PRs via `gh`. The only network call here —
+        pass `include_pr=False` when sweeping many projects.
+
+    Nothing is stored: every call recomputes from source. Synthesize the
+    result into a short narrative ("since your last visit … currently …
+    next …") rather than reciting the fields back to the user.
+    """
+    project, err = _require_project(name)
+    if err:
+        return err
+    result = pulse_mod.pulse_for(
+        project,
+        commits=max(0, commits),
+        history=max(0, history),
+        include_pr=include_pr,
+    )
+    return _with_completed(result)
 
 
 def _launch_dispatch(

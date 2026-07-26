@@ -23,6 +23,7 @@ from central_mcp.cli._commands import (
     cmd_init,
     cmd_install,
     cmd_list,
+    cmd_pulse,
     cmd_remove,
     cmd_reorder,
     cmd_run,
@@ -325,6 +326,46 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p_brief.set_defaults(func=cmd_brief)
+
+    p_pulse = sub.add_parser(
+        "pulse",
+        help="what actually happened in a project (git + dispatches + sessions)",
+        description=(
+            "Print a project's real state: git branch / divergence / "
+            "working-tree dirt / recent commits, in-flight and recent "
+            "dispatches, resumable agent sessions, and open PRs. Unlike "
+            "the dispatch log, this reads the repository itself, so work "
+            "done outside central-mcp shows up too. With no project name, "
+            "sweeps every project in the current workspace. Computes "
+            "everything fresh on each run and stores nothing."
+        ),
+    )
+    p_pulse.add_argument(
+        "name",
+        nargs="?",
+        help="project to inspect (omit to sweep the current workspace)",
+    )
+    p_pulse.add_argument(
+        "--commits", type=int, default=5,
+        help="recent commits to include per project (default: 5)",
+    )
+    p_pulse.add_argument(
+        "--history", type=int, default=5,
+        help="recent dispatch outcomes to include per project (default: 5)",
+    )
+    p_pulse.add_argument(
+        "--no-pr", action="store_true",
+        help="skip the `gh` open-PR lookup for a single project",
+    )
+    p_pulse.add_argument(
+        "--pr", action="store_true",
+        help="include open PRs in a workspace sweep (one `gh` call per project)",
+    )
+    p_pulse.add_argument(
+        "--json", action="store_true",
+        help="emit the raw pulse as JSON instead of markdown",
+    )
+    p_pulse.set_defaults(func=cmd_pulse)
 
     p_add = sub.add_parser(
         "add",

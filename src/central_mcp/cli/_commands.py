@@ -122,6 +122,49 @@ def cmd_brief(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_pulse(args: argparse.Namespace) -> int:
+    """Print a project's real state — or the whole workspace's."""
+    import json as _json
+
+    from central_mcp import pulse as pulse_mod
+    from central_mcp.registry import find_project
+
+    name = getattr(args, "name", None)
+    if name:
+        project = find_project(name)
+        if project is None:
+            print(f"error: unknown project: {name}", file=sys.stderr)
+            return 1
+        result = pulse_mod.pulse_for(
+            project,
+            commits=args.commits,
+            history=args.history,
+            # A single project is one network call — worth it on the
+            # "coming back to this repo" path unless explicitly skipped.
+            include_pr=not args.no_pr,
+        )
+        print(_json.dumps(result, indent=2, ensure_ascii=False)
+              if args.json else pulse_mod.render(result))
+        return 0
+
+    ws = current_workspace()
+    projects = projects_in_workspace(ws)
+    if not projects:
+        print(f"(no projects in workspace {ws!r})")
+        return 0
+    # Portfolio sweep: PRs stay off unless asked for — one network call
+    # per project turns a digest into a stall.
+    results = pulse_mod.pulse_many(
+        projects,
+        commits=args.commits,
+        history=args.history,
+        include_pr=args.pr,
+    )
+    print(_json.dumps(results, indent=2, ensure_ascii=False)
+          if args.json else pulse_mod.render_many(results, title=f"Portfolio pulse · {ws}"))
+    return 0
+
+
 # ---------- observation layer (optional tmux) ----------
 
 def _resolve_max_panes(args: argparse.Namespace) -> int:

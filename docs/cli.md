@@ -59,6 +59,11 @@ List registered projects.
 ### `central-mcp brief`
 One-shot text portfolio overview (no curses).
 
+### `central-mcp pulse [name] [--commits N] [--history N] [--pr] [--no-pr] [--json]` (0.15.0+)
+What actually happened in a project: git branch / divergence / uncommitted work / recent commits, in-flight and recent dispatches, resumable sessions, and open PRs. Reads the repository itself, so work done outside central-mcp shows up too.
+
+With no project name, sweeps every project in the current workspace concurrently. Open-PR lookup (one `gh` call per project) is on for a single project and off for a sweep — `--no-pr` and `--pr` flip the respective defaults. `--json` emits the raw structure instead of markdown. Computes everything fresh on each run and stores nothing.
+
 ### `central-mcp add <name> <path> [--agent AGENT] [--workspace NAME]`
 Register a project.
 

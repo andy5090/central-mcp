@@ -59,6 +59,11 @@ curses 기반 포트폴리오 대시보드: 에이전트별 quota 바, 프로젝
 ### `central-mcp brief`
 포트폴리오 한눈에 보기 (curses 안 씁니다, 단순 텍스트).
 
+### `central-mcp pulse [name] [--commits N] [--history N] [--pr] [--no-pr] [--json]` (0.15.0+)
+프로젝트에서 실제로 무슨 일이 있었는지: git 브랜치 / 분기 상태 / 커밋 안 된 작업 / 최근 커밋, 진행 중·최근 dispatch, 재개 가능한 세션, 열린 PR. 레포 자체를 읽으므로 central-mcp 밖에서 한 작업도 잡힙니다.
+
+프로젝트명을 생략하면 현재 워크스페이스 전체를 동시에 훑습니다. 열린 PR 조회(프로젝트당 `gh` 호출 1회)는 단일 프로젝트에선 켜져 있고 전체 스윕에선 꺼져 있으며, `--no-pr` / `--pr`로 각각의 기본값을 뒤집습니다. `--json`은 마크다운 대신 원본 구조를 출력합니다. 매 실행마다 새로 계산하고 아무 상태도 저장하지 않습니다.
+
 ### `central-mcp add <name> <path> [--agent AGENT] [--workspace NAME]`
 프로젝트 등록.
 

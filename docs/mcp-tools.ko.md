@@ -19,6 +19,20 @@ central-mcp가 orchestrator에 노출하는 MCP 도구 목록입니다. 정식 �
 ### `project_status(name)`
 프로젝트 하나의 레지스트리 정보 — 에이전트, 경로, 워크스페이스 멤버십.
 
+### `project_pulse(name, commits=5, history=5, include_pr=True)` (0.15.0+)
+프로젝트에서 실제로 무슨 일이 있었고, 지금 어디에 있고, 뭐가 아직 돌고 있는지. 오래 비웠던 프로젝트로 복귀할 때, 또는 "X 상태 어때?"라는 질문에 씁니다.
+
+`dispatch_history` / `orchestration_history`는 central-mcp를 *거쳐간* 작업만 압니다. pulse는 레포 자체를 읽으므로 직접 커밋, 인터랙티브 에이전트 세션, 수동 편집도 잡힙니다.
+
+섹션:
+
+- `git`: 브랜치, upstream `ahead` / `behind`, 워킹 트리 변경(staged / unstaged / untracked / conflicted 카운트 + 제한된 파일 샘플), 최근 `commits`개 커밋
+- `dispatches`: `in_flight`, `stale`(몇 시간째 running으로 남은 행 — 서버가 죽어 종료 상태를 못 쓴 것이므로 진행 중이 아니라 미완료로 보고), 최근 `history`개 결과(프롬프트·출력 미리보기 포함), 전체 기간 카운트
+- `sessions`: 어댑터가 열거할 수 있는 에이전트의 재개 가능한 대화
+- `pull_requests`: `gh` 경유 열린 PR — 유일한 네트워크 호출이므로 여러 프로젝트를 훑을 땐 `include_pr=False`
+
+각 섹션은 독립적으로 degrade하며 사용 불가 시 `reason`을 담습니다 — 섹션이 비었다고 "아무 일도 없었다"는 뜻이 아닙니다. 저장하는 상태는 없고 매 호출마다 원본에서 새로 계산합니다.
+
 ### `orchestration_history(workspace=None, include_archives=False)`
 포트폴리오 전체 스냅샷: 진행 중 dispatch, 최근 milestone, 프로젝트별 카운트(dispatched / succeeded / failed / cancelled).
 

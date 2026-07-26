@@ -19,6 +19,20 @@ List registered projects in the current workspace by default. Pass `workspace="<
 ### `project_status(name)`
 Registry info for one project — agent, path, workspace membership.
 
+### `project_pulse(name, commits=5, history=5, include_pr=True)` (0.15.0+)
+What actually happened in a project, where it stands, and what's still live. Use it when returning to a project after time away, or when asked "what's the state of X?".
+
+Unlike `dispatch_history` / `orchestration_history` — which only know about work that went *through* central-mcp — a pulse reads the repository itself, so direct commits, interactive agent sessions, and manual edits show up too.
+
+Sections:
+
+- `git`: branch, upstream `ahead` / `behind`, working-tree dirt (staged / unstaged / untracked / conflicted counts plus a bounded file sample), and the last `commits` commits
+- `dispatches`: `in_flight`, `stale` (rows still marked running after hours — a crashed server never wrote their terminal state, so they're unfinished, not live), the last `history` outcomes with prompts and previews, and all-time counts
+- `sessions`: resumable agent conversations, for agents whose adapter can enumerate them
+- `pull_requests`: open PRs via `gh` — the only network call, so pass `include_pr=False` when sweeping many projects
+
+Each section degrades independently and carries a `reason` when unavailable; a missing section never means "nothing happened". Nothing is stored — every call recomputes from source.
+
 ### `orchestration_history(workspace=None, include_archives=False)`
 Portfolio-wide snapshot: in-flight dispatches + recent milestones + per-project counts (dispatched / succeeded / failed / cancelled).
 

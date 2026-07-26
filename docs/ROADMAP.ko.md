@@ -47,7 +47,7 @@ central-mcp의 일은 그 PM이 되는 것입니다. 등록된 모든 프로젝�
 
 새 무게중심 트랙입니다. 아키텍처는 의도적으로 2단계 — **pulse 먼저(stateless), 장부는 그 다음(durable)** — 라서 PM의 ground truth는 항상 레포에서 새로 계산되고, 저장 상태는 하중을 받지 않는 부가물로 남습니다.
 
-📋 **`project_pulse(project)` MCP 도구 + `cmcp pulse [project]`.** 프로젝트에 대해 *지금* 알 수 있는 모든 것의 stateless 즉석 집계: git(현재 브랜치, 최근 커밋, dirty 파일, upstream 대비 ahead/behind), dispatch 이력(최근 결과, 토큰), 기존 에이전트별 session reader를 통한 세션 활동, `gh`가 있으면 열린 PR 상태까지. 새 저장소 없음 — pulse는 매 호출마다 새로 계산되므로, central-mcp를 전혀 거치지 않은 작업(직접 커밋, 인터랙티브 세션)도 git이 진실의 원천이기 때문에 잡힙니다. 다른 모든 PM 기능이 딛고 서는 데이터 척추입니다.
+✅ **`project_pulse(project)` MCP 도구 + `cmcp pulse [project]` (0.15.0).** 프로젝트에 대해 *지금* 알 수 있는 모든 것의 stateless 즉석 집계: git(브랜치, 최근 커밋, 워킹 트리 변경, upstream 대비 ahead/behind), dispatch(진행 중·stale·최근 결과·카운트), 기존 에이전트별 session reader를 통한 세션 활동, `gh` 경유 열린 PR 상태. 새 저장소 없음 — pulse는 매 호출마다 새로 계산되므로, central-mcp를 전혀 거치지 않은 작업(직접 커밋, 인터랙티브 세션)도 git이 진실의 원천이기 때문에 잡힙니다. 각 섹션이 `reason`과 함께 독립적으로 degrade하므로 신호 하나가 빠져도 pulse 전체가 무너지지 않습니다. 다른 모든 PM 기능이 딛고 서는 데이터 척추입니다.
 
 📋 **복귀 브리핑.** PM의 대표 순간: 며칠 만에 프로젝트로 돌아오면 "무슨 일이 있었고 / 지금 어디고 / 다음이 뭔지"를 한 번에 받습니다. `cmcp brief`가 registry 나열에서 pulse 기반 포트폴리오 다이제스트로 승격되고, `data/{CLAUDE,AGENTS}.md`의 레시피가 orchestrator에게 사용자가 프로젝트로 컨텍스트 스위칭할 때마다 `project_pulse`로 내러티브 브리핑을 합성하도록 가르칩니다.
 

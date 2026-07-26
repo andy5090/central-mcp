@@ -204,6 +204,33 @@ def read_archive_summary(archive_path: Path) -> dict[str, Any] | None:
         return None
 
 
+def read_jsonl(path: Path) -> list[dict[str, Any]]:
+    """Read a jsonl file written by this module into a list of records.
+
+    Skips unparseable lines rather than failing — a partially written
+    final line is normal for a log that is appended to concurrently.
+    Returns [] for a missing or unreadable file.
+    """
+    try:
+        if not path.exists():
+            return []
+        raw = path.read_text(errors="replace")
+    except OSError:
+        return []
+    out: list[dict[str, Any]] = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(record, dict):
+            out.append(record)
+    return out
+
+
 def log_event(project: str, dispatch_id: str, event: str, **data: Any) -> None:
     """Append one dispatch event to the project's jsonl log.
 

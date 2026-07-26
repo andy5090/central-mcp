@@ -3,6 +3,28 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.15.0] — 2026-07-26
+
+### Added
+- **`project_pulse` MCP tool + `cmcp pulse [project]` — the Portfolio PM data spine.** New `central_mcp.pulse` module aggregates, statelessly and on demand, everything knowable about a project right now: **git** (branch, upstream ahead/behind, staged/unstaged/untracked/conflicted counts with a bounded file sample, last N commits) from a single `git status --porcelain=v2 --branch` plus one `git log`; **dispatches** (in-flight from the shared `dispatches.db`, recent outcomes joined with their prompts from the project's jsonl, all-time counts); **sessions** (resumable conversations, for adapters that can enumerate them); and **pull requests** (open PRs via `gh`). This closes central-mcp's oldest blind spot: `dispatch_history` / `orchestration_history` only know about work that went *through* the hub, so direct commits, interactive agent sessions, and manual edits were invisible — a pulse reads the repository itself, so they aren't. Nothing is stored; every call recomputes from source, keeping the stateless-between-requests invariant. Every section degrades independently and carries a `reason` when unavailable (no git binary, not a repo, `gh` unauthenticated, agent without a session reader), so one missing signal never sinks the pulse.
+- **`cmcp pulse` with no project sweeps the current workspace** concurrently (thread pool, order preserved, a failing project isolated to its own `ok: false` row). Open-PR lookup — the only network call — defaults on for a single project and off for a sweep; `--no-pr` / `--pr` flip the respective defaults. `--json` emits the raw structure instead of the markdown rendering.
+- **Stale dispatches are reported as unfinished, not as live work.** Only the originating process can write a dispatch's terminal row, so a crashed or restarted server leaves rows marked `running` forever — one project here had a 92-day-old "in flight" dispatch. `project_pulse` splits `dispatches.stale` (running for over 2h) from `dispatches.in_flight` rather than dropping either, and the runtime orchestrator guidance in `data/{CLAUDE,AGENTS}.md` says to report them as abandoned.
+
+### Changed
+- **Runtime orchestrator guidance: project switches now brief from a pulse.** `data/{CLAUDE,AGENTS}.md`'s "recap the arriving project" rule moves from `dispatch_history(B, n=3)` to `project_pulse(B)`, restructured around the PM shape — what happened / where it stands / what's next — with the reasoning made explicit: after an absence, the interesting work is often precisely the work that didn't go through central-mcp.
+- **`events.read_jsonl(path)` is now a shared public reader.** `server._read_jsonl` was the only jsonl parser and lived in the wrong module; the canonical one moves next to the writers that define the format, and `server._read_jsonl` delegates to it. Behavior additionally hardened: non-dict JSON values (e.g. a bare array) are skipped rather than returned as records.
+
+### Fixed
+- **Same-millisecond dispatch ordering.** Event timestamps have millisecond precision, so dispatches finishing inside the same millisecond tied, and a stable sort left them in insertion order — "most recent" could report the oldest of the tied set. Terminal events now carry their line position as a tiebreaker, which is authoritative because the log is append-only.
+- **`last_activity_at` is normalized to UTC.** Git reports commit times in the committer's local offset while dispatch logs are UTC, so the aggregate timestamp could come back as either. Callers comparing two projects' `last_activity_at` as ISO strings — the obvious thing to do — would have ordered them by wall-clock digits rather than by instant.
+
+### Notes
+- Tests: `tests/test_pulse.py` (50 cases). Git assertions run against real repositories created in `tmp_path` — the module's whole job is parsing what git actually reports, so mocking the porcelain would test the fixture instead of the parser. Covers clean/dirty/detached/empty/no-upstream repos, ahead-behind against a real bare remote, the staged-and-unstaged-same-file case, bounded file samples, dispatch counts and ordering, stale-vs-live classification, session-reader presence/absence/failure, `gh` missing/failing/parsing, cross-offset timestamp comparison, portfolio-sweep ordering and failure isolation, and the render layer (including a regression test that multi-paragraph prompts stay on one line). 707 passing.
+- Full-workspace sweep over 17 projects: ~1.9s wall clock.
+- `data/{CLAUDE,AGENTS}.md` changed — existing installs need `rm ~/.central-mcp/{CLAUDE,AGENTS}.md` before the next orchestrator launch to pick up the new bundle (copy-on-miss).
+
+---
+
 ## [0.14.0] — 2026-07-04
 
 ### Added
