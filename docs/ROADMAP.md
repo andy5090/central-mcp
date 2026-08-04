@@ -43,6 +43,28 @@ At 1.0 the TUI's `--experimental` flag becomes a no-op (kept for backwards compa
 
 ---
 
+## The usage model — a layer, not a place
+
+The essence section says what central-mcp is *for*; this one says *where you meet it* — ranked, because investment follows rank. Without an explicit ordering it's easy to spend the most on the surface used least; the previous roadmap did exactly that when TUI stability alone defined 1.0.
+
+The organizing observation: **a dedicated orchestrator REPL is a destination, and a PM you have to visit gets forgotten.** The primary surface is therefore whatever agent session is already open.
+
+**Tier 1 — ambient (the main way in): MCP tools inside the session you're already in.** Run `cmcp install claude` (or codex / gemini / opencode) once, and every session of that CLI carries `dispatch`, `project_pulse`, `orchestration_history` alongside its normal tools. The switching cost is zero: open a project, ask "where does this stand?", and the return briefing happens in place; need work done elsewhere, dispatch without leaving. Everything in the [Portfolio PM](#portfolio-pm) track lands here first.
+
+**Tier 2 — reach: the Hermes bridge.** Every other surface assumes a human at a terminal. Hermes's cron + Telegram/Discord gateway is the one channel that finds *you* — the delivery rail for the push-reporting item (daily digest, failure alerts). For "nothing falls through the cracks" this tier ultimately matters as much as tier 1, because the most is missed precisely when no terminal is open.
+
+**Tier 3 — focus (some days, not every day): the TUI.** For sessions whose main job *is* orchestration — fan work out across the portfolio, watch it land, supervise results. The control tower earns its screen when orchestration is the foreground task.
+
+Two consequences, made explicit:
+
+📋 **`cmcp run` demotes to fallback at 1.0.** The TUI is the intended tier-3 surface; `run` stays as the no-extras launcher (no `[tui]` install required) and the escape hatch for terminals that can't host textual. Demoted, not removed.
+
+📋 **`cmcp monitor` retires into the TUI sidebar.** Quota bars + per-project dispatch counts + token sums *is* the sidebar's job description — two surfaces rendering the same data drift apart. Once the TUI is stable at 1.0, `monitor` becomes a deprecation shim pointing at `cmcp tui`; until then it stays untouched.
+
+**Which agent hosts the orchestrator?** Orchestration is routing and narration, not coding — the binding constraint isn't model strength but discipline in the non-blocking loop (dispatch → background-poll → report). claude runs that loop reliably; codex and gemini are weak at sustained polling, which is the documented reason `wait_for_dispatch` exists on the [Dispatch core](#dispatch-core-routing) track. Recommendation until that (or native MCP Tasks clients) levels the field: **claude as the orchestrator, any agent as the dispatch target.**
+
+---
+
 ## Portfolio PM
 
 The new center-of-gravity track. Architecture is deliberately two-phase — **pulse first (stateless), ledger second (durable)** — so the PM's ground truth is always recomputed from the repo, and stored state is additive rather than load-bearing.
