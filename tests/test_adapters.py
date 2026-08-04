@@ -176,12 +176,15 @@ class TestOpenCode:
 
     def test_bypass(self) -> None:
         argv = get_adapter("opencode").exec_argv("fix tests", permission_mode="bypass")
-        assert "--dangerously-skip-permissions" in argv
+        assert "--auto" in argv
+        # The pre-1.17 spelling; yargs hard-rejects unknown flags, so
+        # emitting it breaks every opencode bypass dispatch.
+        assert "--dangerously-skip-permissions" not in argv
 
     def test_bypass_and_resume(self) -> None:
         argv = get_adapter("opencode").exec_argv("x", resume=True, permission_mode="bypass")
         assert "--continue" in argv
-        assert "--dangerously-skip-permissions" in argv
+        assert "--auto" in argv
 
     def test_session_id_replaces_continue(self) -> None:
         argv = get_adapter("opencode").exec_argv(

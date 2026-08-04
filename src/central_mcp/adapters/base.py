@@ -631,7 +631,11 @@ class _OpenCode(Adapter):
         elif resume:
             argv.append("--continue")
         if permission_mode == "bypass":
-            argv.append("--dangerously-skip-permissions")
+            # opencode renamed its bypass flag: --dangerously-skip-permissions
+            # was dropped in favor of --auto ("auto-approve permissions that
+            # are not explicitly denied") somewhere before 1.17.18. yargs
+            # rejects unknown flags, so the old spelling hard-fails the run.
+            argv.append("--auto")
         return argv
 
     def parse_output(

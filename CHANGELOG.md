@@ -14,12 +14,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **`events.read_jsonl(path, only_events=...)`.** Restricts parsing to the named lifecycle events, pre-filtering lines with a substring test against the exact serialization `log_event` emits. The filter lives beside the writer deliberately, since it depends on that format. It can only over-match (a prompt quoting a marker), never under-match, and the exact check after parsing drops the false positives.
 
 ### Fixed
+- **opencode bypass dispatches were broken against current opencode.** opencode renamed its bypass flag — `--dangerously-skip-permissions` no longer exists; the current spelling is `--auto` ("auto-approve permissions that are not explicitly denied", verified against 1.17.18). yargs rejects unknown flags outright, so every `permission_mode="bypass"` dispatch to an opencode project hard-failed. Caught by the pre-release `-m live` adapter contract suite (`test_help_contains_our_flags[opencode]`), which exists for exactly this class of upstream rename.
 - **Pulse no longer parses whole dispatch logs to find a handful of records.** `dispatch_snapshot` ran every line of `dispatch.jsonl` through `json.loads`, but those files are dominated by per-line `output` chunks and never rotate — a working install reaches tens of MB per project (71MB of logs here, 37MB in one file). Switching to the filtered read halves the cost on a 11.7MB log (77ms → 41ms) with identical results, and the saving grows with the file. Introduced in 0.15.0.
 
 ### Notes
 - Tests: new `tests/test_observation_focus.py` (11) covering explicit selection, ordering, unknown names, the fits-in-one-window no-op, activity-ranked overflow, the dropped-projects notice, `--all-projects`, and a `Namespace` without the new attributes (the `switch` subcommands don't define them). New activity-ranking and event-filter cases in `tests/test_pulse.py`, including that a prompt containing another event's marker text is never dropped. 727 passing.
 - Roadmap: the Surfaces track is reorganized around the map/microscope split, `cmcp brief`'s planned promotion to a pulse-powered digest is **retracted** (measured: 55ms vs 2.5s on a hook that runs at every launch, mostly discarded work), and the "live output in the TUI" item now records that the data already streams into `dispatch.jsonl` — the sidebar polls `dispatches.db`, whose `output` column only fills at exit. That is wiring, and is unrelated to the genuinely hard PTY-mode capture problem it had been conflated with.
-- `data/{CLAUDE,AGENTS}.md` changed — existing installs need `rm ~/.central-mcp/{CLAUDE,AGENTS}.md` before the next orchestrator launch to pick up the new bundle (copy-on-miss).
+- `data/{CLAUDE,AGENTS}.md` changed — nothing to do on existing installs: `cmcp run` re-syncs `~/.central-mcp/{CLAUDE,AGENTS}.md` from the packaged bundle whenever the content differs (auto-update since 0.9.3), and MCP-only clients get their instructions injected by the server, not from those files.
 
 ---
 
@@ -41,7 +42,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Notes
 - Tests: `tests/test_pulse.py` (50 cases). Git assertions run against real repositories created in `tmp_path` — the module's whole job is parsing what git actually reports, so mocking the porcelain would test the fixture instead of the parser. Covers clean/dirty/detached/empty/no-upstream repos, ahead-behind against a real bare remote, the staged-and-unstaged-same-file case, bounded file samples, dispatch counts and ordering, stale-vs-live classification, session-reader presence/absence/failure, `gh` missing/failing/parsing, cross-offset timestamp comparison, portfolio-sweep ordering and failure isolation, and the render layer (including a regression test that multi-paragraph prompts stay on one line). 707 passing.
 - Full-workspace sweep over 17 projects: ~1.9s wall clock.
-- `data/{CLAUDE,AGENTS}.md` changed — existing installs need `rm ~/.central-mcp/{CLAUDE,AGENTS}.md` before the next orchestrator launch to pick up the new bundle (copy-on-miss).
+- `data/{CLAUDE,AGENTS}.md` changed — nothing to do on existing installs: `cmcp run` re-syncs `~/.central-mcp/{CLAUDE,AGENTS}.md` from the packaged bundle whenever the content differs (auto-update since 0.9.3), and MCP-only clients get their instructions injected by the server, not from those files.
 
 ---
 

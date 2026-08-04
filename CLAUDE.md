@@ -63,7 +63,7 @@ uv run --no-sync pytest tests/test_adapters.py -v   # targeted
 5. `rm -rf dist && uv build`.
 6. `git push origin main`.
 7. **PyPI upload** — credentials are kept out of this file intentionally. See `.publish.md` (gitignored, local-only) for the exact command. If `.publish.md` doesn't exist yet, create it from the template in `.gitignore`'s comment or ask the agent to scaffold it.
-8. If you edited `src/central_mcp/data/{CLAUDE,AGENTS}.md`, note the copy-on-miss caveat in the CHANGELOG: existing installs need `rm ~/.central-mcp/{CLAUDE,AGENTS}.md` before the next orchestrator launch to pick up the new bundle.
+8. If you edited `src/central_mcp/data/{CLAUDE,AGENTS}.md`, no user action is needed on upgrade: `_ensure_launch_dir` (runs on `cmcp run` / the orchestrator-pane launch path) rewrites `~/.central-mcp/{CLAUDE,AGENTS}.md` whenever the packaged content differs — auto-update since 0.9.3. The old "rm the files first" advice predates that and is obsolete; don't re-add it to new CHANGELOG entries.
 
 Patch-bump cadence is liberal (docs fixes, wording tweaks, small behavior changes). Minor bump for breaking CLI changes, new MCP tools, or backend architecture shifts.
 

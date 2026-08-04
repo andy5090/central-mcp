@@ -294,7 +294,7 @@ agent handles permission prompts. Valid values:
                     claude: --dangerously-skip-permissions,
                     codex: --dangerously-bypass-approvals-and-sandbox,
                     gemini: --yolo, droid: --skip-permissions-unsafe,
-                    opencode: --dangerously-skip-permissions.
+                    opencode: --auto.
   - "auto"       — claude-only; classifier-reviewed actions
                     (--enable-auto-mode --permission-mode auto).
                     Requires Team/Enterprise/API plan + Sonnet 4.6 or
