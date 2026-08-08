@@ -77,7 +77,7 @@ central-mcp의 일은 그 PM이 되는 것입니다. 등록된 모든 프로젝�
 
 📋 **상태 장부 (phase 2).** `~/.central-mcp/projects/<name>/STATUS.md` — 프로젝트별 영속 기억: dispatch 완료 시 덧붙는 구조화된 델타(뭘 했고 뭐가 남았는지), 열린 질문들, 그리고 세션과 orchestrator를 넘어 살아남는 "다음 할 일" 목록. `cmcp note <project> "…"`로 수동 항목 추가. 이후 브리핑은 장부(의도, 다음 할 일)와 pulse(ground truth)를 결합하고 둘 사이의 드리프트를 표시합니다. registry와 같은 평문 파일 — 요청 간 stateless 불변식은 유지됩니다.
 
-📋 **푸시 보고.** 일간/주간 다이제스트와 이벤트 알림(dispatch 실패, 장시간 dispatch 완료)을 새 데몬 없이 배달: TUI watcher가 로컬에서 surface하고, Hermes 브릿지(cron + Telegram/Discord gateway, 0.12.2–0.14.0 출하)가 터미널 밖으로 운반합니다. Hermes skill의 스케치를 pulse 기반 다이제스트 포맷을 갖춘 1급 레시피로 승격.
+✅ **푸시 보고 (0.17.0).** 일간/주간 다이제스트와 이벤트 알림을 새 데몬 없이 배달합니다. `portfolio_digest`가 고정 포맷의 pulse 기반 리포트를 서버 쪽에서 렌더링하고(`digest_markdown`, 그대로 전달 — `token_usage.summary_markdown`과 같은 논리), `cmcp digest`가 같은 리포트를 일반 crontab에도 서빙합니다. `list_dispatches(status="failed", since=…)`가 상주 에이전트에게 재알림 없는 failure 커서를 주되 워터마크는 구독자가 보관해 central-mcp는 무상태로 남습니다. Hermes skill의 스케치는 1급 레시피 둘(일간 다이제스트 cron, failure watch)로 승격됐고, TUI watcher는 로컬 표면으로 유지됩니다.
 
 💭 **물으면 답하는 비서 강화.** `orchestration_history`에 git 인지 결합 — 포트폴리오 답변이 더 이상 dispatch 이벤트에 갇히지 않습니다. 프로젝트별 저비용 pulse 읽기를 fan-out하는 `include_pulse` 플래그가 유력.
 

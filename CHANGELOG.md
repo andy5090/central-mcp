@@ -3,6 +3,23 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.17.0] — 2026-08-09
+
+### Added
+- **`portfolio_digest` MCP tool + `cmcp digest` — push reporting lands.** New `central_mcp.digest` module classifies the portfolio for one window (24h daily / 168h weekly) into **active** (commits with latest subject, dispatch ✅/❌ counts, in-flight, uncommitted files), **warnings** (failed dispatches in the window; dispatches stuck in `running` for hours, reported as unfinished rather than live; quiet projects with uncommitted work sitting past `quiet_days` — the classic dropped ball), **quiet** (longest-idle first), and a compact per-agent **quota** line. The report is rendered server-side into `digest_markdown` for verbatim forwarding — same reasoning as `token_usage.summary_markdown`: an LLM re-composing the report daily makes every day look different, and omissions are invisible. Pulse-powered, so work that never went through central-mcp counts. `cmcp digest | <any notifier>` from a plain crontab produces the identical report a resident agent would send. Stateless like everything else: scheduling and watermarks belong to the caller.
+- **`list_dispatches(status=, since=)` — a re-alert-proof failure cursor.** Rows now carry `ok` and `finished_at`; `status` filters by exact state or the alias `failed` (`error` / `timeout` / `complete`-with-`ok=false`; cancelled is deliberate and excluded), and `since` keeps only rows whose `finished_at` is *strictly* later (running rows always pass). A resident agent polls `status="failed", since=<watermark>`, alerts, and advances its watermark to the max `finished_at` it saw — the strict comparison means an unchanged watermark never re-alerts, and the watermark lives with the subscriber, keeping central-mcp stateless between requests. A malformed `since` raises instead of returning `[]`, which would be indistinguishable from "no new failures" and freeze the caller's watermark forever.
+
+### Changed
+- **Hermes skill: hints promoted to recipes (v1.1.0).** The two-line "cron digests would be valuable" sketch in `data/hermes-skill.md` is now two step-by-step recipes — the daily digest cron (call `portfolio_digest`, forward `digest_markdown` verbatim, one optional lead-in line only when warnings exist) and the failure watch (cursor protocol incl. the cold-start rule: first run records a watermark and alerts on nothing, because alerting on stale history helps no one). Re-running `cmcp install hermes` refreshes the installed skill in place.
+- **Runtime guides + decision table.** `data/{CLAUDE,AGENTS}.md` gain `portfolio_digest` ("daily/weekly recap" → paste verbatim) alongside the existing rows; server MCP instructions updated to match.
+- **Static site refreshed around the portfolio-PM essence.** Landing page (en+ko) reframed: the "Why" now names the actual problem (running many projects got cheap; keeping track of them didn't), a "How you meet it — three tiers" section mirrors the roadmap's usage model, the observation section carries the map/microscope framing, and the Hermes section's compositions are updated to the shipped 0.17.0 digest + failure-watch. Quickstart (en+ko) gains step 5, "Come back later — the PM briefing" (pulse + digest), and its observation step reflects the 0.16 focus default.
+
+### Notes
+- Tests: `tests/test_digest.py` (23) — window-edge classification against synthetic pulses, cancelled-is-not-a-failure, stale/uncommitted-and-quiet/pulse-failed warnings, quota flattening incl. errored agents yielding nothing, render shape (cap marker, no-activity, empty portfolio), one end-to-end case over a real repo, and the cursor suite (strict-greater-than semantics, `Z`-suffix timestamps, running rows passing the filter, malformed `since` raising). 750 passing.
+- First real run immediately earned its keep: it surfaced a project with 103 uncommitted files untouched for 107 days.
+
+---
+
 ## [0.16.0] — 2026-07-26
 
 ### Changed

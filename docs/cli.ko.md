@@ -61,6 +61,11 @@ curses 기반 포트폴리오 대시보드: 에이전트별 quota 바, 프로젝
 ### `central-mcp brief`
 포트폴리오 한눈에 보기 (curses 안 씁니다, 단순 텍스트).
 
+### `central-mcp digest [--workspace NAME] [--hours N] [--quiet-days N] [--no-quota] [--json]` (0.17.0+)
+포트폴리오 다이제스트 출력 — `portfolio_digest` MCP 도구가 서빙하는 것과 같은 사전 렌더링 리포트: 활동한 프로젝트(커밋, dispatch 결과, 미커밋 작업), 경고(실패한 dispatch, 종료 안 된 dispatch, 미커밋 작업이 방치된 조용한 프로젝트), quiet 목록, 압축 quota 라인.
+
+CLI 형태가 있는 이유는 푸시 배달에 MCP를 말하는 호출자가 필수는 아니게 하기 위해서입니다: 일반 crontab에서 `cmcp digest | <notifier>` 만으로 상주 에이전트가 보내는 것과 동일한 리포트가 나옵니다. 주간은 `--hours 168`.
+
 ### `central-mcp pulse [name] [--commits N] [--history N] [--pr] [--no-pr] [--json]` (0.15.0+)
 프로젝트에서 실제로 무슨 일이 있었는지: git 브랜치 / 분기 상태 / 커밋 안 된 작업 / 최근 커밋, 진행 중·최근 dispatch, 재개 가능한 세션, 열린 PR. 레포 자체를 읽으므로 central-mcp 밖에서 한 작업도 잡힙니다.
 

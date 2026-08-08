@@ -1,5 +1,5 @@
 ---
-description: Install central-mcp, launch an orchestrator, and dispatch your first parallel agent task in three minutes — natural-language flow from project registration to fan-out.
+description: Install central-mcp, launch an orchestrator, dispatch your first parallel agent task, and get your first pulse briefing — natural-language flow from project registration to the PM loop.
 ---
 
 # Quickstart
@@ -74,13 +74,30 @@ The orchestrator:
 
 You stay in conversation the whole time.
 
-## 5. Optional: live observation
+## 5. Come back later — the PM briefing
+
+Days pass, you worked on other things, some of it never touched central-mcp. Ask:
+
+> *"Where does my-app stand?"*
+
+The orchestrator calls `project_pulse("my-app")` — which reads the **repository itself** (branch, ahead/behind, uncommitted files, recent commits) plus dispatch history and agent sessions — and briefs you: *what happened, where it stands, what's next*. Direct commits and interactive sessions count, precisely because the pulse doesn't rely on the hub having seen them.
+
+For the whole portfolio at once:
+
+```bash
+cmcp pulse            # every project in the workspace, most recent first
+cmcp digest           # the fixed-format daily report (add --hours 168 for weekly)
+```
+
+`cmcp digest | <any notifier>` from a crontab is a complete push-reporting setup; pair it with the [Hermes bridge](index.md#agentos-friendly-hermes-integration) if you want the digest arriving in Telegram without owning a crontab.
+
+## 6. Optional: live observation
 
 ```bash
 cmcp up
 ```
 
-Picks tmux or zellij interactively, lays out one pane per project running `cmcp watch <project>`, and gives you the orchestrator on the side.
+Picks tmux or zellij interactively and lays out watch panes around the orchestrator. Panes go to the projects you're actively working on — most recently active first when the workspace doesn't fit one window, `--projects a,b,c` to choose, `--all-projects` to tile everything.
 
 ## What's next
 

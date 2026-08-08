@@ -28,6 +28,7 @@ from fastmcp import FastMCP
 
 from central_mcp import config as user_config
 from central_mcp import dispatches_db, events, paths, pty_sessions, tokens_db
+from central_mcp import digest as digest_mod
 from central_mcp import pulse as pulse_mod
 from central_mcp import tasks_protocol
 from central_mcp.adapters import get_adapter
@@ -170,6 +171,14 @@ instead:
   - list_dispatches        — show all active + recently completed dispatches
   - cancel_dispatch        — abort a running dispatch
   - dispatch_history       — last N dispatches for one project
+  - portfolio_digest       — pre-rendered daily/weekly portfolio
+                             summary (active / warnings / quiet /
+                             quota). Pulse-powered, so direct commits
+                             count. Paste `digest_markdown` verbatim
+                             into your reply — never re-summarize it.
+                             Resident agents run it from cron and
+                             forward it to chat; terminal orchestrators
+                             use it for "recap everything" asks.
   - orchestration_history  — portfolio-wide snapshot: in-flight +
                              recent milestones + per-project stats
                              (dispatched / succeeded / failed / cancelled
@@ -1123,11 +1132,65 @@ def check_dispatch(dispatch_id: str) -> dict[str, Any]:
     }
 
 
+def _dispatch_row(e: dict[str, Any]) -> dict[str, Any]:
+    """Shape one dispatch entry (memory or db) for list_dispatches."""
+    result = e.get("result") or {}
+    ok = result.get("ok") if e["status"] != "running" else None
+    finished_at: str | None = None
+    if e["status"] != "running":
+        # DB rows carry `updated`; in-memory terminal entries can derive
+        # finish time from start + duration. Either way it's the moment
+        # the terminal state was recorded, which is what a cursor wants.
+        epoch = e.get("updated") or (
+            e["started"] + result["duration_sec"]
+            if result.get("duration_sec") is not None else None
+        )
+        if epoch is not None:
+            finished_at = datetime.fromtimestamp(
+                epoch, tz=timezone.utc
+            ).isoformat(timespec="milliseconds")
+    return {
+        "dispatch_id": e["id"],
+        "project": e["project"],
+        "agent": e["agent"],
+        "status": e["status"],
+        "ok": ok,
+        "elapsed_sec": round(time.time() - e["started"], 1),
+        "finished_at": finished_at,
+    }
+
+
+def _is_failure(row: dict[str, Any]) -> bool:
+    """A dispatch that ended badly. Cancelled is deliberate, not a failure."""
+    if row["status"] in ("error", "timeout"):
+        return True
+    return row["status"] == "complete" and not row["ok"]
+
+
 @mcp.tool()
-def list_dispatches() -> list[dict[str, Any]]:
-    """List all active and recently completed background dispatches,
+def list_dispatches(
+    status: str | None = None,
+    since: str | None = None,
+) -> list[dict[str, Any]]:
+    """List active and recently completed background dispatches,
     including those started by other central-mcp processes (shared
     state via `~/.central-mcp/dispatches.db`).
+
+    **status** (optional): filter to one of `running` / `complete` /
+    `error` / `timeout` / `cancelled`, or the alias **`failed`** —
+    anything that ended badly (`error`, `timeout`, or `complete` with
+    `ok=false`; cancelled is deliberate and excluded).
+
+    **since** (optional): ISO 8601 timestamp; only dispatches whose
+    `finished_at` is strictly later are returned (still-running rows
+    are unaffected by this filter).
+
+    Together these back the resident-agent **failure watch** without
+    central-mcp holding subscriber state: call
+    `list_dispatches(status="failed", since=<watermark>)`, alert on
+    whatever comes back, and advance your watermark to the max
+    `finished_at` you saw. The strict-greater-than filter means an
+    unchanged watermark never re-alerts the same failure.
     """
     seen: set[str] = set()
     result: list[dict[str, Any]] = []
@@ -1135,24 +1198,46 @@ def list_dispatches() -> list[dict[str, Any]]:
     with _dispatch_lock:
         for e in _dispatches.values():
             seen.add(e["id"])
-            result.append({
-                "dispatch_id": e["id"],
-                "project": e["project"],
-                "agent": e["agent"],
-                "status": e["status"],
-                "elapsed_sec": round(time.time() - e["started"], 1),
-            })
+            result.append(_dispatch_row(e))
     # Then shared-state entries we don't already have locally.
     for e in dispatches_db.list_all(limit=200):
         if e["id"] in seen:
             continue
-        result.append({
-            "dispatch_id": e["id"],
-            "project": e["project"],
-            "agent": e["agent"],
-            "status": e["status"],
-            "elapsed_sec": round(time.time() - e["started"], 1),
-        })
+        result.append(_dispatch_row(e))
+
+    if status is not None:
+        if status == "failed":
+            result = [r for r in result if _is_failure(r)]
+        else:
+            result = [r for r in result if r["status"] == status]
+    if since is not None:
+        # Compare as instants, not strings — the caller's ISO form may
+        # use a `Z` suffix or a different offset than ours.
+        try:
+            since_epoch = datetime.fromisoformat(
+                since.replace("Z", "+00:00")
+            ).timestamp()
+        except ValueError:
+            # Surface the mistake — silently returning [] would look
+            # exactly like "no new failures" and freeze the caller's
+            # watermark forever.
+            raise ValueError(
+                f"since must be an ISO 8601 timestamp, got {since!r}"
+            )
+
+        def _after(r: dict[str, Any]) -> bool:
+            if r["status"] == "running":
+                return True
+            if r["finished_at"] is None:
+                return False
+            try:
+                return datetime.fromisoformat(
+                    r["finished_at"]
+                ).timestamp() > since_epoch
+            except ValueError:
+                return False
+
+        result = [r for r in result if _after(r)]
     return result
 
 
@@ -1634,6 +1719,69 @@ def dispatch_history(
         "count": len(records),
         "records": records,
     })
+
+
+@mcp.tool()
+def portfolio_digest(
+    workspace: str | None = None,
+    since_hours: int = 24,
+    quiet_days: int = 7,
+    include_quota: bool = True,
+) -> dict[str, Any]:
+    """Pre-rendered portfolio summary for push delivery — paste
+    `digest_markdown` VERBATIM; do not re-summarize it.
+
+    Built for the resident-agent digest loop (a cron that forwards the
+    portfolio state to chat every morning), and equally usable by a
+    terminal orchestrator when the user asks for a daily/weekly recap.
+    The rendering is fixed server-side for the same reason
+    `token_usage.summary_markdown` is: an LLM re-composing the report
+    daily makes every day look different, and omissions are invisible.
+
+    Data spine is the pulse, so — unlike `orchestration_history` —
+    work that never went through central-mcp (direct commits,
+    interactive sessions) is counted. Sections:
+      - `active`: projects with activity inside the window (commits,
+        dispatch outcomes, in-flight count, uncommitted files)
+      - `warnings`: failed dispatches in the window, dispatches stuck
+        in `running` for hours (report as unfinished, never as live),
+        and quiet projects with uncommitted work sitting in them
+      - `quiet`: everything else, longest-idle first
+      - `quota`: compact per-agent subscription windows (when
+        `include_quota`)
+
+    **workspace**: same semantics as `list_projects` — None for the
+    current workspace, a name, or `"__all__"` for everything.
+    **since_hours**: activity window (24 daily; 168 weekly).
+    **quiet_days**: idle threshold for the uncommitted-work warning.
+
+    Nothing is stored; every call recomputes from source. Scheduling
+    and alert watermarks belong to the caller (`list_dispatches` with
+    `status="failed"` + `since` covers the alert half).
+    """
+    if workspace in _ALL_WORKSPACES_SENTINELS:
+        projects = load_registry()
+        label = "all workspaces"
+    else:
+        ws = workspace if workspace is not None else user_config.current_workspace()
+        projects = projects_in_workspace(ws)
+        label = ws
+    quota = None
+    if include_quota:
+        from central_mcp import quota as quota_mod
+        try:
+            quota = quota_mod.snapshot()
+        except Exception:
+            quota = None
+    result = digest_mod.build(
+        projects,
+        workspace_label=label,
+        since_hours=since_hours,
+        quiet_days=quiet_days,
+        quota=quota,
+    )
+    result["digest_markdown"] = digest_mod.render(result)
+    return _with_completed(result)
 
 
 @mcp.tool()

@@ -1,5 +1,5 @@
 ---
-description: central-mcp 설치, orchestrator 띄우기, 첫 병렬 dispatch까지 3분. 프로젝트 등록부터 fan-out까지 자연어 한 줄 흐름으로.
+description: central-mcp 설치, orchestrator 띄우기, 첫 병렬 dispatch, 그리고 첫 pulse 브리핑까지. 프로젝트 등록부터 PM 루프까지 자연어 한 줄 흐름으로.
 ---
 
 # 빠른 시작
@@ -74,13 +74,30 @@ orchestrator가 이걸 `add_project(name="my-app", path="...", agent="claude")`�
 
 그동안 사용자의 대화는 끊기지 않습니다.
 
-## 5. 라이브로 보고 싶다면
+## 5. 나중에 돌아왔을 때 — PM 브리핑
+
+며칠이 지나고, 다른 일을 했고, 그중 일부는 central-mcp를 거치지도 않았습니다. 이렇게 물어보세요:
+
+> *"my-app 지금 어디까지 됐지?"*
+
+orchestrator가 `project_pulse("my-app")`를 호출합니다 — **레포 자체**(브랜치, ahead/behind, 미커밋 파일, 최근 커밋)에 dispatch 이력과 에이전트 세션까지 읽어서 *무슨 일이 있었고, 지금 어디고, 다음이 뭔지*를 브리핑합니다. 직접 커밋과 인터랙티브 세션도 잡힙니다 — pulse는 허브가 그 작업을 봤다는 전제에 기대지 않으니까요.
+
+포트폴리오 전체를 한 번에 보려면:
+
+```bash
+cmcp pulse            # 워크스페이스 전체, 최근 활동순
+cmcp digest           # 고정 포맷 일일 리포트 (주간은 --hours 168)
+```
+
+crontab에서 `cmcp digest | <notifier>` 한 줄이면 푸시 보고 셋업이 끝납니다. crontab 없이 Telegram으로 받고 싶다면 [Hermes 브릿지](index.md#agentos-hermes-agent)와 짝지으세요.
+
+## 6. 라이브로 보고 싶다면
 
 ```bash
 cmcp up
 ```
 
-tmux / zellij 중에 골라 띄울 수 있습니다. 프로젝트마다 한 페인씩 `cmcp watch <project>`를 깔고, orchestrator는 옆에 둡니다. 작업 흐름 전체가 한 화면에서 보입니다.
+tmux / zellij 중에 골라 띄울 수 있습니다. 지금 작업 중인 프로젝트들에 watch 페인이 깔리고 orchestrator는 옆에 둡니다 — 워크스페이스가 한 창을 넘으면 최근 활동순으로 선별되고, `--projects a,b,c`로 직접 고르거나 `--all-projects`로 전부 타일링할 수 있습니다.
 
 ## 다음으로
 

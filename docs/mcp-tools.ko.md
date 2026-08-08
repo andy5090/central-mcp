@@ -36,6 +36,18 @@ central-mcp가 orchestrator에 노출하는 MCP 도구 목록입니다. 정식 �
 ### `orchestration_history(workspace=None, include_archives=False)`
 포트폴리오 전체 스냅샷: 진행 중 dispatch, 최근 milestone, 프로젝트별 카운트(dispatched / succeeded / failed / cancelled).
 
+### `portfolio_digest(workspace=None, since_hours=24, quiet_days=7, include_quota=True)` (0.17.0+)
+사전 렌더링된 포트폴리오 요약 — Portfolio PM 트랙의 푸시 리포트입니다. 구조화된 섹션들과 함께 `digest_markdown`을 반환하며, 호출자는 이를 **그대로** 전달합니다: 포맷이 서버 쪽에 고정돼 있어(`token_usage.summary_markdown`과 같은 이유), Hermes cron이 Telegram에 올리든, 일반 crontab이 `cmcp digest`를 notifier로 파이프하든, 터미널 orchestrator가 "전체 요약해줘"에 답하든 같은 리포트가 나옵니다.
+
+pulse 기반이라 `orchestration_history`와 달리 central-mcp를 거치지 않은 작업도 셉니다. 섹션:
+
+- `active` — 윈도우 안에 활동이 있는 프로젝트: 커밋(최신 제목 포함), dispatch ✅/❌ 카운트, 진행 중 개수, 미커밋 파일
+- `warnings` — 윈도우 안의 실패한 dispatch, 몇 시간째 `running`에 갇힌 dispatch(진행 중이 아니라 미완료), `quiet_days`를 넘긴 조용한 프로젝트에 방치된 미커밋 작업
+- `quiet` — 나머지 전부, 가장 오래 쉰 것부터
+- `quota` — 에이전트별 구독 윈도우 압축 표시
+
+일간은 `since_hours=24`, 주간은 `168`; `workspace`는 `list_projects`와 같은 의미. 아무것도 저장하지 않으며 — 스케줄과 알림 워터마크는 호출자의 몫입니다.
+
 ### `token_usage(period="today", project=None, workspace=None, group_by="project", include_quota=True, include_summary=True)`
 토큰 집계.
 
@@ -59,8 +71,13 @@ dispatch 상태 폴링: `running` / `complete` / `error` / `cancelled`. 완료�
 ### `cancel_dispatch(dispatch_id)`
 진행 중 dispatch 중단.
 
-### `list_dispatches()`
-진행 중 + 최근 완료된 dispatch 전체.
+### `list_dispatches(status=None, since=None)`
+진행 중 + 최근 완료된 dispatch 전체. 각 행에 `ok`, `finished_at` 포함 (0.17.0+).
+
+- `status`: `running` / `complete` / `error` / `timeout` / `cancelled`, 또는 alias `failed` (나쁘게 끝난 전부; cancelled는 의도된 중단이라 제외)
+- `since`: ISO 8601 — `finished_at`이 *엄격히* 이후인 것만; running 행은 항상 통과
+
+이 둘이 무상태 failure watch를 지탱합니다: 상주 에이전트가 주기적으로 `list_dispatches(status="failed", since=<watermark>)`를 부르고, 돌아온 것을 알리고, 방금 본 최대 `finished_at`으로 워터마크를 전진시킵니다. 엄격 비교라 워터마크가 안 변하면 같은 실패를 재알림하지 않고 — 워터마크는 central-mcp가 아니라 구독자가 보관합니다.
 
 ### `dispatch_history(name, limit=20)`
 프로젝트 한 곳의 최근 N개 dispatch (`prompt_preview`, `output_preview` 포함). `project_pulse`의 `dispatches` 섹션과 같은 로그를 읽지만 원하는 만큼 깊이 들어갑니다 — pulse는 git·세션 맥락과 함께 최근 몇 건만 의도적으로 보여줍니다. 브리핑은 pulse, 파고들 땐 이쪽.

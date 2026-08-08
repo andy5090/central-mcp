@@ -61,6 +61,11 @@ List registered projects.
 ### `central-mcp brief`
 One-shot text portfolio overview (no curses).
 
+### `central-mcp digest [--workspace NAME] [--hours N] [--quiet-days N] [--no-quota] [--json]` (0.17.0+)
+Print the portfolio digest — the same pre-rendered report the `portfolio_digest` MCP tool serves: active projects (commits, dispatch outcomes, uncommitted work), warnings (failed dispatches, never-finalized dispatches, quiet projects with uncommitted changes), the quiet list, and a compact quota line.
+
+The CLI form exists so push delivery doesn't require an MCP-speaking caller: `cmcp digest | <any notifier>` from a plain crontab produces the identical report a resident agent would send. `--hours 168` for the weekly variant.
+
 ### `central-mcp pulse [name] [--commits N] [--history N] [--pr] [--no-pr] [--json]` (0.15.0+)
 What actually happened in a project: git branch / divergence / uncommitted work / recent commits, in-flight and recent dispatches, resumable sessions, and open PRs. Reads the repository itself, so work done outside central-mcp shows up too.
 

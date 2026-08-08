@@ -1,6 +1,6 @@
 ---
 title: central-mcp
-description: central-mcp turns any MCP-capable client into a parallel control plane for Claude Code, Codex, Gemini, opencode, Hermes Agent, and gajae-code — fan out work across every project at once and let the hub absorb the context switching.
+description: central-mcp is the portfolio PM for a person running many agent-driven projects at once — dispatch across Claude Code, Codex, Gemini, opencode, Hermes Agent, and gajae-code, get pulse briefings when you return to a project, and a daily digest that finds you.
 hide:
   - toc
 ---
@@ -21,7 +21,7 @@ hide:
 
 <h1 class="cmcp-hero-title">Tokenmaxxing, <span class="cmcp-hero-emph">disciplined.</span></h1>
 
-<p class="cmcp-hero-sub">Fan out Claude Code, Codex, Gemini, opencode, Hermes Agent, and gajae-code across every project in parallel. central-mcp absorbs the context switching — tokens climb to <span class="cmcp-hero-counter" data-min="10" data-max="100">10×</span>, your focus stays put.</p>
+<p class="cmcp-hero-sub">Fan out Claude Code, Codex, Gemini, opencode, Hermes Agent, and gajae-code across every project in parallel — and let central-mcp play PM: it always knows what happened, where things stand, and what's next in every project. Tokens climb to <span class="cmcp-hero-counter" data-min="10" data-max="100">10×</span>, your focus stays put.</p>
 
 [Get started](quickstart.md){ .md-button .md-button--primary }
 [GitHub](https://github.com/andy5090/central-mcp){ .md-button }
@@ -29,22 +29,31 @@ hide:
 
 </div>
 
-central-mcp turns any MCP-capable client into a control plane for your portfolio of coding-agent projects. Speak naturally; the orchestrator routes each request to the right project's agent — non-blocking, with results reported back asynchronously.
+central-mcp is the **portfolio PM** for a person running many agent-driven projects at once. Speak naturally from any MCP-capable client; the orchestrator routes each request to the right project's agent — non-blocking, with results reported back asynchronously — and briefs you on any project's real state the moment you return to it.
 
 ---
 
 ## Why
 
-You probably use more than one coding agent. Each has its own terminal, its own session, its own logs. Switching between them is friction, and there is no shared view of *what answered what*.
+Agents made it cheap to *run* four, eight, fifteen projects at once. They did nothing about *keeping track* of them. Every context switch charges a re-orientation tax — *what happened here while I was away? What state is it in? What was I about to do next?* — and nobody is playing PM.
 
-central-mcp gives you one hub:
+central-mcp is that PM:
 
-- **Dispatch** prompts to any project's agent and get responses via MCP
-- **Parallel work** — dispatch to multiple projects and keep talking while they run
-- **Manage** the registry with `add_project` / `remove_project`
-- **Orchestrate** from any MCP-capable client — never locked to one
+- **Dispatch** — send work to any project's agent, in parallel, and keep talking while it runs
+- **Pulse** — return to a project and get "what happened / where it stands / what's next" computed from the repository itself, so work that never went through the hub (direct commits, interactive sessions) counts too
+- **Digest** — a fixed-format daily/weekly portfolio report, deliverable to chat by a resident agent or a plain crontab
+- **Observe** — live panes on the dispatches you're actively following
+- **Orchestrate from anywhere** — any MCP-capable client can be the front end; never locked to one vendor
 
 Every dispatch is a fresh subprocess in the project's cwd (e.g. `claude -p "..." --continue`). No long-lived processes, no screen scraping, no tmux dependency on the critical path.
+
+## How you meet it — three tiers
+
+central-mcp is a layer, not a place. A dedicated orchestrator you must remember to visit gets forgotten, so the surfaces are ranked by how they reach you:
+
+1. **Ambient (the main way in).** `cmcp install claude` once, and every session of your daily CLI carries `dispatch`, `project_pulse`, and the rest alongside its normal tools. Open a project, ask *"where does this stand?"*, and the briefing happens in place.
+2. **Reach.** The [Hermes bridge](#agentos-friendly-hermes-integration) sends the daily digest and failure alerts to Telegram/Discord — the one channel that finds *you* when no terminal is open.
+3. **Focus.** `cmcp tui` (experimental), for the sessions whose main job *is* orchestration — fan out, watch it land, supervise.
 
 ## Design principles
 
@@ -55,7 +64,7 @@ Every dispatch is a fresh subprocess in the project's cwd (e.g. `claude -p "..."
 
 ## Live observation — cmux-friendly
 
-Run several projects in parallel, watch them all live. central-mcp ships an observation layer with three backends: **[cmux](https://github.com/manaflow-ai/cmux)** (macOS GUI), tmux, and zellij.
+A pane is a microscope, not a map: it earns its screen by showing one project's raw output closely, while the portfolio question belongs to `cmcp pulse` and the digest. So the observation grid stays focused — panes open for the projects you're actively following (most-recently-active by default, `--projects` to choose) rather than tiling everything you've ever registered. Three backends: **[cmux](https://github.com/manaflow-ai/cmux)** (macOS GUI), tmux, and zellij.
 
 cmux gets a deliberate first-class treatment: its design philosophy ("agents manage their own panes") aligns with central-mcp's stateless, log-driven model. One sentence to the orchestrator — *"set up watch panes for the current workspace"* — produces a clean grid of live `cmcp watch <project>` panes around the orchestrator pane, no config files involved.
 
@@ -69,8 +78,9 @@ cmux gets a deliberate first-class treatment: its design philosophy ("agents man
 
 Compositions worth noticing:
 
-- **Autonomous portfolio summaries from your phone.** Send Hermes one line over Telegram — *"summarize what shipped across my projects today"* — and it drives `orchestration_history` + per-project dispatches without you opening a terminal.
-- **Cron-driven daily digests to Slack.** Hermes's built-in cron runs nightly, calls central-mcp's MCP tools, posts the rolled-up status to your team's channel — no extra bot to install.
+- **The daily digest, delivered (0.17.0).** Hermes's cron calls `portfolio_digest` and forwards the fixed-format report to Telegram/Discord verbatim — active projects with commits and dispatch outcomes, warnings (failed or never-finalized dispatches, quiet projects with uncommitted work), and a quota line. The shipped skill carries the recipe.
+- **Failure alerts without re-alerts (0.17.0).** `list_dispatches(status="failed", since=…)` gives Hermes a cursor: alert on what's new, advance the watermark, never ping the same failure twice — while central-mcp stays stateless.
+- **Portfolio answers from your phone.** One line over Telegram — *"summarize what shipped today"* — and Hermes drives the same tools without you opening a terminal.
 - **Hermes as a project's dispatch target.** Skills curation, web search, and multi-model fallback in front of the project — useful where a one-shot CLI isn't enough.
 
 Token usage is tracked too: the `SUBSCRIPTION QUOTA` block in the token HUD gained a `hermes [ledger]` line aggregating `~/.hermes/state.db` into hour / day / week token totals + cost.

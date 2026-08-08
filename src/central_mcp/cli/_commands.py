@@ -122,6 +122,45 @@ def cmd_brief(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_digest(args: argparse.Namespace) -> int:
+    """Print the portfolio digest — same renderer the MCP tool serves.
+
+    Exists so push delivery doesn't require an MCP-speaking caller:
+    `cmcp digest | <any notifier>` works from a plain crontab too.
+    """
+    import json as _json
+
+    from central_mcp import digest as digest_mod
+    from central_mcp.registry import load_registry as _load_all
+
+    if args.workspace in ("__all__", "*"):
+        projects = _load_all()
+        label = "all workspaces"
+    else:
+        ws = args.workspace or current_workspace()
+        projects = projects_in_workspace(ws)
+        label = ws
+
+    quota = None
+    if not args.no_quota:
+        from central_mcp import quota as quota_mod
+        try:
+            quota = quota_mod.snapshot()
+        except Exception:
+            quota = None
+
+    result = digest_mod.build(
+        projects,
+        workspace_label=label,
+        since_hours=args.hours,
+        quiet_days=args.quiet_days,
+        quota=quota,
+    )
+    print(_json.dumps(result, indent=2, ensure_ascii=False)
+          if args.json else digest_mod.render(result))
+    return 0
+
+
 def cmd_pulse(args: argparse.Namespace) -> int:
     """Print a project's real state — or the whole workspace's."""
     import json as _json

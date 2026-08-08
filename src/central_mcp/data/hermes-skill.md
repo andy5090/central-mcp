@@ -1,7 +1,7 @@
 ---
 name: central-mcp
 description: "Orchestrate coding agents across every registered project via central-mcp's MCP tools."
-version: 1.0.0
+version: 1.1.0
 author: central-mcp
 license: MIT
 platforms: [linux, macos]
@@ -45,9 +45,31 @@ Coding dispatches routinely take 1–15 minutes. Do **not** busy-wait: check onc
 
 ## Hermes-specific leverage
 
-You have capabilities the terminal-bound orchestrators lack — use them:
+You have capabilities the terminal-bound orchestrators lack: cron and a chat gateway. They make you the delivery rail for central-mcp's push reporting — the PM that finds the user instead of waiting to be visited. Two recipes below; set them up proactively when the user asks for "daily updates", "keep me posted", or anything similar.
 
-- **Cron digests.** A daily cron job that calls `orchestration_history` + `token_usage` and posts the summary to the user's Telegram / Discord makes central-mcp's portfolio state ambient. This is the single highest-value integration.
+### Recipe 1 — daily digest (cron)
+
+Create a cron job (daily, e.g. 08:00 local) whose task is:
+
+1. Call **`portfolio_digest()`** (add `since_hours=168` for a weekly variant, or `workspace="__all__"` to cross workspaces).
+2. Send `digest_markdown` to the user's primary chat channel **verbatim — do not re-summarize, reorder, or trim it**. The format is fixed server-side precisely so every day's report looks the same; your paraphrase would undo that.
+3. Only when `warnings` is non-empty, you may prepend one short line of your own (e.g. "2 warnings need a look today").
+
+The digest is pulse-powered: it counts work that never went through central-mcp (direct commits, interactive sessions), flags failed dispatches, dispatches stuck in `running` for hours (report those as *unfinished*, never as live work), and quiet projects with uncommitted changes sitting in them.
+
+### Recipe 2 — failure watch (cursor, no re-alerts)
+
+On a frequent tick (each heartbeat, or a 15-minute cron):
+
+1. Call **`list_dispatches(status="failed", since=<watermark>)`** — `failed` covers `error`, `timeout`, and `complete`-with-`ok=false`; cancelled is deliberate and excluded.
+2. If rows come back: alert the user (project, agent, `dispatch_id`; fetch `check_dispatch(id)` for `stderr`/`error` details if the user will want them).
+3. Advance your watermark to the **max `finished_at`** among the rows you just saw, and persist it in your own memory. The filter is strictly-greater-than, so an unchanged watermark never re-alerts the same failure.
+4. First run (no watermark yet): call without `since`, alert on nothing, and just record the max `finished_at` as your starting point — alerting on stale history helps no one.
+
+The watermark is **yours** to keep: central-mcp is stateless between requests and does not track subscribers.
+
+### Also
+
 - **Completion pings.** After starting a long dispatch from a chat conversation, re-check it on your next heartbeat and message the user when it finishes — they never have to ask.
 - **Bidirectional.** Projects registered with `agent: hermes` dispatch *to* you; that path is not your concern here. This skill is about you as the *caller*.
 

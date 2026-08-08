@@ -36,6 +36,18 @@ Each section degrades independently and carries a `reason` when unavailable; a m
 ### `orchestration_history(workspace=None, include_archives=False)`
 Portfolio-wide snapshot: in-flight dispatches + recent milestones + per-project counts (dispatched / succeeded / failed / cancelled).
 
+### `portfolio_digest(workspace=None, since_hours=24, quiet_days=7, include_quota=True)` (0.17.0+)
+Pre-rendered portfolio summary — the push report of the Portfolio PM track. Returns structured sections plus `digest_markdown`, which callers forward **verbatim**: the format is fixed server-side (same reasoning as `token_usage.summary_markdown`) so the report looks identical whether a Hermes cron posts it to Telegram, a plain crontab pipes `cmcp digest` into a notifier, or a terminal orchestrator answers a "recap everything" ask.
+
+Pulse-powered, so unlike `orchestration_history` it counts work that never went through central-mcp. Sections:
+
+- `active` — projects with activity inside the window: commits (with the latest subject), dispatch ✅/❌ counts, in-flight count, uncommitted files
+- `warnings` — failed dispatches in the window, dispatches stuck in `running` for hours (unfinished, not live), and quiet projects with uncommitted work sitting in them past `quiet_days`
+- `quiet` — everything else, longest-idle first
+- `quota` — compact per-agent subscription windows
+
+`since_hours=24` for the daily report, `168` for weekly; `workspace` follows `list_projects` semantics. Nothing is stored — scheduling and alert watermarks belong to the caller.
+
 ### `token_usage(period="today", project=None, workspace=None, group_by="project", include_quota=True, include_summary=True)`
 Token aggregation across all projects.
 
@@ -59,8 +71,13 @@ Poll a dispatch's status: `running` / `complete` / `error` / `cancelled`. Return
 ### `cancel_dispatch(dispatch_id)`
 Abort a running dispatch.
 
-### `list_dispatches()`
-All active + recently completed dispatches.
+### `list_dispatches(status=None, since=None)`
+All active + recently completed dispatches. Rows carry `ok` and `finished_at` (0.17.0+).
+
+- `status`: `running` / `complete` / `error` / `timeout` / `cancelled`, or the alias `failed` (anything that ended badly; cancelled is deliberate and excluded)
+- `since`: ISO 8601 — only dispatches whose `finished_at` is *strictly* later; running rows always pass
+
+Together they back a stateless failure watch: a resident agent calls `list_dispatches(status="failed", since=<watermark>)` on a schedule, alerts on what comes back, and advances its watermark to the max `finished_at` it saw. The strict filter means an unchanged watermark never re-alerts — and the watermark lives with the subscriber, not with central-mcp.
 
 ### `dispatch_history(name, limit=20)`
 Last N dispatches for one project, with `prompt_preview` and `output_preview` slices. Reads the same log as `project_pulse`'s `dispatches` section, but goes as deep as you ask — the pulse deliberately shows only the last few, alongside git and session context. Briefing → pulse; digging → this.

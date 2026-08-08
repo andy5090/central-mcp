@@ -19,6 +19,7 @@ from central_mcp.cli._commands import (
     cmd_add,
     cmd_alias,
     cmd_brief,
+    cmd_digest,
     cmd_down,
     cmd_init,
     cmd_install,
@@ -393,6 +394,42 @@ def build_parser() -> argparse.ArgumentParser:
         help="emit the raw pulse as JSON instead of markdown",
     )
     p_pulse.set_defaults(func=cmd_pulse)
+
+    p_digest = sub.add_parser(
+        "digest",
+        help="pre-rendered portfolio summary (the push-report the PM sends)",
+        description=(
+            "Print the portfolio digest: projects active in the window "
+            "(commits, dispatch outcomes, uncommitted work), warnings "
+            "(failed dispatches, never-finalized dispatches, quiet "
+            "projects with uncommitted work), quiet projects, and a "
+            "compact quota line. Same renderer the `portfolio_digest` "
+            "MCP tool serves, so a plain crontab piping this into any "
+            "notifier produces the identical report a resident agent "
+            "would deliver. Computes everything fresh; stores nothing."
+        ),
+    )
+    p_digest.add_argument(
+        "--workspace", metavar="NAME", default=None,
+        help="workspace to digest (default: current; __all__ for everything)",
+    )
+    p_digest.add_argument(
+        "--hours", type=int, default=24,
+        help="activity window in hours (default: 24; use 168 for weekly)",
+    )
+    p_digest.add_argument(
+        "--quiet-days", type=int, default=7,
+        help="idle days before a quiet project with uncommitted work warns (default: 7)",
+    )
+    p_digest.add_argument(
+        "--no-quota", action="store_true",
+        help="skip the per-agent subscription quota line",
+    )
+    p_digest.add_argument(
+        "--json", action="store_true",
+        help="emit the raw digest as JSON instead of markdown",
+    )
+    p_digest.set_defaults(func=cmd_digest)
 
     p_add = sub.add_parser(
         "add",
