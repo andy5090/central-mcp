@@ -21,7 +21,7 @@ hide:
 
 <h1 class="cmcp-hero-title">열 개를 굴려도, <span class="cmcp-hero-emph">하나도 안 놓친다.</span></h1>
 
-<p class="cmcp-hero-sub">Claude Code · Codex · Gemini · opencode · Hermes Agent · gajae-code를 모든 프로젝트에 한꺼번에 풀어두세요. central-mcp가 PM 역할을 맡습니다 — 모든 프로젝트에서 무슨 일이 있었고, 지금 어디에 있고, 다음이 무엇인지 항상 알고 있습니다. 토큰은 <span class="cmcp-hero-counter" data-min="10" data-max="100">10×</span>까지, 집중력은 그대로.</p>
+<p class="cmcp-hero-sub">Claude Code · Codex · Gemini · opencode · Hermes Agent · gajae-code를 모든 프로젝트에 한꺼번에 풀어두세요. central-mcp가 PM 역할을 맡습니다 — 무슨 일이 있었고, 지금 어디에 있고, 다음이 무엇인지 항상 알고 있습니다. 토큰은 전부 일에 쓰고, 어디까지 했는지 떠올리는 데는 한 톨도 쓰지 않습니다.</p>
 
 [시작하기](quickstart.md){ .md-button .md-button--primary }
 [GitHub](https://github.com/andy5090/central-mcp){ .md-button }

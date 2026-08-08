@@ -21,7 +21,7 @@ hide:
 
 <h1 class="cmcp-hero-title">Ten projects, <span class="cmcp-hero-emph">zero dropped.</span></h1>
 
-<p class="cmcp-hero-sub">Fan out Claude Code, Codex, Gemini, opencode, Hermes Agent, and gajae-code across every project in parallel — and let central-mcp play PM: it always knows what happened, where things stand, and what's next in every project. Tokens climb to <span class="cmcp-hero-counter" data-min="10" data-max="100">10×</span>, your focus stays put.</p>
+<p class="cmcp-hero-sub">Fan out Claude Code, Codex, Gemini, opencode, Hermes Agent, and gajae-code across every project in parallel — and let central-mcp play PM: it always knows what happened, where things stand, and what's next. Every token goes into the work, none into remembering where you left off.</p>
 
 [Get started](quickstart.md){ .md-button .md-button--primary }
 [GitHub](https://github.com/andy5090/central-mcp){ .md-button }

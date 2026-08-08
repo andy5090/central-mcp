@@ -51,9 +51,6 @@ theme:
 extra_css:
   - stylesheets/extra.css
 
-extra_javascript:
-  - js/hero.js
-
 nav:
   - Home: index.md
   - Quickstart: quickstart.md
