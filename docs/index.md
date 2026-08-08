@@ -19,7 +19,7 @@ hide:
   <img src="/logo-dark.png?v=0.11.0" alt="central-mcp" width="300" class="cmcp-hero-dark"/>
 </p>
 
-<h1 class="cmcp-hero-title">Tokenmaxxing, <span class="cmcp-hero-emph">disciplined.</span></h1>
+<h1 class="cmcp-hero-title">Ten projects, <span class="cmcp-hero-emph">zero dropped.</span></h1>
 
 <p class="cmcp-hero-sub">Fan out Claude Code, Codex, Gemini, opencode, Hermes Agent, and gajae-code across every project in parallel — and let central-mcp play PM: it always knows what happened, where things stand, and what's next in every project. Tokens climb to <span class="cmcp-hero-counter" data-min="10" data-max="100">10×</span>, your focus stays put.</p>
 

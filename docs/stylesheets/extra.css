@@ -186,7 +186,7 @@
   border-bottom: none !important;
   padding: 0 0.75rem !important;
   /* CJK breaks at proper word boundaries; long English tokens like
-     "Tokenmaxxing" stay whole instead of dropping a single trailing letter. */
+     "projects," stay whole instead of dropping a single trailing letter. */
   word-break: keep-all;
   overflow-wrap: normal;
   text-wrap: balance;
