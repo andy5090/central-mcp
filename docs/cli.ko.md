@@ -107,7 +107,9 @@ CLI 형태가 있는 이유는 푸시 배달에 MCP를 말하는 호출자가 �
 ## MCP 클라이언트 셋업
 
 ### `central-mcp install <client>`
-central-mcp를 클라이언트의 MCP 서버로 등록합니다. 선택지: `claude`, `codex`, `gemini`, `opencode`, `hermes`, `openclaw`, `gjc`, `all`. `hermes` 타깃은 Hermes 스킬 라이브러리에 central-mcp orchestration 스킬까지 설치하고, `gjc` 타깃은 `~/.gjc/agent/mcp.json`의 `mcpServers.central`에 등록하며, `openclaw` 타깃은 `openclaw mcp add`를 호출합니다(OpenClaw 설정이 JSON5라 우리가 직접 파싱하는 대신 벤더 CLI가 편집을 소유).
+central-mcp를 클라이언트의 MCP 서버로 등록합니다. 선택지: `claude`, `codex`, `gemini`, `opencode`, `hermes`, `openclaw`, `gjc`, `all`. `gjc` 타깃은 `~/.gjc/agent/mcp.json`의 `mcpServers.central`에 등록하고, `openclaw` 타깃은 `openclaw mcp add`를 호출합니다(OpenClaw 설정이 JSON5라 우리가 직접 파싱하는 대신 벤더 CLI가 편집을 소유).
+
+**`hermes`와 `openclaw` 타깃은 해당 런타임의 스킬 라이브러리에 central-mcp orchestration 스킬까지 설치합니다.** 등록은 도구를 *호출 가능*하게 만들 뿐이고, 스킬이 그 도구를 *잘 쓰게* 만듭니다 — 논블로킹 폴링 패턴, `@workspace` fan-out, 어떤 질문에 어떤 도구를 쓰는지, 그리고 상주 에이전트의 cron·챗 게이트웨이를 central-mcp의 배달 레일로 바꾸는 일일 다이제스트 / failure watch 레시피. 번들 파일 하나가 두 런타임을 모두 담당하며, 재실행하면 제자리에서 갱신됩니다.
 
 ### `central-mcp alias [name]`
 `cmcp` 단축 alias 출력 / 생성.

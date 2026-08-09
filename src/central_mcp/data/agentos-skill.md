@@ -1,7 +1,7 @@
 ---
 name: central-mcp
-description: "Orchestrate coding agents across every registered project via central-mcp's MCP tools."
-version: 1.1.0
+description: "Orchestrate coding agents across every registered project via central-mcp's MCP tools, and deliver portfolio reports to chat."
+version: 2.0.0
 author: central-mcp
 license: MIT
 platforms: [linux, macos]
@@ -11,11 +11,11 @@ metadata:
     related_skills: [claude-code, codex, opencode]
 ---
 
-# central-mcp — Hermes Orchestration Guide
+# central-mcp — agentOS Orchestration Guide
 
-[central-mcp](https://central-mcp.org) is a dispatch hub across the user's registered projects. Each project is bound to a coding-agent CLI (claude / codex / gemini / opencode / droid / hermes). If `cmcp install hermes` has been run, its MCP tools are already registered in your `config.yaml` as the `central` server — you can call them natively.
+[central-mcp](https://central-mcp.org) is the **portfolio PM** for someone running many agent-driven projects at once. Each registered project is bound to a coding-agent CLI (claude / codex / gemini / opencode / droid / hermes / openclaw / gjc). If `cmcp install <you>` has been run, its MCP tools are registered as the `central` server and you can call them natively.
 
-Prefer these tools over raw `terminal` commands whenever the work targets a **registered project**: dispatches get logging, history, token accounting, quota-aware fallback, and observation surfaces for free. Use `terminal` for ad-hoc work outside the registry.
+Prefer these tools over raw shell commands whenever the work targets a **registered project**: dispatches get logging, history, token accounting, quota-aware fallback, and observation surfaces for free. Use your shell for ad-hoc work outside the registry.
 
 ## Core loop
 
@@ -37,15 +37,23 @@ Coding dispatches routinely take 1–15 minutes. Do **not** busy-wait: check onc
 
 `dispatch(name="@workspace-name", prompt=...)` sends one prompt to **every project in that workspace** at once and returns one dispatch_id per project. Good for portfolio-wide chores ("update CI config", "audit dependencies").
 
-## Portfolio awareness
+## Answering "how is X doing?"
 
-- **`orchestration_history`** — one call returns in-flight dispatches, recent milestones (with prompt/output previews), and per-project success/failure stats. Use it whenever the user asks "how is everything going?".
-- **`token_usage`** — subscription quota %, per-agent totals, per-project breakdown, plus a pre-rendered `summary_markdown` you can forward verbatim.
-- **`dispatch_history(name)`** — last N dispatches for one project.
+| The user asks | Call |
+|---|---|
+| "what's the state of X?", or they return to X after a while | `project_pulse(X)` |
+| "what happened in X" deeper than a few dispatches | `dispatch_history(X, n=…)` |
+| "overall status?", "how is everything going?" | `orchestration_history()` |
+| "daily/weekly recap", "summarize the portfolio" | `portfolio_digest()` — forward `digest_markdown` verbatim |
+| "how many tokens?", "budget left?" | `token_usage()` — forward `summary_markdown` verbatim |
 
-## Hermes-specific leverage
+**`project_pulse` is the one that sees everything.** The history tools only know about work that went *through* central-mcp; a pulse reads the repository itself, so direct commits, interactive agent sessions, and manual edits show up too. After any absence, that is usually where the interesting work is. Synthesize it into a short narrative — *what happened / where it stands / what's next* — rather than reciting fields.
 
-You have capabilities the terminal-bound orchestrators lack: cron and a chat gateway. They make you the delivery rail for central-mcp's push reporting — the PM that finds the user instead of waiting to be visited. Two recipes below; set them up proactively when the user asks for "daily updates", "keep me posted", or anything similar.
+Never report a dispatch in `dispatches.stale` as live work: those rows sat in `running` for hours because a crashed or restarted server never wrote their terminal state. They are unfinished, not in progress.
+
+## Your leverage as a resident agent
+
+You have what terminal-bound orchestrators lack: **cron and a chat gateway**. That makes you the delivery rail for central-mcp's push reporting — the PM that finds the user instead of waiting to be visited. Set these up proactively when the user asks for "daily updates", "keep me posted", or anything similar.
 
 ### Recipe 1 — daily digest (cron)
 
@@ -55,7 +63,7 @@ Create a cron job (daily, e.g. 08:00 local) whose task is:
 2. Send `digest_markdown` to the user's primary chat channel **verbatim — do not re-summarize, reorder, or trim it**. The format is fixed server-side precisely so every day's report looks the same; your paraphrase would undo that.
 3. Only when `warnings` is non-empty, you may prepend one short line of your own (e.g. "2 warnings need a look today").
 
-The digest is pulse-powered: it counts work that never went through central-mcp (direct commits, interactive sessions), flags failed dispatches, dispatches stuck in `running` for hours (report those as *unfinished*, never as live work), and quiet projects with uncommitted changes sitting in them.
+The digest is pulse-powered: it counts work that never went through central-mcp, flags failed dispatches, dispatches stuck in `running` for hours, and quiet projects with uncommitted changes sitting in them.
 
 ### Recipe 2 — failure watch (cursor, no re-alerts)
 
@@ -71,7 +79,7 @@ The watermark is **yours** to keep: central-mcp is stateless between requests an
 ### Also
 
 - **Completion pings.** After starting a long dispatch from a chat conversation, re-check it on your next heartbeat and message the user when it finishes — they never have to ask.
-- **Bidirectional.** Projects registered with `agent: hermes` dispatch *to* you; that path is not your concern here. This skill is about you as the *caller*.
+- **Bidirectional.** A project registered with your own agent name dispatches *to* you; that path is not your concern here. This skill is about you as the *caller*.
 
 ## Cautions
 

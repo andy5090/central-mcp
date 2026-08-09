@@ -107,7 +107,9 @@ Unassign.
 ## MCP client setup
 
 ### `central-mcp install <client>`
-Register central-mcp as an MCP server with a client. Choices: `claude`, `codex`, `gemini`, `opencode`, `hermes`, `openclaw`, `gjc`, `all`. The `hermes` target also installs a central-mcp orchestration skill into Hermes's skill library; the `gjc` target writes `mcpServers.central` into `~/.gjc/agent/mcp.json`; the `openclaw` target drives `openclaw mcp add` (OpenClaw's config is JSON5, so the vendor CLI owns the edit rather than us hand-parsing it).
+Register central-mcp as an MCP server with a client. Choices: `claude`, `codex`, `gemini`, `opencode`, `hermes`, `openclaw`, `gjc`, `all`. The `gjc` target writes `mcpServers.central` into `~/.gjc/agent/mcp.json`; the `openclaw` target drives `openclaw mcp add` (OpenClaw's config is JSON5, so the vendor CLI owns the edit rather than us hand-parsing it).
+
+The **`hermes` and `openclaw` targets also install the central-mcp orchestration skill** into that runtime's skill library. Registration makes the tools callable; the skill is what makes the runtime good at them — the non-blocking poll pattern, `@workspace` fan-out, which tool answers which question, and the daily-digest / failure-watch recipes that turn a resident agent's cron and chat gateway into central-mcp's delivery rail. One bundled file serves both runtimes, and a rerun refreshes it in place.
 
 ### `central-mcp alias [name]`
 Print or create the `cmcp` short alias.

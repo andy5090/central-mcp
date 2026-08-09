@@ -369,7 +369,7 @@ def _install_hermes(*, dry_run: bool) -> int:
         and list(existing.get("args") or []) == LAUNCH_ARGS
     ):
         _say(f"already registered in {cfg} — no change")
-        return _install_hermes_skill(dry_run=dry_run)
+        return _install_agentos_skill("hermes", dry_run=dry_run)
 
     servers[SERVER_NAME] = {"command": LAUNCH_COMMAND, "args": list(LAUNCH_ARGS)}
 
@@ -379,14 +379,14 @@ def _install_hermes(*, dry_run: bool) -> int:
         yaml.dump(doc, buf)
         _say(f"Would write to {cfg}:")
         _say(buf.getvalue())
-        return _install_hermes_skill(dry_run=True)
+        return _install_agentos_skill("hermes", dry_run=True)
 
     bak = _backup(cfg)
     with cfg.open("w") as fh:
         yaml.dump(doc, fh)
     _say(f"updated {cfg}")
     _say(f"backup: {bak}")
-    return _install_hermes_skill(dry_run=False)
+    return _install_agentos_skill("hermes", dry_run=False)
 
 
 def _install_openclaw(*, dry_run: bool) -> int:
@@ -419,7 +419,7 @@ def _install_openclaw(*, dry_run: bool) -> int:
 
     if dry_run:
         _say("Would run: " + " ".join(cmd))
-        return 0
+        return _install_agentos_skill("openclaw", dry_run=True)
 
     # Idempotency: `mcp list --json` returns the saved server map (and
     # `{}` when nothing is configured), so a rerun is a no-op instead of
@@ -442,7 +442,7 @@ def _install_openclaw(*, dry_run: bool) -> int:
             servers = saved if isinstance(saved, dict) else {}
         if SERVER_NAME in servers:
             _say(f"openclaw: {SERVER_NAME!r} already registered — no change")
-            return 0
+            return _install_agentos_skill("openclaw", dry_run=dry_run)
 
     _say("Running: " + " ".join(cmd))
     try:
@@ -452,7 +452,9 @@ def _install_openclaw(*, dry_run: bool) -> int:
         return 1
     sys.stdout.write(r.stdout)
     sys.stderr.write(r.stderr)
-    return r.returncode
+    if r.returncode != 0:
+        return r.returncode
+    return _install_agentos_skill("openclaw", dry_run=dry_run)
 
 
 def _install_gjc(*, dry_run: bool) -> int:
@@ -520,37 +522,53 @@ def _install_gjc(*, dry_run: bool) -> int:
     return 0
 
 
-def _install_hermes_skill(*, dry_run: bool) -> int:
-    """Install the central-mcp orchestration skill into Hermes.
+#: Where each resident agentOS scans for locally-managed skills.
+#: Both runtimes discover a skill from any `SKILL.md` under their root;
+#: the folder path is organizational only, the name comes from the
+#: file's `name` frontmatter.
+_SKILL_PATHS: dict[str, Path] = {
+    "hermes": (
+        Path(".hermes") / "skills" / "autonomous-ai-agents"
+        / "central-mcp" / "SKILL.md"
+    ),
+    "openclaw": Path(".openclaw") / "skills" / "central-mcp" / "SKILL.md",
+}
 
-    Hermes teaches its LLM per-tool workflows through skills — markdown
-    files scanned from ``~/.hermes/skills/<category>/<name>/SKILL.md``.
-    Registering our MCP server in config.yaml makes the tools *callable*;
-    this skill makes Hermes actually *good* at using them (non-blocking
-    poll pattern, @workspace fan-out, orchestration_history digests via
-    Hermes cron, bypass-mode cautions).
 
-    The shipped content lives at ``central_mcp/data/hermes-skill.md``.
-    Re-running ``cmcp install hermes`` refreshes the skill in place —
-    an explicit install command is user intent to sync, so local edits
-    to the skill file are overwritten (unlike ~/.central-mcp/user.md,
-    which is scaffold-once).
+def _install_agentos_skill(runtime: str, *, dry_run: bool) -> int:
+    """Install the central-mcp orchestration skill into a resident agentOS.
+
+    Hermes and OpenClaw both teach their LLM per-tool workflows through
+    markdown skills. Registering our MCP server makes the tools
+    *callable*; this skill makes the runtime actually *good* at using
+    them — the non-blocking poll pattern, `@workspace` fan-out, which
+    tool answers which question (pulse vs history vs digest), and the
+    two push-reporting recipes that turn cron + a chat gateway into
+    central-mcp's delivery rail.
+
+    One bundled file serves both (``central_mcp/data/agentos-skill.md``):
+    the guidance is identical, and a per-vendor copy would drift the
+    moment either one is edited. Re-running ``cmcp install <runtime>``
+    refreshes the skill in place — an explicit install command is user
+    intent to sync, so local edits to the skill file are overwritten
+    (unlike ~/.central-mcp/user.md, which is scaffold-once).
     """
     from importlib.resources import files
 
+    rel = _SKILL_PATHS.get(runtime)
+    if rel is None:
+        return 0
+
     try:
         content = (
-            files("central_mcp").joinpath("data", "hermes-skill.md")
+            files("central_mcp").joinpath("data", "agentos-skill.md")
             .read_text(encoding="utf-8")
         )
     except Exception as exc:
-        print(f"error: bundled hermes-skill.md unreadable: {exc}", file=sys.stderr)
+        print(f"error: bundled agentos-skill.md unreadable: {exc}", file=sys.stderr)
         return 1
 
-    skill = (
-        Path.home() / ".hermes" / "skills"
-        / "autonomous-ai-agents" / "central-mcp" / "SKILL.md"
-    )
+    skill = Path.home() / rel
     if skill.exists() and skill.read_text(encoding="utf-8") == content:
         _say(f"skill up to date: {skill}")
         return 0

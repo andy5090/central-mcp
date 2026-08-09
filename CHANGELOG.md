@@ -3,6 +3,22 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.19.0] — 2026-08-09
+
+### Added
+- **`cmcp install openclaw` now installs the orchestration skill too — OpenClaw is a first-class *caller*, not just a dispatch target.** 0.18.0 shipped OpenClaw as somewhere central-mcp can *send* work; this closes the other direction: making OpenClaw good at *using* central-mcp. Registering the MCP server makes the tools callable; the skill (landing at `~/.openclaw/skills/central-mcp/SKILL.md`, which OpenClaw reports as `✓ ready`) is what teaches the runtime the non-blocking poll pattern, `@workspace` fan-out, which tool answers which question, and the two push-reporting recipes that turn its cron + chat gateway into central-mcp's delivery rail. Installed on fresh registration, on a rerun where the server was already registered (so a missing skill is repaired rather than skipped), and refreshed in place over local edits.
+
+### Changed
+- **One bundled skill serves every resident agentOS.** `data/hermes-skill.md` becomes `data/agentos-skill.md`, with vendor-specific wording generalized, and both Hermes and OpenClaw install the same file through a shared `_install_agentos_skill(runtime)`. The guidance was always identical; two copies would have drifted the moment either was edited. A test asserts both runtimes write byte-identical content.
+- **The skill now teaches the PM tools it was missing.** It predated `project_pulse` / `portfolio_digest` and still pointed only at `orchestration_history`. It gains a question → tool table, the reason `project_pulse` is the one that sees work which never went through the hub, and the rule that `dispatches.stale` rows are unfinished rather than live.
+- **`cmcp run --agent openclaw` stops warning about missing permission flags.** OpenClaw gates dangerous commands through its own `approvals` / `exec-policy` config rather than a per-invocation flag, so `PERMISSION_MODE_FLAGS` declares both modes empty — for this runtime that is the correct answer, not an omission.
+
+### Notes
+- Verified against the real OpenClaw (2026.6.34): `cmcp install openclaw` writes the skill and `openclaw skills list` shows `central-mcp` as `✓ ready` under `openclaw-managed`.
+- Tests: 5 new OpenClaw skill cases (fresh write, repair-on-rerun-when-already-registered, refresh-over-local-edits, dry-run writes nothing, and the shared-body assertion). Existing Hermes skill tests pass unchanged against the shared installer. 771 passing.
+
+---
+
 ## [0.18.0] — 2026-08-09
 
 ### Added

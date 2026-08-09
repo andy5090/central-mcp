@@ -77,6 +77,15 @@ PERMISSION_MODE_FLAGS: dict[str, dict[str, list[str]]] = {
         "bypass":     ["--yolo"],
         "restricted": [],
     },
+    # OpenClaw has no per-invocation permission flag: dangerous commands
+    # are gated by its own `approvals` / `exec-policy` config. Declaring
+    # both modes as empty keeps `cmcp run --agent openclaw` from printing
+    # a "no flags defined" warning for a runtime where that is simply the
+    # correct answer.
+    "openclaw": {
+        "bypass":     [],
+        "restricted": [],
+    },
 }
 
 DEFAULT_PERMISSION_MODE = "bypass"

@@ -472,3 +472,80 @@ def test_install_openclaw_dry_run_runs_nothing(
 def test_install_openclaw_requires_the_cli(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(install.shutil, "which", lambda name: None)
     assert install.install("openclaw") == 1
+
+
+def _openclaw_skill(home: Path) -> Path:
+    return home / ".openclaw" / "skills" / "central-mcp" / "SKILL.md"
+
+
+def test_install_openclaw_writes_skill(
+    fake_openclaw_cli: SimpleNamespace, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    assert install.install("openclaw") == 0
+    skill = _openclaw_skill(home)
+    assert skill.exists()
+    text = skill.read_text()
+    assert "name: central-mcp" in text
+    assert "check_dispatch" in text
+    # The push-reporting recipes are the reason a resident agentOS needs
+    # this skill at all.
+    assert "portfolio_digest" in text
+    assert "failure watch" in text.lower()
+
+
+def test_install_openclaw_skill_installed_when_already_registered(
+    fake_openclaw_cli: SimpleNamespace, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A rerun must still repair a missing skill, not exit early."""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    fake_openclaw_cli.registered["central"] = {"command": "central-mcp"}
+    assert install.install("openclaw") == 0
+    assert _openclaw_skill(home).exists()
+
+
+def test_install_openclaw_skill_refreshes_local_edits(
+    fake_openclaw_cli: SimpleNamespace, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    assert install.install("openclaw") == 0
+    skill = _openclaw_skill(home)
+    skill.write_text("stale local edit\n")
+    assert install.install("openclaw") == 0
+    assert skill.read_text() != "stale local edit\n"
+
+
+def test_install_openclaw_dry_run_writes_no_skill(
+    fake_openclaw_cli: SimpleNamespace, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    assert install.install("openclaw", dry_run=True) == 0
+    assert not _openclaw_skill(home).exists()
+
+
+def test_both_runtimes_share_one_skill_body(
+    fake_openclaw_cli: SimpleNamespace, fake_hermes_config: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Hermes and OpenClaw install the same bundled file — a per-vendor
+    copy would drift the moment either is edited."""
+    assert install.install("hermes") == 0
+    hermes_text = _skill_path(fake_hermes_config).read_text()
+
+    home = tmp_path / "oc-home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    assert install.install("openclaw") == 0
+    assert _openclaw_skill(home).read_text() == hermes_text

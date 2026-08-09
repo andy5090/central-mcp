@@ -14,7 +14,7 @@ shape regardless of which agent delivers it — callers forward
 Like the pulse it stands on, a digest stores nothing and recomputes
 from source on every call. The delivery schedule and any alert
 watermarks belong to the *caller* (see the failure-watch recipe in
-`data/hermes-skill.md`) — central-mcp stays stateless between requests.
+`data/agentos-skill.md`) — central-mcp stays stateless between requests.
 """
 
 from __future__ import annotations
