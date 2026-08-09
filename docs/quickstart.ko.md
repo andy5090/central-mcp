@@ -89,7 +89,7 @@ cmcp pulse            # 워크스페이스 전체, 최근 활동순
 cmcp digest           # 고정 포맷 일일 리포트 (주간은 --hours 168)
 ```
 
-crontab에서 `cmcp digest | <notifier>` 한 줄이면 푸시 보고 셋업이 끝납니다. crontab 없이 Telegram으로 받고 싶다면 [Hermes 브릿지](index.md#agentos-hermes-agent)와 짝지으세요.
+crontab에서 `cmcp digest | <notifier>` 한 줄이면 푸시 보고 셋업이 끝납니다. crontab 없이 Telegram으로 받고 싶다면 [Hermes 브릿지](index.md#agentos-hermes-agent-openclaw)와 짝지으세요.
 
 ## 6. 라이브로 보고 싶다면
 

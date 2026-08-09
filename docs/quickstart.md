@@ -89,7 +89,7 @@ cmcp pulse            # every project in the workspace, most recent first
 cmcp digest           # the fixed-format daily report (add --hours 168 for weekly)
 ```
 
-`cmcp digest | <any notifier>` from a crontab is a complete push-reporting setup; pair it with the [Hermes bridge](index.md#agentos-friendly-hermes-integration) if you want the digest arriving in Telegram without owning a crontab.
+`cmcp digest | <any notifier>` from a crontab is a complete push-reporting setup; pair it with the [Hermes bridge](index.md#agentos-friendly-hermes-and-openclaw) if you want the digest arriving in Telegram without owning a crontab.
 
 ## 6. Optional: live observation
 

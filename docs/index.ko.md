@@ -1,6 +1,6 @@
 ---
 title: central-mcp
-description: central-mcp는 에이전트 기반 프로젝트를 여러 개 동시에 굴리는 사람을 위한 포트폴리오 PM — Claude Code · Codex · Gemini · opencode · Hermes Agent · gajae-code에 dispatch하고, 프로젝트로 복귀하면 pulse 브리핑을 받고, 매일 다이제스트가 찾아옵니다.
+description: central-mcp는 에이전트 기반 프로젝트를 여러 개 동시에 굴리는 사람을 위한 포트폴리오 PM — Claude Code · Codex · Gemini · opencode · Hermes Agent · OpenClaw · gajae-code에 dispatch하고, 프로젝트로 복귀하면 pulse 브리핑을 받고, 매일 다이제스트가 찾아옵니다.
 hide:
   - toc
 ---
@@ -21,7 +21,7 @@ hide:
 
 <h1 class="cmcp-hero-title">모든 프로젝트는 <span class="cmcp-hero-emph">central로 통합니다.</span></h1>
 
-<p class="cmcp-hero-sub">Claude Code · Codex · Gemini · opencode · Hermes Agent · gajae-code를 모든 프로젝트에 한꺼번에 풀어두세요. 그 중심에 Ultra PM이 서 있습니다 — 무슨 일이 있었고, 지금 어디에 있고, 다음이 무엇인지 항상 알고 있습니다. 토큰은 전부 일에 쓰고, 어디까지 했는지 떠올리는 데는 한 톨도 쓰지 않습니다.</p>
+<p class="cmcp-hero-sub">Claude Code · Codex · Gemini · opencode · Hermes Agent · OpenClaw · gajae-code를 모든 프로젝트에 한꺼번에 풀어두세요. 그 중심에 Ultra PM이 서 있습니다 — 무슨 일이 있었고, 지금 어디에 있고, 다음이 무엇인지 항상 알고 있습니다. 토큰은 전부 일에 쓰고, 어디까지 했는지 떠올리는 데는 한 톨도 쓰지 않습니다.</p>
 
 [시작하기](quickstart.md){ .md-button .md-button--primary }
 [GitHub](https://github.com/andy5090/central-mcp){ .md-button }
@@ -52,7 +52,7 @@ dispatch는 매번 프로젝트의 작업 디렉터리에서 새로 띄우는 �
 central-mcp는 장소가 아니라 레이어입니다. 찾아가야 하는 전용 orchestrator는 잊히기 마련이라, 표면들은 나에게 닿는 방식 순으로 배열돼 있습니다:
 
 1. **Ambient (주 진입로).** `cmcp install claude` 한 번이면 매일 쓰는 CLI의 모든 세션이 평소 도구들과 나란히 `dispatch`, `project_pulse`를 갖게 됩니다. 프로젝트를 열고 *"지금 어디까지 됐지?"* 물으면 브리핑이 그 자리에서 일어납니다.
-2. **Reach.** [Hermes 브릿지](#agentos-hermes-agent)가 일일 다이제스트와 실패 알림을 Telegram/Discord로 보냅니다 — 터미널이 안 열려 있을 때 *나를 찾아오는* 유일한 채널.
+2. **Reach.** [상주 agentOS 브릿지](#agentos-hermes-agent-openclaw)(Hermes 또는 OpenClaw)가 일일 다이제스트와 실패 알림을 Telegram/Discord로 보냅니다 — 터미널이 안 열려 있을 때 *나를 찾아오는* 유일한 채널.
 3. **Focus.** `cmcp tui`(experimental) — 오케스트레이션 자체가 주 업무인 세션용. 뿌리고, 지켜보고, 감독하는 날.
 
 ## 디자인 원칙
@@ -70,20 +70,20 @@ cmux는 의도적으로 1급 시민입니다. cmux의 "에이전트가 자기 �
 
 [관찰 모드 가이드 →](observation.md){ .md-button }
 
-## agentOS와도 잘 맞습니다 — Hermes Agent 통합
+## agentOS와도 잘 맞습니다 — Hermes Agent, OpenClaw
 
-[Hermes Agent](https://github.com/NousResearch/hermes-agent) (Nous Research)는 self-improving agentOS입니다 — 내장 cron, skills curation, 멀티 플랫폼 delivery (Telegram · Discord · Slack · WhatsApp)를 갖춘 에이전트. MCP를 양방향으로 다룹니다 — `hermes mcp add`로 외부 서버 등록, `hermes mcp serve`로 자기 대화를 외부에 노출. 그래서 4개 핵심 orchestrator 외에 central-mcp와 가장 자연스럽게 짝이 되는 도구입니다.
+상주 agentOS 런타임 둘이 central-mcp와 1급으로 짝이 됩니다: [Hermes Agent](https://github.com/NousResearch/hermes-agent) (Nous Research)와 [OpenClaw](https://github.com/openclaw/openclaw). 둘 다 터미널에 묶인 orchestrator가 못 가진 것 — **내장 cron과 멀티 플랫폼 챗 게이트웨이**(Telegram · Discord · Slack 등) — 를 들고 오는데, 위 2단(Reach)이 필요로 하는 게 정확히 그것입니다. 그리고 둘 다 MCP를 양방향으로 다룹니다.
 
-`cmcp install hermes` 한 줄로 `~/.hermes/config.yaml`의 `mcp_servers.central`이 박힙니다. 그 순간부터 Hermes가 `dispatch` / `list_projects` / `check_dispatch`를 native tool로 봅니다. 동시에 Hermes 스킬 라이브러리(`skills/autonomous-ai-agents/central-mcp/`)에 **central-mcp 스킬**도 설치됩니다 — non-blocking dispatch 루프, `@workspace` fan-out, cron digest 패턴까지. 도구만 쥐여주는 게 아니라 orchestration하는 법을 가르칩니다. `cmcp run --agent hermes`로 Hermes를 orchestrator로 띄우거나, `add_project --agent hermes`로 dispatch 대상으로 등록 — config 한 번 손 보면 양방향.
+`cmcp install hermes` / `cmcp install openclaw` 한 줄이면 central-mcp가 각 런타임의 `central` MCP 서버로 등록되고, 그 순간부터 `dispatch` / `project_pulse` / `portfolio_digest`가 native tool이 됩니다. 설치는 각 런타임의 스킬 라이브러리에 **central-mcp orchestration 스킬**까지 넣습니다 — 번들 파일 하나가 두 런타임을 담당합니다. 그래서 도구만 쥐여주는 게 아니라 orchestration하는 법을 가르칩니다: 논블로킹 dispatch 루프, `@workspace` fan-out, 어떤 질문에 어떤 도구를 쓰는지, 그리고 아래 푸시 보고 레시피까지. `cmcp run --agent <둘 중 하나>`로 orchestrator로 띄우고, `add_project --agent <둘 중 하나>`로 dispatch 대상으로 등록 — 명령 하나로 양방향.
 
 이런 조합이 흥미롭습니다:
 
-- **일일 다이제스트, 실제 배달 (0.17.0).** Hermes의 cron이 `portfolio_digest`를 호출해 고정 포맷 리포트를 Telegram/Discord로 그대로 전달합니다 — 커밋·dispatch 결과가 있는 활동 프로젝트, 경고(실패했거나 종료 안 된 dispatch, 미커밋 작업이 방치된 조용한 프로젝트), 쿼터 라인까지. 설치되는 스킬에 레시피가 들어 있습니다.
-- **재알림 없는 실패 경보 (0.17.0).** `list_dispatches(status="failed", since=…)`가 Hermes에게 커서를 줍니다: 새 것만 알리고, 워터마크를 전진시키고, 같은 실패를 두 번 알리지 않음 — central-mcp는 무상태 그대로.
+- **일일 다이제스트, 실제 배달.** cron 잡이 `portfolio_digest`를 호출해 고정 포맷 리포트를 챗으로 그대로 전달합니다 — 커밋·dispatch 결과가 있는 활동 프로젝트, 경고(실패했거나 종료 안 된 dispatch, 미커밋 작업이 방치된 조용한 프로젝트), 쿼터 라인까지. 설치되는 스킬에 레시피가 단계별로 들어 있습니다.
+- **재알림 없는 실패 경보.** `list_dispatches(status="failed", since=…)`가 런타임에게 커서를 줍니다: 새 것만 알리고, 워터마크를 전진시키고, 같은 실패를 두 번 알리지 않음 — 워터마크는 구독자가 보관하므로 central-mcp는 무상태 그대로.
 - **휴대폰에서 포트폴리오 답변.** 텔레그램으로 한 줄 — *"오늘 뭐가 출시됐는지 정리해줘"* — 던지면 같은 도구들이 돌아갑니다. 터미널 안 열어도 됨.
-- **dispatch 대상으로 Hermes를 잡기.** skills curation, 웹 검색, 멀티 모델 fallback이 프로젝트 앞단에 — 일회성 CLI보다 풍부한 추론이 필요한 경우에.
+- **dispatch 대상으로 잡기.** skills curation, 웹 검색, 멀티 모델 fallback이 프로젝트 앞단에 — 일회성 CLI보다 풍부한 추론이 필요한 경우에.
 
-토큰 사용량도 추적됩니다. 토큰 HUD의 `SUBSCRIPTION QUOTA` 블록에 `hermes [ledger]` 라인이 추가됐습니다 — `~/.hermes/state.db`를 시간/일/주 토큰 합계 + 비용으로 집계.
+Hermes는 토큰 사용량도 추적됩니다. 토큰 HUD의 `SUBSCRIPTION QUOTA` 블록에 `hermes [ledger]` 라인이 있습니다 — `~/.hermes/state.db`를 시간/일/주 토큰 합계 + 비용으로 집계.
 
 ## 설치
 

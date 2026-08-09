@@ -1,6 +1,6 @@
 ---
 title: central-mcp
-description: central-mcp is the portfolio PM for a person running many agent-driven projects at once — dispatch across Claude Code, Codex, Gemini, opencode, Hermes Agent, and gajae-code, get pulse briefings when you return to a project, and a daily digest that finds you.
+description: central-mcp is the portfolio PM for a person running many agent-driven projects at once — dispatch across Claude Code, Codex, Gemini, opencode, Hermes Agent, OpenClaw, and gajae-code, get pulse briefings when you return to a project, and a daily digest that finds you.
 hide:
   - toc
 ---
@@ -21,7 +21,7 @@ hide:
 
 <h1 class="cmcp-hero-title">All lines run through <span class="cmcp-hero-emph">central.</span></h1>
 
-<p class="cmcp-hero-sub">Fan out Claude Code, Codex, Gemini, opencode, Hermes Agent, and gajae-code across every project in parallel — and at the center stands your Ultra PM: it always knows what happened, where things stand, and what's next. Every token goes into the work, none into remembering where you left off.</p>
+<p class="cmcp-hero-sub">Fan out Claude Code, Codex, Gemini, opencode, Hermes Agent, OpenClaw, and gajae-code across every project in parallel — and at the center stands your Ultra PM: it always knows what happened, where things stand, and what's next. Every token goes into the work, none into remembering where you left off.</p>
 
 [Get started](quickstart.md){ .md-button .md-button--primary }
 [GitHub](https://github.com/andy5090/central-mcp){ .md-button }
@@ -52,7 +52,7 @@ Every dispatch is a fresh subprocess in the project's cwd (e.g. `claude -p "..."
 central-mcp is a layer, not a place. A dedicated orchestrator you must remember to visit gets forgotten, so the surfaces are ranked by how they reach you:
 
 1. **Ambient (the main way in).** `cmcp install claude` once, and every session of your daily CLI carries `dispatch`, `project_pulse`, and the rest alongside its normal tools. Open a project, ask *"where does this stand?"*, and the briefing happens in place.
-2. **Reach.** The [Hermes bridge](#agentos-friendly-hermes-integration) sends the daily digest and failure alerts to Telegram/Discord — the one channel that finds *you* when no terminal is open.
+2. **Reach.** A [resident agentOS bridge](#agentos-friendly-hermes-and-openclaw) — Hermes or OpenClaw — sends the daily digest and failure alerts to Telegram/Discord, the one channel that finds *you* when no terminal is open.
 3. **Focus.** `cmcp tui` (experimental), for the sessions whose main job *is* orchestration — fan out, watch it land, supervise.
 
 ## Design principles
@@ -70,20 +70,20 @@ cmux gets a deliberate first-class treatment: its design philosophy ("agents man
 
 [Observation guide →](observation.md){ .md-button }
 
-## agentOS-friendly — Hermes integration
+## agentOS-friendly — Hermes and OpenClaw
 
-[Hermes Agent](https://github.com/NousResearch/hermes-agent) (Nous Research) is a self-improving agentOS — built-in cron, skills curation, and multi-platform delivery (Telegram, Discord, Slack, WhatsApp). It also speaks MCP both ways: `hermes mcp add` to register external servers, `hermes mcp serve` to expose its own conversations. That makes it the most natural pairing partner central-mcp has outside the four core orchestrators.
+Two resident agentOS runtimes pair with central-mcp as first-class partners: [Hermes Agent](https://github.com/NousResearch/hermes-agent) (Nous Research) and [OpenClaw](https://github.com/openclaw/openclaw). Both bring what a terminal-bound orchestrator can't — **built-in cron and a multi-platform chat gateway** (Telegram, Discord, Slack, and friends) — which is exactly what tier 2 above needs. And both speak MCP in both directions.
 
-`cmcp install hermes` writes `mcp_servers.central` into `~/.hermes/config.yaml`, and from that moment Hermes sees `dispatch` / `list_projects` / `check_dispatch` as native tools. It also drops a **central-mcp skill** into Hermes's skill library (`skills/autonomous-ai-agents/central-mcp/`) — the non-blocking dispatch loop, `@workspace` fan-out, and cron-digest patterns, so Hermes doesn't just *have* the tools, it knows how to orchestrate with them. `cmcp run --agent hermes` makes Hermes the orchestrator; `add_project --agent hermes` makes a project's dispatch target Hermes. Bidirectional in one config edit.
+`cmcp install hermes` / `cmcp install openclaw` registers central-mcp as their `central` MCP server, and from that moment `dispatch` / `project_pulse` / `portfolio_digest` are native tools. Each install also drops the **central-mcp orchestration skill** into that runtime's skill library — one bundled file serving both — so the runtime doesn't just *have* the tools, it knows how to orchestrate with them: the non-blocking dispatch loop, `@workspace` fan-out, which tool answers which question, and the push-reporting recipes below. `cmcp run --agent <either>` makes it the orchestrator; `add_project --agent <either>` makes it a project's dispatch target. Bidirectional in one command.
 
 Compositions worth noticing:
 
-- **The daily digest, delivered (0.17.0).** Hermes's cron calls `portfolio_digest` and forwards the fixed-format report to Telegram/Discord verbatim — active projects with commits and dispatch outcomes, warnings (failed or never-finalized dispatches, quiet projects with uncommitted work), and a quota line. The shipped skill carries the recipe.
-- **Failure alerts without re-alerts (0.17.0).** `list_dispatches(status="failed", since=…)` gives Hermes a cursor: alert on what's new, advance the watermark, never ping the same failure twice — while central-mcp stays stateless.
-- **Portfolio answers from your phone.** One line over Telegram — *"summarize what shipped today"* — and Hermes drives the same tools without you opening a terminal.
-- **Hermes as a project's dispatch target.** Skills curation, web search, and multi-model fallback in front of the project — useful where a one-shot CLI isn't enough.
+- **The daily digest, delivered.** A cron job calls `portfolio_digest` and forwards the fixed-format report to chat verbatim — active projects with commits and dispatch outcomes, warnings (failed or never-finalized dispatches, quiet projects with uncommitted work), and a quota line. The shipped skill carries the recipe step by step.
+- **Failure alerts without re-alerts.** `list_dispatches(status="failed", since=…)` gives the runtime a cursor: alert on what's new, advance the watermark, never ping the same failure twice — while central-mcp stays stateless, because the watermark lives with the subscriber.
+- **Portfolio answers from your phone.** One line over Telegram — *"summarize what shipped today"* — drives the same tools without you opening a terminal.
+- **As a project's dispatch target.** Skills curation, web search, and multi-model fallback in front of the project — useful where a one-shot CLI isn't enough.
 
-Token usage is tracked too: the `SUBSCRIPTION QUOTA` block in the token HUD gained a `hermes [ledger]` line aggregating `~/.hermes/state.db` into hour / day / week token totals + cost.
+Token usage is tracked for Hermes too: the `SUBSCRIPTION QUOTA` block in the token HUD carries a `hermes [ledger]` line aggregating `~/.hermes/state.db` into hour / day / week token totals + cost.
 
 ## Install
 
