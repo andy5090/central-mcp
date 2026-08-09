@@ -19,9 +19,9 @@ hide:
   <img src="/logo-dark.png?v=0.11.0" alt="central-mcp" width="300" class="cmcp-hero-dark"/>
 </p>
 
-<h1 class="cmcp-hero-title">Ten projects, <span class="cmcp-hero-emph">zero dropped.</span></h1>
+<h1 class="cmcp-hero-title">All lines run through <span class="cmcp-hero-emph">central.</span></h1>
 
-<p class="cmcp-hero-sub">Fan out Claude Code, Codex, Gemini, opencode, Hermes Agent, and gajae-code across every project in parallel — and let central-mcp play PM: it always knows what happened, where things stand, and what's next. Every token goes into the work, none into remembering where you left off.</p>
+<p class="cmcp-hero-sub">Fan out Claude Code, Codex, Gemini, opencode, Hermes Agent, and gajae-code across every project in parallel — and at the center stands your Ultra PM: it always knows what happened, where things stand, and what's next. Every token goes into the work, none into remembering where you left off.</p>
 
 [Get started](quickstart.md){ .md-button .md-button--primary }
 [GitHub](https://github.com/andy5090/central-mcp){ .md-button }
