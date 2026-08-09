@@ -22,7 +22,7 @@ central-mcp [SUBCOMMAND] [OPTIONS]
 ## orchestrator 띄우기
 
 ### `central-mcp run`
-설정된 orchestrator(claude / codex / gemini / opencode / hermes / gjc 중 하나)를 띄웁니다. 매 launch마다 PyPI에 새 릴리스가 있는지 확인하고, 있으면 인터랙티브 픽커로 업그레이드 안내. 선호 orchestrator가 quota 임계를 넘으면 fallback 체인을 따라 다른 에이전트로 빠집니다.
+설정된 orchestrator(claude / codex / gemini / opencode / hermes / openclaw / gjc 중 하나)를 띄웁니다. 매 launch마다 PyPI에 새 릴리스가 있는지 확인하고, 있으면 인터랙티브 픽커로 업그레이드 안내. 선호 orchestrator가 quota 임계를 넘으면 fallback 체인을 따라 다른 에이전트로 빠집니다.
 
 ### `central-mcp serve`
 MCP stdio 서버로 동작합니다. MCP 클라이언트가 호출하는 진입점이라, 직접 부를 일은 거의 없습니다.
@@ -107,7 +107,7 @@ CLI 형태가 있는 이유는 푸시 배달에 MCP를 말하는 호출자가 �
 ## MCP 클라이언트 셋업
 
 ### `central-mcp install <client>`
-central-mcp를 클라이언트의 MCP 서버로 등록합니다. 선택지: `claude`, `codex`, `gemini`, `opencode`, `hermes`, `gjc`, `all`. `hermes` 타깃은 Hermes 스킬 라이브러리에 central-mcp orchestration 스킬까지 설치하고, `gjc` 타깃은 `~/.gjc/agent/mcp.json`의 `mcpServers.central`에 등록합니다.
+central-mcp를 클라이언트의 MCP 서버로 등록합니다. 선택지: `claude`, `codex`, `gemini`, `opencode`, `hermes`, `openclaw`, `gjc`, `all`. `hermes` 타깃은 Hermes 스킬 라이브러리에 central-mcp orchestration 스킬까지 설치하고, `gjc` 타깃은 `~/.gjc/agent/mcp.json`의 `mcpServers.central`에 등록하며, `openclaw` 타깃은 `openclaw mcp add`를 호출합니다(OpenClaw 설정이 JSON5라 우리가 직접 파싱하는 대신 벤더 CLI가 편집을 소유).
 
 ### `central-mcp alias [name]`
 `cmcp` 단축 alias 출력 / 생성.

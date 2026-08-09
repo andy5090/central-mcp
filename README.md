@@ -400,7 +400,7 @@ central-mcp install CLIENT         # register with claude | codex | gemini | ope
 central-mcp alias [NAME]           # short-name symlink (default: cmcp)
 central-mcp unalias [NAME]
 central-mcp init [PATH]            # scaffold registry.yaml (default: ~/.central-mcp)
-central-mcp add NAME PATH [--agent claude|codex|gemini|droid|opencode|hermes|gjc]
+central-mcp add NAME PATH [--agent claude|codex|gemini|droid|opencode|hermes|openclaw|gjc]
 central-mcp remove NAME
 central-mcp reorder NAME [NAME ...]  # reorder projects — unlisted ones keep relative order
 central-mcp list                   # one-line registry dump

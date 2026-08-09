@@ -22,7 +22,7 @@ When invoked with no subcommand, `central-mcp` is equivalent to `central-mcp run
 ## Launching the orchestrator
 
 ### `central-mcp run`
-Launch the configured orchestrator (claude / codex / gemini / opencode / hermes / gjc). Probes PyPI for newer releases on every launch and offers an interactive upgrade picker. Walks the fallback chain if the preferred orchestrator is over its quota threshold.
+Launch the configured orchestrator (claude / codex / gemini / opencode / hermes / openclaw / gjc). Probes PyPI for newer releases on every launch and offers an interactive upgrade picker. Walks the fallback chain if the preferred orchestrator is over its quota threshold.
 
 ### `central-mcp serve`
 Run as an MCP stdio server. This is what MCP clients invoke; you rarely call it directly.
@@ -107,7 +107,7 @@ Unassign.
 ## MCP client setup
 
 ### `central-mcp install <client>`
-Register central-mcp as an MCP server with a client. Choices: `claude`, `codex`, `gemini`, `opencode`, `hermes`, `gjc`, `all`. The `hermes` target also installs a central-mcp orchestration skill into Hermes's skill library; the `gjc` target writes `mcpServers.central` into `~/.gjc/agent/mcp.json`.
+Register central-mcp as an MCP server with a client. Choices: `claude`, `codex`, `gemini`, `opencode`, `hermes`, `openclaw`, `gjc`, `all`. The `hermes` target also installs a central-mcp orchestration skill into Hermes's skill library; the `gjc` target writes `mcpServers.central` into `~/.gjc/agent/mcp.json`; the `openclaw` target drives `openclaw mcp add` (OpenClaw's config is JSON5, so the vendor CLI owns the edit rather than us hand-parsing it).
 
 ### `central-mcp alias [name]`
 Print or create the `cmcp` short alias.

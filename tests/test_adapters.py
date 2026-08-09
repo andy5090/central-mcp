@@ -7,6 +7,8 @@ without tests here, the parametrize IDs will make the gap obvious.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from central_mcp.adapters.base import VALID_AGENTS, _ADAPTERS, get_adapter
@@ -556,6 +558,79 @@ class TestGjc:
     def test_parse_output_non_json_falls_through(self) -> None:
         display, tokens = get_adapter("gjc").parse_output("plain text output")
         assert display == "plain text output"
+
+
+class TestOpenClaw:
+    """OpenClaw — `openclaw agent --local --json` one-shot mode."""
+
+    def test_basic_targets_the_default_agent(self) -> None:
+        # The CLI refuses to run without a session selector (--to /
+        # --session-key / --session-id / --agent), so a dispatch with no
+        # pinned session has to name the default agent.
+        argv = get_adapter("openclaw").exec_argv("plan the day")
+        assert argv == [
+            "openclaw", "agent", "--local", "--json",
+            "--agent", "main", "-m", "plan the day",
+        ]
+
+    def test_local_is_always_passed(self) -> None:
+        # Without --local the turn is routed through a running Gateway
+        # daemon; dispatch must not depend on a resident service.
+        for kwargs in ({}, {"resume": False}, {"session_id": "abc"}):
+            assert "--local" in get_adapter("openclaw").exec_argv("x", **kwargs)
+
+    def test_session_id_replaces_the_agent_selector(self) -> None:
+        argv = get_adapter("openclaw").exec_argv("x", session_id="sess-42")
+        assert "--agent" not in argv
+        i = argv.index("--session-id")
+        assert argv[i + 1] == "sess-42"
+
+    def test_resume_flag_is_inert(self) -> None:
+        # OpenClaw has no resume-latest equivalent (like droid): without
+        # an explicit session_id every dispatch is a fresh turn.
+        assert (
+            get_adapter("openclaw").exec_argv("x", resume=True)
+            == get_adapter("openclaw").exec_argv("x", resume=False)
+        )
+
+    def test_permission_mode_is_a_noop(self) -> None:
+        # Approvals are config-side (`openclaw approvals` / `exec-policy`),
+        # not a per-invocation flag — nothing to add to argv.
+        restricted = get_adapter("openclaw").exec_argv("x")
+        bypass = get_adapter("openclaw").exec_argv("x", permission_mode="bypass")
+        assert restricted == bypass
+
+    def test_prompt_follows_the_message_flag(self) -> None:
+        argv = get_adapter("openclaw").exec_argv("do the thing")
+        assert argv[-2:] == ["-m", "do the thing"]
+
+    def test_parse_output_joins_payload_texts(self) -> None:
+        stdout = json.dumps({
+            "payloads": [
+                {"text": "Report ready", "mediaUrl": None},
+                {"text": "second part", "mediaUrl": None},
+            ],
+            "meta": {"durationMs": 1200},
+        })
+        display, tokens = get_adapter("openclaw").parse_output(stdout)
+        assert display == "Report ready\nsecond part"
+        # No usage block in the response shape — never invent tokens.
+        assert tokens is None
+
+    def test_parse_output_reads_gateway_nested_result(self) -> None:
+        stdout = json.dumps({"result": {"payloads": [{"text": "via gateway"}]}})
+        display, _ = get_adapter("openclaw").parse_output(stdout)
+        assert display == "via gateway"
+
+    def test_parse_output_skips_media_only_payloads(self) -> None:
+        stdout = json.dumps({"payloads": [{"mediaUrl": "http://x/y.png"}]})
+        display, _ = get_adapter("openclaw").parse_output(stdout)
+        assert display == stdout      # nothing renderable → passthrough
+
+    def test_parse_output_non_json_falls_through(self) -> None:
+        display, tokens = get_adapter("openclaw").parse_output("plain text")
+        assert display == "plain text"
+        assert tokens is None
         assert tokens is None
 
     def test_capabilities_registered(self) -> None:

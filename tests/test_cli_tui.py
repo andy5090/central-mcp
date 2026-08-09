@@ -38,7 +38,9 @@ def test_requires_experimental_flag(capsys: pytest.CaptureFixture) -> None:
     assert "experimental" in err.lower()
 
 
-@pytest.mark.parametrize("agent", ["droid", "hermes", "cursor", "totally-fake"])
+@pytest.mark.parametrize(
+    "agent", ["droid", "hermes", "openclaw", "cursor", "totally-fake"]
+)
 def test_unsupported_agent_rejected(
     agent: str, capsys: pytest.CaptureFixture
 ) -> None:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import tomlkit
@@ -398,3 +399,76 @@ def test_install_gjc_dry_run_does_not_write(fake_gjc_home: Path) -> None:
     assert install.install("gjc", dry_run=True) == 0
     assert fake_gjc_home.read_text() == text_before
 
+
+
+# ─── openclaw ─────────────────────────────────────────────────────────
+#
+# OpenClaw's config is JSON5, so this installer drives the vendor CLI
+# (`openclaw mcp add`) instead of editing the file. The tests therefore
+# stub subprocess rather than a config fixture.
+
+@pytest.fixture
+def fake_openclaw_cli(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
+    """Pretend `openclaw` is installed and record every argv it receives.
+
+    `mcp list --json` answers from `registered` (empty = nothing saved),
+    which tests seed to exercise the idempotence path.
+    """
+    import subprocess as _sp
+
+    state = SimpleNamespace(calls=[], registered={})
+
+    monkeypatch.setattr(install.shutil, "which", lambda name: f"/usr/bin/{name}")
+
+    def _run(cmd, *args, **kwargs):
+        state.calls.append(list(cmd))
+        if list(cmd[:4]) == ["openclaw", "mcp", "list", "--json"]:
+            return _sp.CompletedProcess(cmd, 0, json.dumps(state.registered), "")
+        return _sp.CompletedProcess(cmd, 0, "saved\n", "")
+
+    monkeypatch.setattr(install.subprocess, "run", _run)
+    return state
+
+
+def _add_calls(state: SimpleNamespace) -> list[list[str]]:
+    return [c for c in state.calls if c[:3] == ["openclaw", "mcp", "add"]]
+
+
+def test_install_openclaw_adds_server(fake_openclaw_cli: SimpleNamespace) -> None:
+    assert install.install("openclaw") == 0
+    add = _add_calls(fake_openclaw_cli)
+    assert len(add) == 1
+    cmd = add[0]
+    assert "central" in cmd
+    assert cmd[cmd.index("--command") + 1] == "central-mcp"
+    assert cmd[cmd.index("--arg") + 1] == "serve"
+    # Probing would spawn a second central-mcp process for no benefit.
+    assert "--no-probe" in cmd
+
+
+def test_install_openclaw_is_idempotent(fake_openclaw_cli: SimpleNamespace) -> None:
+    fake_openclaw_cli.registered["central"] = {"command": "central-mcp"}
+    assert install.install("openclaw") == 0
+    assert _add_calls(fake_openclaw_cli) == []
+
+
+def test_install_openclaw_reads_nested_servers_key(
+    fake_openclaw_cli: SimpleNamespace,
+) -> None:
+    # `mcp list --json` may wrap the map under `servers`; either shape
+    # must count as "already registered".
+    fake_openclaw_cli.registered["servers"] = {"central": {}}
+    assert install.install("openclaw") == 0
+    assert _add_calls(fake_openclaw_cli) == []
+
+
+def test_install_openclaw_dry_run_runs_nothing(
+    fake_openclaw_cli: SimpleNamespace,
+) -> None:
+    assert install.install("openclaw", dry_run=True) == 0
+    assert fake_openclaw_cli.calls == []
+
+
+def test_install_openclaw_requires_the_cli(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(install.shutil, "which", lambda name: None)
+    assert install.install("openclaw") == 1

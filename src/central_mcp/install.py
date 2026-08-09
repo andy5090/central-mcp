@@ -44,6 +44,7 @@ def _installer_for(client: str):
         "gemini": _install_gemini,
         "opencode": _install_opencode,
         "hermes": _install_hermes,
+        "openclaw": _install_openclaw,
         "gjc": _install_gjc,
     }.get(client)
 
@@ -386,6 +387,72 @@ def _install_hermes(*, dry_run: bool) -> int:
     _say(f"updated {cfg}")
     _say(f"backup: {bak}")
     return _install_hermes_skill(dry_run=False)
+
+
+def _install_openclaw(*, dry_run: bool) -> int:
+    """Register central-mcp in OpenClaw's `mcp.servers` config.
+
+    Unlike every other installer here this drives the vendor CLI
+    (`openclaw mcp add`) instead of editing the config file directly.
+    OpenClaw's config is **JSON5** at ``~/.openclaw/openclaw.json`` —
+    comments and trailing commas are legal, so the stdlib `json`
+    module cannot round-trip a user's file without destroying it, and
+    pulling in a JSON5 dependency to hand-edit a file the vendor CLI
+    already manages correctly would be the wrong trade. `mcp add` also
+    seeds the config when it doesn't exist yet, so this works before
+    `openclaw setup` has ever run.
+
+    `--no-probe` saves without dialing the server first: probing would
+    spawn a second central-mcp process mid-install for no benefit.
+    """
+    if shutil.which("openclaw") is None:
+        print("error: `openclaw` CLI not found in PATH", file=sys.stderr)
+        return 1
+
+    cmd = [
+        "openclaw", "mcp", "add", SERVER_NAME,
+        "--command", LAUNCH_COMMAND,
+        "--no-probe",
+    ]
+    for arg in LAUNCH_ARGS:
+        cmd += ["--arg", arg]
+
+    if dry_run:
+        _say("Would run: " + " ".join(cmd))
+        return 0
+
+    # Idempotency: `mcp list --json` returns the saved server map (and
+    # `{}` when nothing is configured), so a rerun is a no-op instead of
+    # silently rewriting an entry the user may have tuned.
+    try:
+        probe = subprocess.run(
+            ["openclaw", "mcp", "list", "--json"],
+            capture_output=True, text=True, check=False,
+        )
+    except OSError as exc:
+        print(f"error: could not run `openclaw mcp list`: {exc}", file=sys.stderr)
+        return 1
+    if probe.returncode == 0:
+        try:
+            saved = json.loads(probe.stdout or "{}")
+        except json.JSONDecodeError:
+            saved = {}
+        servers = saved.get("servers") if isinstance(saved, dict) else None
+        if not isinstance(servers, dict):
+            servers = saved if isinstance(saved, dict) else {}
+        if SERVER_NAME in servers:
+            _say(f"openclaw: {SERVER_NAME!r} already registered — no change")
+            return 0
+
+    _say("Running: " + " ".join(cmd))
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    except OSError as exc:
+        print(f"error: could not run `openclaw mcp add`: {exc}", file=sys.stderr)
+        return 1
+    sys.stdout.write(r.stdout)
+    sys.stderr.write(r.stderr)
+    return r.returncode
 
 
 def _install_gjc(*, dry_run: bool) -> int:

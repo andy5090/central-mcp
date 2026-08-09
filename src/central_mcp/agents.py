@@ -107,6 +107,24 @@ AGENTS: dict[str, AgentCapabilities] = {
         # signal than what claude/codex provide).
         has_session_reader=False,
     ),
+    "openclaw": AgentCapabilities(
+        name="openclaw", binary="openclaw", label="OpenClaw",
+        # Gateway-oriented agentOS with its own cron + chat channels,
+        # in the same family as Hermes. `openclaw agent --local --json`
+        # gives a gateway-free one-shot for dispatch, and it can host
+        # the orchestrator via the same MCP registration.
+        can_dispatch=True,
+        can_orchestrate=True,
+        mcp_installable=True,
+        # No subscription quota endpoint of its own — usage lives with
+        # whichever model provider the embedded agent is configured for.
+        has_quota_api=False,
+        # `has_session_reader` gates orch_session token backfill, which
+        # needs per-turn usage; the CLI exposes sessions but no usage.
+        # The dispatch-side `list_sessions` reader is separate and does
+        # work (see adapters.base._OpenClaw.list_sessions).
+        has_session_reader=False,
+    ),
 }
 
 

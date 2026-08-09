@@ -3,6 +3,20 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.18.0] — 2026-08-09
+
+### Added
+- **OpenClaw joins the agent lineup — dispatch target, orchestrator, and MCP-install client.** New `_OpenClaw` adapter wraps `openclaw agent --local --json -m PROMPT`. OpenClaw is gateway-oriented — `openclaw agent` normally routes a turn through a resident Gateway daemon — so `--local` is load-bearing: it runs the embedded agent in-process, which is what dispatch needs (a fresh subprocess, no service dependency). `--json` reserves stdout for the response and pushes diagnostics to stderr. The CLI refuses to run without a session selector, so an unpinned dispatch targets `--agent main` (OpenClaw's built-in default agent); a pinned `session_id` becomes `--session-id` instead. `parse_output` joins `payloads[].text` from the documented response shape (and the `result`-nested Gateway variant), returning no tokens because the response carries no usage block — guessing one would be worse than reporting none. `list_sessions` reads `openclaw sessions list --json`; OpenClaw scopes sessions to an agent rather than a working directory, so `cwd` is accepted for interface parity and ignored.
+- **`cmcp install openclaw`.** Registers `mcp.servers.central` by driving the vendor CLI (`openclaw mcp add central --command central-mcp --arg serve --no-probe`) rather than editing the config file. OpenClaw's config at `~/.openclaw/openclaw.json` is **JSON5** — comments and trailing commas are legal — so the stdlib `json` module cannot round-trip a user's file without destroying it, and adding a JSON5 dependency to hand-edit a file the vendor CLI already manages correctly would be the wrong trade. `mcp add` also seeds the config when it doesn't exist, so this works before `openclaw setup` has ever run. Idempotent via `openclaw mcp list --json`; `--no-probe` avoids spawning a second central-mcp process mid-install.
+
+### Notes
+- Known limits, both deliberate: **no resume-latest** (OpenClaw has no `--continue` equivalent, so like droid, continuity needs an explicit `session_id` — `list_project_sessions` surfaces them), and **`permission_mode` is a no-op** (OpenClaw gates dangerous commands through its own `approvals` / `exec-policy` config, not a per-invocation flag, so bypass is configured on the OpenClaw side). `has_quota_api=False` — usage lives with whichever model provider the embedded agent uses.
+- Verified against the real CLI (OpenClaw 2026.6.34): the `-m live` adapter contract suite now covers openclaw and confirms every flag the adapter emits exists in `openclaw agent --help`; the installer was exercised end-to-end (`mcp unset` → `{}` → `install` → `mcp.servers.central` written to `~/.openclaw/openclaw.json`) plus the idempotent rerun path.
+- Tests: `TestOpenClaw` in `test_adapters.py` (10 — argv shapes incl. `--local` always present, session-id replacing the agent selector, inert `resume`, no-op permission mode, and parse_output for the flat / Gateway-nested / media-only / non-JSON cases) and 5 installer cases in `test_install.py` driving a stubbed vendor CLI. `test_unsupported_agent_rejected` (TUI gate) gains openclaw. 766 passing.
+- No bundled OpenClaw skill yet — Hermes's `data/hermes-skill.md` has no vendor-neutral twin, and duplicating it would invite drift. Follow-up: generalize it into one agentOS skill installed to both.
+
+---
+
 ## [0.17.0] — 2026-08-09
 
 ### Added

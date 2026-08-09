@@ -134,6 +134,32 @@ def _slug_cwd(cwd: str | Path) -> str:
     return str(Path(cwd).resolve()).replace("/", "-")
 
 
+def _run_json(argv: Sequence[str], *, timeout: float = 15.0) -> object | None:
+    """Run a CLI that prints JSON on stdout and return the parsed value.
+
+    Returns None for a missing binary, a non-zero exit, a timeout, or
+    unparseable output — every caller here treats "no data" and "the
+    agent's CLI misbehaved" the same way.
+    """
+    if not argv or shutil.which(argv[0]) is None:
+        return None
+    try:
+        result = subprocess.run(
+            list(argv),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    if result.returncode != 0:
+        return None
+    try:
+        return json.loads(result.stdout)
+    except Exception:
+        return None
+
+
 def _mtime_iso(path: Path) -> str | None:
     try:
         mtime = path.stat().st_mtime
@@ -847,6 +873,105 @@ class _Gjc(Adapter):
         return display, tokens
 
 
+class _OpenClaw(Adapter):
+    """OpenClaw — `openclaw agent --local --json` one-shot mode.
+
+    Gateway-oriented, unlike every other agent in this table: `openclaw
+    agent` normally routes a turn through a running Gateway daemon.
+    `--local` runs the embedded agent in-process instead, which is what
+    dispatch wants — a fresh subprocess that needs no resident service
+    (model-provider keys must be in the environment). `--json` reserves
+    stdout for the response and pushes diagnostics to stderr.
+
+    The CLI refuses to run without a session selector (`--to`,
+    `--session-key`, `--session-id`, or `--agent`), so a dispatch with
+    no pinned session targets `--agent <default_agent>` — OpenClaw
+    seeds `main` on first run. There is no resume-latest flag: like
+    droid, continuity requires an explicit `session_id`, which
+    `list_sessions` surfaces.
+
+    Permission modes are not expressible in argv here. OpenClaw gates
+    dangerous commands through its own `approvals` / `exec-policy`
+    config rather than a per-invocation flag, so `permission_mode` is
+    deliberately a no-op — bypass, if wanted, is configured on the
+    OpenClaw side.
+    """
+
+    #: OpenClaw's built-in default agent id, created by `openclaw setup`.
+    DEFAULT_AGENT = "main"
+
+    def exec_argv(
+        self,
+        prompt: str,
+        *,
+        resume: bool = True,
+        permission_mode: str = "restricted",
+        session_id: str | None = None,
+    ) -> list[str] | None:
+        argv = ["openclaw", "agent", "--local", "--json"]
+        if session_id:
+            argv += ["--session-id", session_id]
+        else:
+            argv += ["--agent", self.DEFAULT_AGENT]
+        argv += ["-m", prompt]
+        return argv
+
+    def parse_output(
+        self, stdout: str
+    ) -> tuple[str, dict[str, int] | None]:
+        """Display = concatenated `payloads[].text` of the JSON response.
+
+        The documented shape is
+        `{"payloads": [{"text": ..., "mediaUrl": ...}], "meta": {...}}`.
+        No token accounting: the response carries `meta.durationMs` but
+        no usage block, so tokens stay None rather than being guessed.
+        """
+        try:
+            r = json.loads(stdout)
+        except Exception:
+            return stdout, None
+        if not isinstance(r, dict):
+            return stdout, None
+        # Gateway-backed responses nest the same object under `result`.
+        payloads = r.get("payloads")
+        if payloads is None and isinstance(r.get("result"), dict):
+            payloads = r["result"].get("payloads")
+        texts = [
+            str(p.get("text")) for p in (payloads or [])
+            if isinstance(p, dict) and p.get("text")
+        ]
+        return ("\n".join(texts) or stdout), None
+
+    def list_sessions(self, cwd: str | Path, limit: int = 20) -> list[SessionInfo]:
+        """Sessions come from OpenClaw's own store, not from `cwd`.
+
+        OpenClaw scopes sessions to an agent + channel, not to a working
+        directory, so unlike claude/codex there is nothing to filter by
+        path — `cwd` is accepted for interface parity and ignored.
+        """
+        proc = _run_json(
+            ["openclaw", "sessions", "list", "--json", "--limit", str(int(limit))]
+        )
+        if not isinstance(proc, dict):
+            return []
+        out: list[SessionInfo] = []
+        for s in (proc.get("sessions") or []):
+            if not isinstance(s, dict):
+                continue
+            sid = s.get("id") or s.get("sessionId") or s.get("key")
+            if not sid:
+                continue
+            out.append(SessionInfo(
+                id=str(sid),
+                title=s.get("title") or s.get("label"),
+                preview=s.get("preview") or s.get("lastMessage"),
+                created=s.get("createdAt") or s.get("created"),
+                modified=s.get("updatedAt") or s.get("modified"),
+                turns=s.get("messageCount") or s.get("turns"),
+            ))
+        return out[:limit]
+
+
 _ADAPTERS: dict[str, Adapter] = {
     "claude":   _Claude("claude",   launch=("claude",),   has_exec=True, supports_auto=True),
     "codex":    _Codex("codex",     launch=("codex",),    has_exec=True),
@@ -855,6 +980,7 @@ _ADAPTERS: dict[str, Adapter] = {
     "opencode": _OpenCode("opencode", launch=("opencode",), has_exec=True),
     "hermes":   _Hermes("hermes",   launch=("hermes",),   has_exec=True),
     "gjc":      _Gjc("gjc",         launch=("gjc",),      has_exec=True),
+    "openclaw": _OpenClaw("openclaw", launch=("openclaw", "chat"), has_exec=True),
 }
 
 _FALLBACK_ADAPTER = Adapter("(unknown)", launch=(), has_exec=False)
