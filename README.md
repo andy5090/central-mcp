@@ -12,24 +12,33 @@
 [![Python](https://img.shields.io/pypi/pyversions/central-mcp)](https://pypi.org/project/central-mcp/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Coding agent-agnostic MCP hub for managing multiple coding agents.**
+**The portfolio PM for running many agent-driven projects at once.**
 
-> **Never stop. Run agents across every project in parallel — 10×, 100× your throughput.**
+> **All lines run through central.** Dispatch across every project, and never lose the thread of any of them.
 
-One MCP server turns any MCP-capable client (Claude Code, Codex CLI, Gemini CLI, opencode, [Hermes Agent](https://github.com/NousResearch/hermes-agent), …) into a control plane for your portfolio of coding-agent projects. Ask in natural language, and the orchestrator routes the request to the right project's agent — non-blocking, with results reported back asynchronously.
+One MCP server turns any MCP-capable client (Claude Code, Codex CLI, Gemini CLI, opencode, [Hermes Agent](https://github.com/NousResearch/hermes-agent), [OpenClaw](https://github.com/openclaw/openclaw), gajae-code) into a control plane for your portfolio of coding-agent projects. Ask in natural language, and the orchestrator routes the request to the right project's agent — non-blocking, with results reported back asynchronously — then briefs you on that project's real state whenever you come back to it.
 
 ## Why
 
-You probably use more than one coding agent. Each has its own terminal, its own session, its own logs. Switching between them is friction, and there is no shared view of *what answered what*.
+Agents made it cheap to *run* four, eight, fifteen projects at once. They did nothing about *keeping track* of them. Every context switch charges a re-orientation tax — *what happened here while I was away? What state is it in? What was I about to do next?* — and nobody is playing PM.
 
-`central-mcp` gives you one hub:
+`central-mcp` is that PM:
 
-- **Dispatch** prompts to any project's agent and get responses via MCP
-- **Parallel work** — dispatch to multiple projects and keep talking while they run
-- **Manage** the registry with `add_project` / `remove_project`
-- **Orchestrate** from any MCP-capable client — never locked to one
+- **Dispatch** — send work to any project's agent, in parallel, and keep talking while it runs
+- **Pulse** — return to a project and get "what happened / where it stands / what's next", computed from the **repository itself**, so work that never went through the hub (direct commits, interactive agent sessions, manual edits) counts too
+- **Digest** — a fixed-format daily/weekly portfolio report, deliverable to chat by a resident agent or a plain crontab
+- **Observe** — live panes on the dispatches you're actively following
+- **Orchestrate from anywhere** — any MCP-capable client can be the front end; never locked to one vendor
 
 Every dispatch is a fresh subprocess in the project's cwd (e.g. `claude -p "..." --continue`). No long-lived processes, no screen scraping, no tmux dependency on the critical path.
+
+## How you meet it — three tiers
+
+central-mcp is a layer, not a place. A dedicated orchestrator you have to remember to visit gets forgotten, so the surfaces are ranked by how they reach you:
+
+1. **Ambient (the main way in).** `cmcp install claude` once, and every session of the CLI you already use carries `dispatch`, `project_pulse`, and the rest alongside its normal tools. Open a project, ask *"where does this stand?"*, and the briefing happens in place.
+2. **Reach.** A resident agentOS bridge — [Hermes](https://github.com/NousResearch/hermes-agent) or [OpenClaw](https://github.com/openclaw/openclaw) — sends the daily digest and failure alerts to Telegram/Discord, the one channel that finds *you* when no terminal is open.
+3. **Focus.** `cmcp tui` (experimental), for sessions whose main job *is* orchestration — fan out, watch it land, supervise.
 
 ## Design principles
 
@@ -77,7 +86,7 @@ central-mcp
 >
 > Or with pip: `pip install central-mcp`
 
-The first `central-mcp` run auto-creates `~/.central-mcp/registry.yaml` and registers central-mcp with every MCP client binary it finds on PATH (claude, codex, gemini, opencode). After that it launches the orchestrator in your preferred agent.
+The first `central-mcp` run auto-creates `~/.central-mcp/registry.yaml` and registers central-mcp with every MCP client binary it finds on PATH (claude, codex, gemini, opencode, hermes, openclaw, gjc). After that it launches the orchestrator in your preferred agent.
 
 > **Manual install** if you want fine-grained control:
 > - `central-mcp install all` — re-detect + register everywhere
@@ -135,15 +144,17 @@ Everything below is spoken to the orchestrator in plain language. The orchestrat
 
 ## MCP tools
 
-`central-mcp` exposes 11 tools under the server name `central`:
+`central-mcp` exposes 18 tools under the server name `central`:
 
 | Tool | Blocking? | Purpose |
 |---|---|---|
 | `list_projects` | sync | Enumerate the registry. |
-| `project_status` | sync | Metadata for one project. |
+| `project_status` | sync | Metadata for one project — cheap, no subprocesses. |
+| `project_pulse` | sync | **What actually happened in a project, where it stands, what's live.** Reads the repository (branch, upstream ahead/behind, uncommitted work, recent commits) plus dispatches, sessions, and open PRs — so work that never went through central-mcp shows up. Call it when the user returns to a project or asks "what's the state of X?". |
+| `portfolio_digest` | sync | **Pre-rendered daily/weekly portfolio report.** Active projects, warnings (failed and never-finalized dispatches, quiet projects with uncommitted work), quiet list, quota line. Forward `digest_markdown` verbatim. |
 | `dispatch` | **<100ms** | Send a prompt to a project's agent. Supports per-dispatch agent override and fallback chain. Returns `dispatch_id` immediately. |
 | `check_dispatch` | sync | Poll a dispatch — `running` / `complete` / `error` with full output. |
-| `list_dispatches` | sync | All active + recently completed dispatches. |
+| `list_dispatches` | sync | All active + recently completed dispatches. `status="failed"` + `since=<ISO>` gives resident agents a re-alert-proof failure cursor (the watermark lives with the caller, so central-mcp stays stateless). |
 | `cancel_dispatch` | sync | Abort a running dispatch. |
 | `dispatch_history` | sync | Last N dispatches for **one project** (reads its jsonl log). |
 | `orchestration_history` | sync | Portfolio-wide snapshot: in-flight + recent cross-project milestones + per-project counts. Call this for "how is everything going?" |
@@ -397,6 +408,8 @@ central-mcp run [--agent X] [--pick] [--permission-mode {bypass,auto,restricted}
                                    # launch orchestrator (default: bypass; auto is claude-only)
 central-mcp serve                  # run MCP server on stdio (used by MCP clients)
 central-mcp install CLIENT         # register with claude | codex | gemini | opencode
+                                   #   | hermes | openclaw | gjc | all
+                                   # hermes/openclaw also get the orchestration skill
 central-mcp alias [NAME]           # short-name symlink (default: cmcp)
 central-mcp unalias [NAME]
 central-mcp init [PATH]            # scaffold registry.yaml (default: ~/.central-mcp)
@@ -404,7 +417,13 @@ central-mcp add NAME PATH [--agent claude|codex|gemini|droid|opencode|hermes|ope
 central-mcp remove NAME
 central-mcp reorder NAME [NAME ...]  # reorder projects — unlisted ones keep relative order
 central-mcp list                   # one-line registry dump
-central-mcp brief                  # orchestrator-ready markdown snapshot
+central-mcp brief                  # orchestrator-ready markdown snapshot (registry only, ~50ms)
+central-mcp pulse [NAME] [--commits N] [--history N] [--pr|--no-pr] [--json]
+                                   # what actually happened in a project — git + dispatches
+                                   # + sessions + open PRs. No NAME → sweep the workspace.
+central-mcp digest [--workspace NAME] [--hours N] [--quiet-days N] [--no-quota] [--json]
+                                   # the portfolio report; `cmcp digest | <notifier>` from a
+                                   # crontab is a complete push-reporting setup
 central-mcp workspace list         # list workspaces with project counts
 central-mcp workspace current      # print the active workspace
 central-mcp workspace new NAME     # create a new workspace
@@ -412,7 +431,10 @@ central-mcp workspace use NAME     # switch the active workspace
 central-mcp workspace add PROJECT --workspace NAME
 central-mcp workspace remove PROJECT --workspace NAME
 central-mcp up [--no-orchestrator] [--permission-mode {bypass,auto,restricted}] [--max-panes N]
-                                   # optional tmux observation layer (active workspace)
+               [--projects A,B,C] [--all-projects]
+                                   # optional tmux observation layer (active workspace).
+                                   # Panes go to the most recently active projects that fit
+                                   # one window; --projects picks, --all-projects tiles all.
 central-mcp tmux [same flags as up] [--workspace NAME | --all]
                                    # create session if missing, then attach via tmux
 central-mcp zellij [same flags as up] [--workspace NAME | --all]
@@ -429,7 +451,8 @@ central-mcp upgrade [--check]      # self-update from PyPI (uv → pip fallback)
 
 ### Why it's *optional*
 
-- **Orchestrator is the primary surface.** `dispatch` / `check_dispatch` / `orchestration_history` return structured summaries; the orchestrator turns those into natural-language status — no scrolling stdout required.
+- **A pane is a microscope, not a map.** It earns its screen by showing one project's raw output closely. The portfolio question — *where does everything stand?* — belongs to `cmcp pulse`, `cmcp digest`, and the orchestrator's briefing, which read git as well as the dispatch log.
+- **Orchestrator is the primary surface.** `dispatch` / `check_dispatch` / `project_pulse` return structured summaries; the orchestrator turns those into natural-language status — no scrolling stdout required.
 - **Work should be possible from anywhere.** central-mcp is designed so a phone/tablet over SSH is enough to keep moving. The hub can't require a multi-pane desktop to function.
 - **Turn observation on only when the live view actually helps** — debugging a stuck agent, tailing a long migration, or screen-sharing the fleet. For normal operation it adds noise, not signal.
 

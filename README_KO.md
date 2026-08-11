@@ -8,24 +8,33 @@
   <a href="README.md">English</a> · <strong>한국어</strong>
 </p>
 
-**여러 코딩 에이전트를 관리하는, 코딩 에이전트 비종속 MCP 허브.**
+**여러 개의 에이전트 기반 프로젝트를 동시에 굴리는 사람을 위한 포트폴리오 PM.**
 
-> **멈추지 마세요. 프로젝트마다 에이전트를 병렬로 돌려 처리량을 10배, 100배로 키우세요.**
+> **모든 프로젝트는 central로 통합니다.** 전부에 일을 뿌리되, 어느 하나의 맥락도 놓치지 않습니다.
 
-하나의 MCP 서버로 어떤 MCP 클라이언트(Claude Code, Codex CLI, Gemini CLI, opencode, [Hermes Agent](https://github.com/NousResearch/hermes-agent) 등)든 여러 코딩 에이전트 프로젝트의 컨트롤 플레인이 됩니다. 자연어로 요청하면 오케스트레이터가 해당 프로젝트의 에이전트에게 작업을 보내고, 논블로킹으로 결과를 비동기 보고합니다.
+하나의 MCP 서버로 어떤 MCP 클라이언트(Claude Code, Codex CLI, Gemini CLI, opencode, [Hermes Agent](https://github.com/NousResearch/hermes-agent), [OpenClaw](https://github.com/openclaw/openclaw), gajae-code)든 여러 코딩 에이전트 프로젝트의 컨트롤 플레인이 됩니다. 자연어로 요청하면 오케스트레이터가 해당 프로젝트의 에이전트에게 작업을 보내고 — 논블로킹, 결과는 비동기 보고 — 그 프로젝트로 돌아올 때마다 진짜 상태를 브리핑해 줍니다.
 
 ## 왜 필요한가
 
-여러 코딩 에이전트를 쓰고 있다면, 각각 별도의 터미널·세션·로그를 갖고 있을 것입니다. 사이를 오가는 건 마찰이고, *어디서 뭐가 응답했는지* 한눈에 보이지 않습니다.
+에이전트는 프로젝트 4개, 8개, 15개를 동시에 *굴리는* 비용을 없앴습니다. 하지만 그것들을 *놓치지 않는* 비용은 그대로입니다. 컨텍스트 스위칭마다 재적응 비용이 청구되고 — *내가 자리 비운 사이 무슨 일이 있었지? 지금 어떤 상태지? 다음에 뭘 하려고 했었지?* — 아무도 PM 역할을 하지 않습니다.
 
-`central-mcp`는 하나의 허브를 제공합니다:
+`central-mcp`가 그 PM입니다:
 
-- **디스패치** — 프로젝트별 에이전트에 프롬프트를 보내고 MCP를 통해 응답 수신
-- **병렬 작업** — 여러 프로젝트에 동시 디스패치하고 대화를 계속
-- **관리** — `add_project` / `remove_project`로 레지스트리 편집
-- **오케스트레이터 비종속** — 어떤 MCP 클라이언트든 오케스트레이터 가능
+- **Dispatch** — 어느 프로젝트의 에이전트에든 병렬로 일을 보내고, 도는 동안 계속 대화
+- **Pulse** — 프로젝트로 복귀하면 "무슨 일이 있었고 / 지금 어디고 / 다음이 뭔지"를 **레포 자체**에서 계산 — 허브를 거치지 않은 작업(직접 커밋, 인터랙티브 에이전트 세션, 수동 편집)도 셉니다
+- **Digest** — 고정 포맷의 일간/주간 포트폴리오 리포트, 상주 에이전트든 일반 crontab이든 chat으로 배달 가능
+- **Observe** — 지금 따라가는 dispatch에 라이브 페인
+- **어디서든 orchestrate** — 어떤 MCP 클라이언트든 프런트엔드가 되고, 특정 벤더에 묶이지 않습니다
 
 모든 디스패치는 프로젝트 cwd에서 새 서브프로세스를 띄우는 방식(예: `claude -p "..." --continue`). 장기 프로세스 관리 불필요, 화면 스크래핑 없음, 크리티컬 패스에 tmux 의존 없음.
+
+## 어디서 만나는가 — 세 개의 층
+
+central-mcp는 장소가 아니라 레이어입니다. 찾아가야 하는 전용 오케스트레이터는 잊히기 마련이라, 표면들은 나에게 닿는 방식 순으로 배열돼 있습니다:
+
+1. **Ambient (주 진입로).** `cmcp install claude` 한 번이면 이미 매일 쓰는 CLI의 모든 세션이 평소 도구들과 나란히 `dispatch`, `project_pulse`를 갖게 됩니다. 프로젝트를 열고 *"지금 어디까지 됐지?"* 물으면 브리핑이 그 자리에서 일어납니다.
+2. **Reach.** 상주 agentOS 브릿지 — [Hermes](https://github.com/NousResearch/hermes-agent) 또는 [OpenClaw](https://github.com/openclaw/openclaw) — 가 일일 다이제스트와 실패 알림을 Telegram/Discord로 보냅니다. 터미널이 안 열려 있을 때 *나를 찾아오는* 유일한 채널입니다.
+3. **Focus.** `cmcp tui`(experimental) — 오케스트레이션 자체가 주 업무인 세션용. 뿌리고, 지켜보고, 감독하는 날.
 
 ## 설계 원칙
 
@@ -73,7 +82,7 @@ central-mcp
 >
 > pip도 사용 가능: `pip install central-mcp`
 
-첫 실행 시 `~/.central-mcp/registry.yaml`이 자동 생성되고, PATH에서 발견된 모든 MCP 클라이언트(claude, codex, gemini, opencode)에 central-mcp가 자동 등록됩니다. 그 다음 선택된 에이전트로 오케스트레이터가 기동됩니다.
+첫 실행 시 `~/.central-mcp/registry.yaml`이 자동 생성되고, PATH에서 발견된 모든 MCP 클라이언트(claude, codex, gemini, opencode, hermes, openclaw, gjc)에 central-mcp가 자동 등록됩니다. 그 다음 선택된 에이전트로 오케스트레이터가 기동됩니다.
 
 > 수동으로 세밀하게 제어하려면:
 > - `central-mcp install all` — 다시 감지 후 모든 클라이언트에 재등록
@@ -131,15 +140,17 @@ central-mcp
 
 ## MCP 도구
 
-`central-mcp`는 `central` 서버명으로 11개 도구를 노출합니다:
+`central-mcp`는 `central` 서버명으로 18개 도구를 노출합니다:
 
 | 도구 | 블로킹? | 용도 |
 |---|---|---|
 | `list_projects` | sync | 레지스트리 열거. |
-| `project_status` | sync | 프로젝트 메타데이터. |
+| `project_status` | sync | 프로젝트 메타데이터 — 값싸고 subprocess를 띄우지 않음. |
+| `project_pulse` | sync | **프로젝트에서 실제로 무슨 일이 있었고, 지금 어디고, 뭐가 돌고 있는지.** 레포(브랜치, upstream ahead/behind, 미커밋 작업, 최근 커밋)에 dispatch·세션·열린 PR까지 읽으므로, central-mcp를 거치지 않은 작업도 잡힙니다. 사용자가 프로젝트로 복귀하거나 "X 상태 어때?"라고 물을 때 호출. |
+| `portfolio_digest` | sync | **사전 렌더링된 일간/주간 포트폴리오 리포트.** 활동 프로젝트, 경고(실패·종료 안 된 dispatch, 미커밋 작업이 방치된 조용한 프로젝트), quiet 목록, 쿼터 라인. `digest_markdown`을 그대로 전달. |
 | `dispatch` | **<100ms** | 프로젝트 에이전트에 프롬프트 전송. 일회성 에이전트 오버라이드 및 fallback 체인 지원. `dispatch_id` 즉시 반환. |
 | `check_dispatch` | sync | 디스패치 폴링 — `running` / `complete` / `error` + 출력. |
-| `list_dispatches` | sync | 모든 활성 + 최근 완료 디스패치. |
+| `list_dispatches` | sync | 모든 활성 + 최근 완료 디스패치. `status="failed"` + `since=<ISO>`로 상주 에이전트가 재알림 없는 실패 커서를 얻습니다(워터마크는 호출자가 보관하므로 central-mcp는 무상태 유지). |
 | `cancel_dispatch` | sync | 실행 중인 디스패치 중단. |
 | `dispatch_history` | sync | **특정 프로젝트**의 최근 N개 디스패치 이력 (해당 프로젝트 jsonl 로그 기반). |
 | `orchestration_history` | sync | 포트폴리오 전체 스냅샷 — 진행 중인 디스패치 + 프로젝트 간 최근 milestone + 프로젝트별 집계. "전반적으로 어떻게 돌아가?" 한 번에. |
@@ -390,15 +401,23 @@ central-mcp                        # 인자 없음 → 오케스트레이터 기
 central-mcp run [--agent X] [--pick] [--permission-mode {bypass,auto,restricted}]
                                    # 오케스트레이터 기동 (기본: bypass; auto는 claude 전용)
 central-mcp serve                  # stdio에서 MCP 서버 실행 (MCP 클라이언트가 사용)
-central-mcp install CLIENT         # claude | codex | gemini | opencode에 등록
+central-mcp install CLIENT         # claude | codex | gemini | opencode
+                                   #   | hermes | openclaw | gjc | all 에 등록
+                                   # hermes/openclaw는 orchestration 스킬까지 설치
 central-mcp alias [NAME]           # 짧은 이름 심링크 (기본: cmcp)
 central-mcp unalias [NAME]
 central-mcp init [PATH]            # registry.yaml 스캐폴드 (기본: ~/.central-mcp)
-central-mcp add NAME PATH [--agent claude|codex|gemini|droid|opencode|hermes|gjc]
+central-mcp add NAME PATH [--agent claude|codex|gemini|droid|opencode|hermes|openclaw|gjc]
 central-mcp remove NAME
 central-mcp reorder NAME [NAME ...]  # 레지스트리 재정렬 — 명시 안 한 것은 원래 순서 유지
 central-mcp list                   # 한 줄씩 레지스트리 출력
-central-mcp brief                  # 오케스트레이터용 마크다운 스냅샷
+central-mcp brief                  # 오케스트레이터용 마크다운 스냅샷 (레지스트리만, ~50ms)
+central-mcp pulse [NAME] [--commits N] [--history N] [--pr|--no-pr] [--json]
+                                   # 프로젝트에서 실제로 무슨 일이 있었는지 — git +
+                                   # dispatch + 세션 + 열린 PR. NAME 생략 시 워크스페이스 전체
+central-mcp digest [--workspace NAME] [--hours N] [--quiet-days N] [--no-quota] [--json]
+                                   # 포트폴리오 리포트. crontab에서
+                                   # `cmcp digest | <notifier>` 한 줄이면 푸시 보고 완성
 central-mcp workspace list         # 워크스페이스 목록 (프로젝트 수 + 활성 표시)
 central-mcp workspace current      # 현재 활성 워크스페이스 출력
 central-mcp workspace new NAME     # 새 워크스페이스 생성
@@ -406,7 +425,10 @@ central-mcp workspace use NAME     # 활성 워크스페이스 전환
 central-mcp workspace add PROJECT --workspace NAME
 central-mcp workspace remove PROJECT --workspace NAME
 central-mcp up [--no-orchestrator] [--permission-mode {bypass,auto,restricted}] [--max-panes N]
-                                   # 활성 워크스페이스 기준 tmux 관찰 레이어 생성
+               [--projects A,B,C] [--all-projects]
+                                   # 활성 워크스페이스 기준 tmux 관찰 레이어 생성.
+                                   # 한 창에 들어갈 만큼 최근 활동한 프로젝트에 페인을 열고,
+                                   # --projects로 직접 선택 / --all-projects로 전부 타일링
 central-mcp tmux [up과 동일 플래그] [--workspace NAME | --all]
                                    # 세션이 없으면 생성 후 tmux로 attach
 central-mcp zellij [up과 동일 플래그] [--workspace NAME | --all]

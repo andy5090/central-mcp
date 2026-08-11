@@ -1,5 +1,5 @@
 site_name: central-mcp
-site_description: Coding agent-agnostic MCP hub for managing multiple coding agents.
+site_description: The portfolio PM for running many agent-driven projects at once — dispatch across Claude Code, Codex, Gemini, opencode, Hermes, and OpenClaw, get a pulse briefing when you return to a project, and a daily digest that finds you.
 site_url: https://central-mcp.org/
 repo_url: https://github.com/andy5090/central-mcp
 repo_name: andy5090/central-mcp
