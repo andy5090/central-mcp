@@ -30,6 +30,7 @@ One-off instructions ("just this time", "for this dispatch only") do NOT need pe
 - `project_status(name)` — metadata lookup
 - `portfolio_digest(workspace=, since_hours=24)` — pre-rendered portfolio summary (active projects with commits/dispatch outcomes, warnings incl. failed and never-finalized dispatches, quiet projects, quota line). Paste `digest_markdown` verbatim — the fixed format is the point.
 - `project_pulse(name)` — what actually happened in a project: git (branch, ahead/behind, uncommitted work, recent commits), in-flight + recent dispatches, resumable sessions, open PRs. Reads the repo itself, so it sees work that never went through central-mcp — direct commits, interactive agent sessions, manual edits. Pass `include_pr=False` when sweeping several projects (it's the only network call).
+- `project_note(note, name= or cwd=, next_step=, source=)` — record what was done, what was left, and what's next for a project. The durable half of the PM loop: `project_pulse` reads the repo for what is *true*, this stores what was *meant*. Also accepts `cwd=` so a session can say where it is instead of what the project is called. See "Recording intent" below.
 - `update_project(name, ...)` — change agent, permission_mode, session_id, fallback, etc.
 - `token_usage(period=..., project=..., workspace=..., group_by=..., include_quota=True, include_summary=True)` — portfolio token usage from `tokens.db` PLUS per-agent subscription quota windows. Use this (NOT `orchestration_history`, NOT reading `timeline.jsonl`) whenever the user asks "how many tokens?" or "how much budget is left?". The response carries a pre-rendered `summary_markdown` field — when present, **paste it verbatim into your reply**; do not re-format the raw `breakdown` / `quota` into your own table. The summary already aligns columns, picks Unicode bars, and color-codes thresholds (🟢 < 50%, 🟡 50–89%, 🔴 ≥ 90%) so the user sees a consistent HUD across every orchestrator. Only fall back to manually formatting `breakdown` / `quota` when the user asks for a non-default view (e.g., "just show me retro-hog totals as JSON"). `period` is today|week|month|all; `group_by` is project|agent|source. When `group_by="project"`, orchestrator-session tokens not tied to any registered project are bucketed under the special key `"ORCHESTRATOR"` (always first in the breakdown). The `quota` block carries `claude.five_hour` / `claude.seven_day`, `codex.primary` / `codex.secondary`, and `gemini` (auth-only — Gemini exposes no quota API), each with `used_pct` + `resets_in` (e.g. `"2h31m"`, `"5d12h"`). Orchestrator-side tokens auto-backfilled from session files on every dispatch.
 
@@ -40,6 +41,7 @@ The tools overlap on purpose — cheap ones for cheap questions. Pick by what wa
 | The user's question | Call |
 |---|---|
 | "what's the state of X?", or they just switched to X after a while away | `project_pulse(X)` — the only tool that sees work done outside central-mcp |
+| "what should I do next in X?", "where was I?" | `project_pulse(X)` → `ledger.next_step`, then put it to the user to confirm |
 | "what happened in X" going further back than a few dispatches | `dispatch_history(X, n=…)` — deeper, dispatch-only |
 | "overall status?", "how is everything going?" | `orchestration_history()` |
 | "daily/weekly recap", "summarize the whole portfolio for me" | `portfolio_digest()` — paste `digest_markdown` verbatim |
@@ -74,11 +76,58 @@ Never answer any of these by reading files or running shell commands.
 Routing is the core job. Beyond that, these are *optional* touches that make multi-project sessions smoother. Apply them when the rhythm of the conversation allows; don't inject them when the user is rapid-firing commands.
 
 - **Track the working project loosely from conversation.** There's no server-side "current project" — infer it from what was last dispatched / last discussed. If the user refers to work without naming a project ("run that again", "fix that error", "what about the other thing"), assume the most recently dispatched project. If it feels genuinely ambiguous, confirm in one short sentence rather than guessing silently.
-- **Brief the arriving project.** When the user switches from project A to project B, the useful context is *B's* state, not A's. Call `project_pulse(B)` and compress it into a two-or-three-line briefing: **what happened** (recent commits and dispatch outcomes), **where it stands** (branch, uncommitted work, anything still running), **what's next** (the obvious loose end — unpushed commits, a failed dispatch, an open PR). Example: *"B — 3 commits since you left, latest 'auth refactor' 2d ago; on `feat/auth`, 4 files uncommitted, 2 commits unpushed; last dispatch ✗ test rerun failed (exit=2). Loose end: those failing tests."* Prefer `project_pulse` over `dispatch_history` here — history only sees work that went through central-mcp, and the interesting thing after an absence is often work that didn't. Skip the briefing only when B is brand new.
+- **Brief the arriving project.** When the user switches from project A to project B, the useful context is *B's* state, not A's. Call `project_pulse(B)` and compress it into a two-or-three-line briefing: **what happened** (recent commits and dispatch outcomes), **where it stands** (branch, uncommitted work, anything still running), **what's next** (the obvious loose end — unpushed commits, a failed dispatch, an open PR). Example: *"B — 3 commits since you left, latest 'auth refactor' 2d ago; on `feat/auth`, 4 files uncommitted, 2 commits unpushed; last dispatch ✗ test rerun failed (exit=2). Loose end: those failing tests."* Prefer `project_pulse` over `dispatch_history` here — history only sees work that went through central-mcp, and the interesting thing after an absence is often work that didn't. Skip the briefing only when B is brand new. Close the briefing with the ledger's `next_step` as a claim to confirm — see "Recording intent" below.
 - **Never report a stale dispatch as live.** `project_pulse` splits `dispatches.in_flight` from `dispatches.stale` (rows still marked running after hours — a crashed or restarted server never wrote their terminal state). Report stale ones as unfinished/abandoned, not as work in progress.
 - **Portfolio briefing — always on explicit ask, sometimes unprompted when churn is high.** When the user asks something like "overall status?" / "how is everything going?" / "what's the fleet doing?", always answer by calling `orchestration_history()` and grouping `recent[]` by project. For each project, report the prompts that ran (`prompt_preview`), their outcomes (✓ / ✗ / ⏳), and — when present — what came out (`output_preview`, the tail of the agent's stdout). Also keep this in your back pocket *unprompted* when the user has just bounced across 3+ projects in a short span: a brief cross-project snapshot helps them re-orient. Proactive mode: once per rough session rhythm; reactive mode: every time they ask.
 
 These are sense/taste, not hard rules. Dispatching correctly is always the priority.
+
+## Recording intent — the status ledger
+
+`project_pulse` can always tell you what is **true**; it reads the repository. It can never tell you what was **meant** — why an approach was abandoned, what is half finished, what should happen next. That exists only if somebody writes it down, and `project_note` is where it goes.
+
+Two things follow, and the second matters more:
+
+1. Work does not always flow through central-mcp. Direct commits, interactive sessions in the repo, manual edits — the ledger has to be written by whoever is present, not only by dispatches.
+2. **Situations change.** A plan recorded perfectly last week is still a *past* plan. The ledger holds past intent; only the user can supply current intent. So the closing question below is not a fallback for a missing record — it is the main way "what's next" ever becomes true.
+
+### Writing
+
+Call `project_note(note=…, name=… or cwd=…, next_step=…)`:
+
+- at the end of any stretch of real work in a registered project — **including work that never went through `dispatch`**
+- when something you learned changes the plan
+- **above all, when an approach is abandoned.** "Tried X, it fails because Y" leaves no commit, no diff, no trace of any kind. It is the most valuable thing the ledger can hold and the only kind of knowledge that is *guaranteed* lost otherwise.
+
+Skip trivia — a typo fix, a question answered. An over-full ledger gets skimmed, which is the same as an empty one.
+
+Keep `source` honest: `"agent"` when you are recording your own work, `"user"` when you are writing down what the user just told you. The ledger is only worth reading if a reader can tell a first-hand record from a relayed one. Never record something as intent because you inferred it from commits — that is what `drift` is for.
+
+### Reading — and closing every briefing with a question
+
+`project_pulse` returns a `ledger` section:
+
+- `next_step` — the newest recorded plan, with who recorded it and how long ago
+- `drift.state` — `current` · `behind` · `empty` · `unknown`
+- `drift.summary` — e.g. *"7 commits, 3 uncommitted files since the last ledger entry (3d ago)"*
+
+`drift` is computed fresh from real activity — commits, agent sessions, and uncommitted work — so it catches stretches of work that produced no commit at all. It is never written into the ledger.
+
+**End every project briefing by putting the next step to the user as a claim to confirm, not as an open question.** A claim costs one word to correct; an open question costs a paragraph, so it gets skipped.
+
+| `drift.state` | How to close |
+|---|---|
+| `current` | *"Next up is the digest cron, from your note yesterday — still that?"* |
+| `behind` | Name the gap, then ask: *"Your note says worktree isolation is next, but the last 7 commits are all in digest. Did that change?"* |
+| `empty` | *"Nothing is recorded for this project yet — what are you working toward here?"* |
+| `unknown` | Treat as `empty`. |
+
+Four rules keep this from turning into nagging:
+
+- **The briefing always completes first.** The question is its tail, never a precondition. Never withhold a briefing in order to ask something.
+- **At most one question per briefing.** Pick the sharpest one.
+- **Record the answer immediately** — `project_note(source="user", next_step=…)` — so the same gap is never raised twice.
+- **If the user ignores it, drop it.** Ask again the next time they come back to the project, not again later in the same session.
 
 ## Session handling (conversation continuity)
 

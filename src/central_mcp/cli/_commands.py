@@ -170,6 +170,62 @@ def cmd_digest(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_note(args: argparse.Namespace) -> int:
+    """Write (or show) a status-ledger entry for a project."""
+    from central_mcp import ledger as ledger_mod
+    from central_mcp.registry import find_project, find_project_by_path
+
+    name = getattr(args, "project", None)
+    if name:
+        project = find_project(name)
+        if project is None:
+            print(f"error: unknown project: {name}", file=sys.stderr)
+            return 1
+    else:
+        project = find_project_by_path(Path.cwd())
+        if project is None:
+            print(
+                "error: no registered project contains the current directory.\n"
+                "       pass --project <name>, or register it with `cmcp add`.",
+                file=sys.stderr,
+            )
+            return 1
+
+    if args.show:
+        entries = ledger_mod.read(project.name, limit=args.limit)
+        if not entries:
+            print(f"(no ledger entries for {project.name})")
+            return 0
+        print(f"# {project.name} — status ledger\n")
+        for e in entries:
+            print(f"## {e.ts or '(undated)'} · {e.source}")
+            if e.body:
+                print(e.body)
+            if e.next_step:
+                print(f"Next: {e.next_step}")
+            print()
+        return 0
+
+    text = " ".join(args.text or []).strip()
+    if not text and not args.next:
+        print(
+            "error: nothing to record — pass a note, --next, or --show.",
+            file=sys.stderr,
+        )
+        return 1
+
+    # A person typing at a terminal is, by definition, the `user` source.
+    # The CLI deliberately offers no way to claim otherwise: the ledger is
+    # only worth reading if its attributions are honest.
+    try:
+        ledger_mod.append(project.name, text, source="user", next_step=args.next)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    print(f"noted → {ledger_mod.path_for(project.name)}")
+    return 0
+
+
 def cmd_pulse(args: argparse.Namespace) -> int:
     """Print a project's real state — or the whole workspace's."""
     import json as _json

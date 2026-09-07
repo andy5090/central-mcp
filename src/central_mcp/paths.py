@@ -73,6 +73,21 @@ def project_log_path(project_name: str) -> Path:
     return log_root() / project_name / "pane.log"
 
 
+def project_state_root(project_name: str) -> Path:
+    """`projects/<project>/` — durable per-project state under the home.
+
+    Distinct from `log_root()`: logs are append-only dispatch telemetry
+    that can be discarded, while this holds state a user would miss if
+    it vanished (the status ledger).
+    """
+    return central_mcp_home() / "projects" / project_name
+
+
+def project_status_path(project_name: str) -> Path:
+    """`projects/<project>/STATUS.md` — the project's status ledger."""
+    return project_state_root(project_name) / "STATUS.md"
+
+
 def session_info_file() -> Path:
     """Path to the observation-session metadata file.
 

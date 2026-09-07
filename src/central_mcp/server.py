@@ -16,6 +16,7 @@ critical path and can be absent entirely.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import threading
 import time
@@ -29,6 +30,7 @@ from fastmcp import FastMCP
 from central_mcp import config as user_config
 from central_mcp import dispatches_db, events, paths, pty_sessions, tokens_db
 from central_mcp import digest as digest_mod
+from central_mcp import ledger as ledger_mod
 from central_mcp import pulse as pulse_mod
 from central_mcp import tasks_protocol
 from central_mcp.adapters import get_adapter
@@ -39,6 +41,7 @@ from central_mcp.registry import (
     add_project as _registry_add,
     add_to_workspace as _registry_add_to_workspace,
     find_project,
+    find_project_by_path,
     load_registry,
     load_workspaces,
     projects_in_workspace,
@@ -86,6 +89,83 @@ def _apply_language(prompt: str, language: str | None) -> str:
     if not language:
         return prompt
     return f"Respond to the user in {language}.\n\n{prompt}"
+
+
+#: The block a dispatched agent is asked to leave behind so its work can be
+#: recorded. An HTML comment because it renders as nothing, and because it
+#: is unlikely to collide with anything an agent writes on purpose.
+_STATUS_BLOCK_RE = re.compile(
+    r"<!--\s*CENTRAL-MCP STATUS\s*(?P<body>.*?)-->",
+    re.DOTALL | re.IGNORECASE,
+)
+
+_STATUS_PREFACE = """\
+---
+When you are done, end your reply with this block so central-mcp can record \
+what happened. Omit it only if you did nothing worth remembering.
+
+<!-- CENTRAL-MCP STATUS
+Done: what you actually changed
+Left: what you did not finish — and any approach you tried and abandoned, with why
+Next: the single most useful next step
+-->"""
+
+
+def _parse_status_block(output: str) -> tuple[str, str | None] | None:
+    """Pull the agent's STATUS block out of its stdout.
+
+    Returns `(body, next_step)` or None when no block was emitted — which
+    is an ordinary outcome, not an error. Agents ignore instructions, and
+    a dispatch that records nothing is exactly what `pulse`'s drift
+    detection exists to make visible.
+    """
+    match = None
+    for match in _STATUS_BLOCK_RE.finditer(output or ""):
+        pass  # keep the LAST block: an agent quoting the template first
+              # would otherwise have its example recorded as fact.
+    if match is None:
+        return None
+
+    next_step: str | None = None
+    kept: list[str] = []
+    for line in (match.group("body") or "").splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        low = stripped.lower()
+        if low.startswith("next:"):
+            next_step = stripped[5:].strip() or None
+        else:
+            kept.append(stripped)
+    body = "\n".join(kept).strip()
+    if not body and not next_step:
+        return None
+    return body, next_step
+
+
+def _record_dispatch_status(
+    project_name: str, final_status: str, output: str
+) -> None:
+    """Append the agent's own account of a dispatch to the status ledger.
+
+    Only successful dispatches are recorded, and only when the agent
+    actually emitted a block. A stub for a failed dispatch would add
+    nothing `project_pulse` doesn't already show, and — because any entry
+    advances the ledger's watermark — it would *silence* the drift signal
+    for work that was in fact never recorded. Staying quiet is what keeps
+    the gap visible.
+    """
+    if final_status != "complete":
+        return
+    parsed = _parse_status_block(output)
+    if parsed is None:
+        return
+    body, next_step = parsed
+    try:
+        ledger_mod.append(project_name, body, source="agent", next_step=next_step)
+    except Exception:
+        # The ledger is additive: never let recording fail a dispatch.
+        pass
 
 
 def _running_siblings(project_name: str) -> list[dict[str, Any]]:
@@ -551,6 +631,107 @@ def project_pulse(
     return _with_completed(result)
 
 
+def _resolve_project(
+    name: str | None, cwd: str | None
+) -> tuple[Project | None, str, dict[str, Any] | None]:
+    """Resolve a project from an explicit name, a path, or the server's cwd.
+
+    Sessions that were opened *in* a project know where they are but not
+    necessarily what it is called, so a path is a first-class way to say
+    which project you mean. Returns the resolution route alongside the
+    project so a caller can catch a wrong guess before it writes.
+    """
+    if name:
+        project, err = _require_project(name)
+        return project, "name", err
+    if cwd:
+        project = find_project_by_path(cwd)
+        if project is None:
+            return None, "cwd", {
+                "ok": False,
+                "error": f"no registered project contains {cwd}",
+                "hint": "pass `name` explicitly, or register it with add_project.",
+            }
+        return project, "cwd", None
+    # Last resort: this server process inherits the cwd of the agent that
+    # launched it, which for a session opened inside a project is the
+    # project itself.
+    project = find_project_by_path(Path.cwd())
+    if project is None:
+        return None, "server_cwd", {
+            "ok": False,
+            "error": "could not tell which project you mean",
+            "hint": "pass `name` (the registered project name) or `cwd`.",
+        }
+    return project, "server_cwd", None
+
+
+@mcp.tool()
+def project_note(
+    note: str,
+    name: str | None = None,
+    cwd: str | None = None,
+    next_step: str | None = None,
+    source: str = "agent",
+) -> dict[str, Any]:
+    """Record what was done / what was left / what comes next for a project.
+
+    This is the durable memory a return briefing is built from. `project_pulse`
+    reads the repository and can tell anyone what *is true*; only you can
+    record what was *meant* — why an approach was abandoned, what is half
+    finished, what should happen next. None of that is recoverable from git
+    later, so it is lost unless it is written down now.
+
+    **When to call it — this matters more than the arguments.** Call it at the
+    end of any stretch of real work in a registered project, whether or not
+    that work came through central-mcp. A session someone opened directly in
+    the repo is the most common case and the one most likely to be forgotten.
+    Also call it when you learn something that changes the plan, and
+    especially when you *abandon* an approach: "tried X, it fails because Y"
+    leaves no commit, no diff, no trace at all, and is the single most
+    valuable thing this file can hold.
+
+    Do not call it for trivia (a typo fix, a question answered) — an
+    over-full ledger gets skimmed, which is the same as empty.
+
+    Arguments:
+      note       — free text: what happened, what was left, what was learned.
+      name       — registered project name. Omit if passing `cwd`.
+      cwd        — a path inside the project; resolved to whichever project
+                   owns it. Use this when you know where you are but not
+                   what it is registered as.
+      next_step  — one line: what should happen next. A briefing offers this
+                   back for confirmation, so write it as an instruction to a
+                   future reader, not a note to yourself.
+      source     — "agent" when you are recording your own work (default),
+                   "user" when you are writing down what the human just told
+                   you. Keep these honest: the ledger's whole value is that a
+                   reader can tell a first-hand record from a relayed one.
+    """
+    project, route, err = _resolve_project(name, cwd)
+    if err:
+        return err
+    assert project is not None
+    if source not in ledger_mod.SOURCES:
+        return {
+            "ok": False,
+            "error": f"source must be one of {', '.join(ledger_mod.SOURCES)}",
+        }
+    try:
+        entry = ledger_mod.append(
+            project.name, note, source=source, next_step=next_step
+        )
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+    return _with_completed({
+        "ok": True,
+        "project": project.name,
+        "resolved_by": route,
+        "entry": entry.to_dict(),
+        "path": str(ledger_mod.path_for(project.name)),
+    })
+
+
 def _launch_dispatch(
     project: "Project",
     prompt: str,
@@ -661,6 +842,9 @@ def _launch_dispatch(
             "sibling_count": len(siblings),
             "dispatch_ids": [s["dispatch_id"] for s in siblings],
         }
+    # Asked for last, deliberately: it is the instruction most likely to be
+    # dropped, and recency is the cheapest defense against that.
+    prompt = prompt + "\n\n" + _STATUS_PREFACE
 
     # Validate every agent in the chain produces valid argv with the
     # real prompt + resolved mode, so adapters that conditionally
@@ -918,6 +1102,9 @@ def _launch_dispatch(
         # (notably sub-agents the orchestrator spawned for polling) see
         # the completion.
         dispatches_db.upsert_finished(dispatch_id, final_status, final_result)
+        _record_dispatch_status(
+            project.name, final_status, (final_result or {}).get("output", "")
+        )
 
         # Condense the final stdout into a tail preview that rides on
         # both the terminal event and the timeline milestone. This is

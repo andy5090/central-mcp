@@ -71,6 +71,13 @@ What actually happened in a project: git branch / divergence / uncommitted work 
 
 With no project name, sweeps every project in the current workspace concurrently. Open-PR lookup (one `gh` call per project) is on for a single project and off for a sweep — `--no-pr` and `--pr` flip the respective defaults. `--json` emits the raw structure instead of markdown. Computes everything fresh on each run and stores nothing.
 
+### `central-mcp note [text...] [-p PROJECT] [-n NEXT] [--show] [--limit N]` (0.20.0+)
+Append an entry to a project's status ledger — the durable record of intent a return briefing is built from. `cmcp pulse` can always tell you what is *true* by reading the repo; only you can say what was *meant*: why an approach was abandoned, what is half finished, what should happen next.
+
+With no `-p`, the project owning the current directory is used, so `cmcp note "tried the worktree route, dead end"` works from anywhere inside a checkout. `-n/--next` records the next step, which is what a briefing offers back to you for confirmation. `--show` prints recent entries instead of writing one.
+
+Entries written here are always attributed to `user`, and the CLI deliberately offers no way to claim otherwise — the ledger is only worth reading if a first-hand record is distinguishable from a relayed one. The file is `~/.central-mcp/projects/<name>/STATUS.md`: plain markdown, append-only, safe to edit by hand.
+
 ### `central-mcp add <name> <path> [--agent AGENT] [--workspace NAME]`
 Register a project.
 

@@ -25,7 +25,7 @@ Everything else on this page serves that job:
 - **Multi-agent collaboration** is the PM running a *team* on one project instead of a single contractor.
 - **Ecosystem endpoints** (MCP Tasks, A2A) let other agents consult the PM, not just humans.
 
-The honest gap this rethink confronts: today the hub only knows about work that flows *through* it — `orchestration_history` reads dispatch events, so direct commits, interactive agent sessions, and manual edits are invisible. A real PM doesn't wait for status reports; it reads the repo. Closing that gap is the first item of the [Portfolio PM](#portfolio-pm) track.
+The honest gap this rethink confronted — the hub only knew about work that flowed *through* it — is now closed on both of its halves, and naming them separately matters. **Facts** (what is true right now) come from `project_pulse`, which reads the repository, so direct commits, interactive sessions, and manual edits count. **Intent** (what was meant — what's half done, what was tried and abandoned, what's next) comes from the status ledger, written by whoever was present: an interactive session, a dispatched agent, or the user. Neither half assumes work goes through central-mcp. And because a recorded plan is still a *past* plan, the loop ends with a question: every return briefing closes by putting the recorded next step to the user to confirm. What remains open is narrower — `orchestration_history` still answers portfolio-wide questions from dispatch events alone (the 💭 below), and one structural blind spot is stated rather than papered over: work done with an agent that has no central-mcp tools *and* never commits is invisible to every layer. Drift markers and the briefing question are the last net.
 
 Where this sits in the 2026 stack, condensed: vendors' agent teams parallelize *one repo under one vendor*; cloud agents absorb asynchronous single tasks; IDE agents pair in real time. central-mcp keeps the layer none of them occupy — the whole portfolio, across vendors — and now also reaches one level deeper: **cross-vendor collaboration inside a single project**, the combination no single-vendor team feature can offer.
 
@@ -33,11 +33,14 @@ Where this sits in the 2026 stack, condensed: vendors' agent teams parallelize *
 
 ## The 1.0 milestone — the PM works
 
-1.0 was previously defined by TUI stability alone. Redefined: **1.0 ships when the PM loop demonstrably works across all four orchestrators.**
+1.0 was previously defined by TUI stability alone. Redefined: **1.0 ships when the PM loop demonstrably works across the four REPL orchestrators** (claude, codex, gemini, opencode — the ones the TUI embeds; resident agentOS callers are on the [Upstream agents](#upstream-agents) track).
 
-1. **Return briefing** — `project_pulse` plus the briefing recipe produce a trustworthy "what happened / where it stands / what's next" for any project, including work done outside central-mcp.
-2. **Control tower** — the TUI hosts all four orchestrators stably (Phase D complete) with a portfolio-aware sidebar.
-3. **Digest** — a scheduled portfolio digest lands somewhere you actually look (terminal, or chat via the Hermes bridge).
+*Re-cut 2026-09.* Three of the gates shipped, and that exposed a drift: with only the control tower left, 1.0 had quietly become "TUI stability alone" again — the very definition this section rejected, gating the release on the tier-3 surface. Two corrections: the status ledger, which was always the missing third of "what's next", is a gate (and has landed); the control-tower gate is narrowed to stabilization, with the portfolio sidebar moved after 1.0 since it depends on the ledger anyway.
+
+1. ✅ **Return briefing (0.15.0)** — `project_pulse` plus the briefing recipe produce a trustworthy "what happened / where it stands" for any project, including work done outside central-mcp.
+2. ✅ **Status ledger (0.20.0)** — "what's next" survives across sessions and orchestrators, drift against real activity is visible, and every briefing closes with the next step put to the user to confirm.
+3. ✅ **Digest (0.17.0)** — a scheduled portfolio digest lands somewhere you actually look (terminal, or chat via a resident agentOS).
+4. 📋 **Control tower** — the TUI hosts the four REPL orchestrators stably (Phase D complete). The portfolio sidebar is no longer in the gate.
 
 At 1.0 the TUI's `--experimental` flag becomes a no-op (kept for backwards compatibility), the API surface locks, and breaking changes require a 2.0.
 
@@ -51,7 +54,7 @@ The organizing observation: **a dedicated orchestrator REPL is a destination, an
 
 **Tier 1 — ambient (the main way in): MCP tools inside the session you're already in.** Run `cmcp install claude` (or codex / gemini / opencode) once, and every session of that CLI carries `dispatch`, `project_pulse`, `orchestration_history` alongside its normal tools. The switching cost is zero: open a project, ask "where does this stand?", and the return briefing happens in place; need work done elsewhere, dispatch without leaving. Everything in the [Portfolio PM](#portfolio-pm) track lands here first.
 
-**Tier 2 — reach: the Hermes bridge.** Every other surface assumes a human at a terminal. Hermes's cron + Telegram/Discord gateway is the one channel that finds *you* — the delivery rail for the push-reporting item (daily digest, failure alerts). For "nothing falls through the cracks" this tier ultimately matters as much as tier 1, because the most is missed precisely when no terminal is open.
+**Tier 2 — reach: resident agentOS bridges (Hermes, OpenClaw).** Every other surface assumes a human at a terminal. A resident agent's cron + Telegram/Discord gateway is the one channel that finds *you* — the delivery rail for the push-reporting item (daily digest, failure alerts). Since 0.19.0 both runtimes install the same bundled orchestration skill, which is the pattern the next agentOS will follow. For "nothing falls through the cracks" this tier ultimately matters as much as tier 1, because the most is missed precisely when no terminal is open.
 
 **Tier 3 — focus (some days, not every day): the TUI.** For sessions whose main job *is* orchestration — fan work out across the portfolio, watch it land, supervise results. The control tower earns its screen when orchestration is the foreground task.
 
@@ -61,7 +64,7 @@ Two consequences, made explicit:
 
 📋 **`cmcp monitor` retires into the TUI sidebar.** Quota bars + per-project dispatch counts + token sums *is* the sidebar's job description — two surfaces rendering the same data drift apart. Once the TUI is stable at 1.0, `monitor` becomes a deprecation shim pointing at `cmcp tui`; until then it stays untouched.
 
-**Which agent hosts the orchestrator?** Orchestration is routing and narration, not coding — the binding constraint isn't model strength but discipline in the non-blocking loop (dispatch → background-poll → report). claude runs that loop reliably; codex and gemini are weak at sustained polling, which is the documented reason `wait_for_dispatch` exists on the [Dispatch core](#dispatch-core-routing) track. Recommendation until that (or native MCP Tasks clients) levels the field: **claude as the orchestrator, any agent as the dispatch target.**
+**Which agent hosts the orchestrator?** Orchestration is routing and narration, not coding — the binding constraint isn't model strength but discipline in the non-blocking loop (dispatch → background-poll → report). claude runs that loop reliably; codex and gemini are weak at sustained polling, which is the documented reason `wait_for_dispatch` exists on the [Dispatch core](#dispatch-core-routing) track. Recommendation until that (or native MCP Tasks clients) levels the field: **claude as the orchestrator, any agent as the dispatch target.** Hermes and OpenClaw are a different case: not REPLs but tier-2 resident runtimes, where the skill carries the loop discipline and cron replaces sustained polling.
 
 ---
 
@@ -75,7 +78,7 @@ The new center-of-gravity track. Architecture is deliberately two-phase — **pu
 
 ❌ **Retracted: `cmcp brief` as a pulse-powered digest.** Originally planned here, then measured: `brief` costs 55ms (one YAML read), a full pulse sweep costs 2.5s and spawns dozens of git processes. The SessionStart hook runs `brief` on **every** orchestrator launch, so that's a 45× tax on startup — and most of it is discarded work, because you open a session to touch one or two projects, not seventeen. The right split is that session start says cheaply *what exists*, and *what state it's in* is fetched the moment the user names a project. Both halves now exist, so `brief` stays a registry listing.
 
-📋 **Status ledger (phase 2).** `~/.central-mcp/projects/<name>/STATUS.md` — durable per-project memory: a structured delta appended when a dispatch completes (what was done, what was left), open questions, and a "next steps" list that survives across sessions and orchestrators. `cmcp note <project> "…"` adds manual entries. Briefings then combine ledger (intent, next steps) with pulse (ground truth) and flag drift between the two. Plain files, same as the registry — the stateless-between-requests invariant holds.
+✅ **Status ledger (0.20.0).** `~/.central-mcp/projects/<name>/STATUS.md` — durable per-project *intent*, kept strictly apart from the pulse's facts. Three things shifted between plan and landing, each for a reason worth keeping. **The primary writer is not dispatch completion.** Most work never flows through the hub, so a dispatch-fed ledger would be mostly empty; the primary path is `project_note`, available to any session with central-mcp installed (user scope) and addressable by `cwd` because a session knows where it is more reliably than what it's registered as. Dispatch capture (agents leave a STATUS block; the hub transcribes, never summarizes) is the secondary writer. **Two sources only — `agent`, `user`.** No `inferred` (an entry synthesized from commits would be indistinguishable from a first-hand record) and no failed-dispatch stubs (any entry advances the watermark, which would *silence* the drift signal for exactly the work that went unrecorded). **Drift is computed, never stored,** and against commits, session activity, and dirty-file mtimes — commits alone would miss the long exploratory session that produced none, which is the work whose intent is most likely unrecorded. `cmcp note` is the human path. The briefing recipe now ends every briefing by putting `next_step` to the user as a claim to confirm — one question, never blocking, answer recorded so the same gap isn't raised twice.
 
 ✅ **Push reporting (0.17.0).** Daily/weekly digests and event alerts delivered without a new daemon. `portfolio_digest` renders a fixed-format, pulse-powered report server-side (`digest_markdown`, forwarded verbatim — same reasoning as `token_usage.summary_markdown`); `cmcp digest` serves the same report to plain crontabs. `list_dispatches(status="failed", since=…)` gives resident agents a re-alert-proof failure cursor whose watermark lives with the subscriber, keeping central-mcp stateless. The Hermes skill's sketch is now two first-class recipes (daily digest cron, failure watch); the TUI watcher remains the local surface.
 
@@ -88,6 +91,8 @@ The new center-of-gravity track. Architecture is deliberately two-phase — **pu
 ## Multi-agent collaboration
 
 **Promoted from an explicit non-goal.** The old reasoning — in-repo parallelism is the vendors' home turf — remains true for *single-vendor* teams (Claude Code agent teams, Codex multi-agent). What it missed: **cross-vendor** combinations. One agent implements, a different vendor's agent reviews — that's exactly the cross-vendor routing central-mcp already owns, applied one level deeper. No vendor team feature can do it.
+
+Sequencing: this track is post-1.0. Chains are cheap to build on the existing plumbing, but they serve a different job ("the PM runs a team") than the 1.0 gate ("the PM works"), and are pulled forward only if a concrete need appears.
 
 📋 **Sequential role chains first.** `dispatch_chain(project, steps)` — each step names an agent and a role prompt; the previous step's output is injected into the next step's context. The canonical chain: implement (agent A) → review (agent B) → address review (agent A). Steps appear in dispatch history as linked dispatches sharing a `chain_id`; polling the chain returns per-step status. Builds almost entirely on existing dispatch plumbing, which is why it goes first.
 
@@ -121,7 +126,7 @@ The TUI's role under the new essence: the **always-on control tower** — the su
 
 📋 **Phase D — stabilization.** Self-rendered scrollback / search / copy. Korean IME and double-width corner cases. Notification policy fine-tuning (`config.toml [tui].auto_inject = passive | hint | prompt`). Feeds the 1.0 gate.
 
-📋 **Portfolio sidebar.** Evolve the sidebar from dispatch-centric to PM-centric: per-project status lines backed by `project_pulse` (branch, last activity, next-step hint from the ledger), not just the dispatch feed.
+📋 **Portfolio sidebar (post-1.0).** Evolve the sidebar from dispatch-centric to PM-centric: per-project status lines backed by `project_pulse` (branch, last activity, the ledger's `next_step` and drift marker), not just the dispatch feed. Removed from the 1.0 gate in the 2026-09 re-cut; the data it needs now exists.
 
 📋 **Expanded dispatch row.** Selected row expands to a live tail of the last N output lines, elapsed, token delta, and a "last output Xs ago" health hint. Builds on `tail_dispatch` + the progress columns from the [Dispatch core](#dispatch-core-routing) track.
 
@@ -171,7 +176,7 @@ Opt-in, session-scoped second execution mode, complementary to the default non-i
 
 The PM's hands: the dispatch pipeline itself, and the intelligence about where to send work. Frontier CLIs have converged on raw capability, so the interesting routing signals are cost, quota headroom, task shape, and project fit — state central-mcp already tracks.
 
-📋 **`tail_dispatch(dispatch_id, since_ts=null)` MCP tool.** Recent output chunks since a timestamp, without waiting for completion. `dispatches.db`'s `output` column is only written when the subprocess exits, so every surface that wants mid-run progress has to parse `dispatch.jsonl` itself — where the per-line `output` events have been landing in real time since long before the TUI existed. This tool makes that one supported path instead of three ad-hoc readers. See [Focused panes](#focused-panes-the-microscope) for why this is wiring rather than a hard problem.
+📋 **`tail_dispatch(dispatch_id, since_ts=null)` MCP tool — next on this track.** Three consumers (TUI live output, the expanded dispatch row, orchestrators) and the best cost-to-leverage ratio on the board. Recent output chunks since a timestamp, without waiting for completion. `dispatches.db`'s `output` column is only written when the subprocess exits, so every surface that wants mid-run progress has to parse `dispatch.jsonl` itself — where the per-line `output` events have been landing in real time since long before the TUI existed. This tool makes that one supported path instead of three ad-hoc readers. See [Focused panes](#focused-panes-the-microscope) for why this is wiring rather than a hard problem.
 
 📋 **`dispatches` table progress columns.** `last_output_ts`, `output_bytes`, `attempt_count` — cheap writes on every chunk; reads power the "alive vs. wedged?" indicators in every surface.
 
@@ -214,6 +219,8 @@ The MCP 2026-07-28 release makes the protocol core stateless and promotes long-r
 Open the orchestrator to programmatic callers — personal autonomous agents that want to delegate portfolio work without a human in the REPL. Calling `dispatch` directly skips the orchestrator's routing / fallback / conflict-detection layer; these give upstream callers the full orchestrator.
 
 ✅ **Hermes Agent bridge (0.12.2–0.14.0).** `_Hermes` adapter (dispatch target *and* orchestrator), `cmcp install hermes` registering central-mcp in Hermes's config plus a bundled orchestration skill, and Hermes usage in the quota HUD. Hermes's cron + Telegram/Discord gateway is the delivery rail for the [Portfolio PM push reporting](#portfolio-pm) item.
+
+✅ **OpenClaw bridge (0.18.0–0.19.0).** `_OpenClaw` adapter (dispatch target and orchestrator), `cmcp install openclaw` driving the vendor CLI rather than hand-editing its JSON5 config, and the orchestration skill installed as well — the second resident agentOS, and the one that forced `data/hermes-skill.md` to become the vendor-neutral `data/agentos-skill.md` both runtimes install byte-identically.
 
 📋 **`dispatch_orchestrator(prompt, agent=None, workspace=None)` MCP tool.** Spawns a fresh non-interactive orchestrator (claude `-p`, codex `exec`, …) loaded with central-mcp's tools; returns a `dispatch_id` mirroring `dispatch` semantics.
 

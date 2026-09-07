@@ -30,8 +30,20 @@ central-mcp가 orchestrator에 노출하는 MCP 도구 목록입니다. 정식 �
 - `dispatches`: `in_flight`, `stale`(몇 시간째 running으로 남은 행 — 서버가 죽어 종료 상태를 못 쓴 것이므로 진행 중이 아니라 미완료로 보고), 최근 `history`개 결과(프롬프트·출력 미리보기 포함), 전체 기간 카운트
 - `sessions`: 어댑터가 열거할 수 있는 에이전트의 재개 가능한 대화
 - `pull_requests`: `gh` 경유 열린 PR — 유일한 네트워크 호출이므로 여러 프로젝트를 훑을 땐 `include_pr=False`
+- `ledger` (0.20.0+): 그 프로젝트에 기록된 *의도* — `next_step`(누가 언제 기록했는지 포함)과 `drift.state`(`current` · `behind` · `empty` · `unknown`). 드리프트는 장부의 워터마크를 커밋·에이전트 세션 활동·변경 파일 mtime과 견줍니다. 커밋만 보지 않으므로 커밋을 하나도 남기지 않은 긴 세션도 잡힙니다. 여기서 계산될 뿐 저장되지 않아 절대 낡지 않습니다
 
 각 섹션은 독립적으로 degrade하며 사용 불가 시 `reason`을 담습니다 — 섹션이 비었다고 "아무 일도 없었다"는 뜻이 아닙니다. 저장하는 상태는 없고 매 호출마다 원본에서 새로 계산합니다.
+
+### `project_note(note, name=None, cwd=None, next_step=None, source="agent")` (0.20.0+)
+무엇을 했고, 무엇이 남았고, 다음이 무엇인지 기록합니다 — PM 루프의 영속적인 절반입니다. `project_pulse`는 레포를 읽어 *무엇이 사실인지*를 말하고, 이 도구는 *무엇을 의도했는지*를 저장합니다. 후자는 git을 아무리 잘 읽어도 복원되지 않습니다.
+
+`name`을 주거나, 호출자가 자기 위치는 알지만 등록된 이름은 모를 때 `cwd`(프로젝트 안의 아무 경로)를 줍니다. 둘 다 없으면 서버 프로세스의 작업 디렉터리를 씁니다 — 프로젝트 안에서 연 세션은 그것을 물려받습니다.
+
+호출 시점: 등록된 프로젝트에서 실제 작업을 한 구간이 끝날 때 — **`dispatch`를 거치지 않은 작업도 포함**, 알게 된 사실이 계획을 바꿀 때, 그리고 무엇보다 **접근을 포기했을 때**. *"X를 시도했는데 Y 때문에 안 된다"*는 커밋도 diff도 아무 흔적도 남기지 않습니다 — 기록하지 않으면 확실히 사라지는 유일한 종류의 지식입니다.
+
+`source`는 `"agent"`(자기 작업 기록) 또는 `"user"`(사람이 말한 것을 받아 적음) 둘뿐입니다. `inferred`는 없습니다: 커밋 히스토리에서 합성한 항목은 직접 기록과 구별할 수 없게 되고, 장부의 가치는 전부 "적힌 것을 믿을 수 있다"에서 나오기 때문입니다.
+
+항목은 `~/.central-mcp/projects/<name>/STATUS.md`에 쌓입니다 — 평문 마크다운, append-only, 직접 편집해도 안전합니다.
 
 ### `orchestration_history(workspace=None, include_archives=False)`
 포트폴리오 전체 스냅샷: 진행 중 dispatch, 최근 milestone, 프로젝트별 카운트(dispatched / succeeded / failed / cancelled).

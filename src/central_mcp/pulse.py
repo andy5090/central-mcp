@@ -29,11 +29,11 @@ import json
 import shutil
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from central_mcp import dispatches_db, events
+from central_mcp import dispatches_db, events, ledger
 from central_mcp.adapters import get_adapter
 from central_mcp.adapters.base import Adapter
 from central_mcp.registry import Project, find_project
@@ -453,6 +453,203 @@ def session_snapshot(project: Project, *, limit: int = 3) -> dict[str, Any]:
     return snap
 
 
+# ---------- status ledger ----------
+
+#: Commit timestamps have one-second resolution, so a note written in the
+#: same second as the commit it describes would otherwise count itself as
+#: drift. The window errs toward "current": a spurious warning teaches the
+#: reader to ignore the signal, which costs more than one missed question.
+_DRIFT_EPSILON = timedelta(seconds=1)
+
+
+def _commits_since(path: str | Path, since: datetime) -> int | None:
+    """How many commits landed after `since`. None if git can't say.
+
+    A dedicated `rev-list --count` rather than filtering `recent_commits`,
+    which is capped at the caller's `commits` limit — an undercount here
+    would go straight into a question put to the user ("3 commits since"
+    when there were 40), and a wrong number is worse than no number.
+    """
+    repo = Path(path).expanduser()
+    if not repo.is_dir() or shutil.which("git") is None:
+        return None
+    cutoff = (since + _DRIFT_EPSILON).isoformat()
+    proc = _run(
+        ["git", "rev-list", "--count", f"--since={cutoff}", "HEAD"],
+        repo,
+        _GIT_TIMEOUT,
+    )
+    if proc is None or proc.returncode != 0:
+        return None
+    try:
+        return int((proc.stdout or "").strip())
+    except ValueError:
+        return None
+
+
+def _dirty_files_since(
+    path: str | Path, dirty: dict[str, Any], since: datetime
+) -> int:
+    """Dirty files touched after `since`, by mtime.
+
+    Uncommitted work is the case git records least and intent-capture
+    misses most — a long exploratory session can end with a changed tree
+    and no commit at all. But dirt is also a *standing* state: a repo with
+    permanently untracked build output would otherwise report drift
+    forever, and a signal that is always on is a signal nobody reads. So
+    the mtime decides: files touched since the last entry are new work,
+    files older than it are settled and stay quiet.
+
+    Counted over `git_snapshot`'s bounded file sample, so this
+    undercounts a very dirty tree — enough for "is there new work here?",
+    which is the only question it is asked.
+    """
+    repo = Path(path).expanduser()
+    cutoff = (since + _DRIFT_EPSILON).timestamp()
+    count = 0
+    for entry in dirty.get("files") or []:
+        # Sample entries are "<marker> <path>"; paths may contain spaces.
+        _, _, rel = entry.partition(" ")
+        if not rel:
+            continue
+        try:
+            if (repo / rel).stat().st_mtime > cutoff:
+                count += 1
+        except OSError:
+            # Staged deletions and races — absent files aren't new work.
+            continue
+    return count
+
+
+def ledger_snapshot(
+    project: Project,
+    *,
+    git: dict[str, Any],
+    sessions: dict[str, Any],
+    last_activity: str | None,
+    limit: int = 3,
+) -> dict[str, Any]:
+    """The project's recorded intent, and whether it has fallen behind.
+
+    The rest of a pulse reports what is *true*; this reports what somebody
+    *said*, kept strictly separate and always attributed. Nothing here is
+    ever derived from git — see `ledger.py` for why.
+
+    `drift` is the reason this section earns its place. Comparing the
+    ledger's watermark against real activity turns silence into a visible
+    gap, and a visible gap is what lets a briefing ask a sharp question
+    ("the plan says X, but the commits are all in Y — did that change?")
+    instead of an empty one. It is computed here, never stored, so it
+    cannot go stale.
+    """
+    snap: dict[str, Any] = {
+        "available": False,
+        "reason": None,
+        "path": str(ledger.path_for(project.name)),
+        "entry_count": 0,
+        "watermark": None,
+        "watermark_age_sec": None,
+        "next_step": None,
+        "recent": [],
+        "drift": {
+            "state": "empty",
+            "since_watermark": {"commits": None, "sessions": 0, "dirty_files": 0},
+            "summary": None,
+        },
+    }
+
+    entries = ledger.read(project.name)
+    dirty = int((git.get("dirty") or {}).get("total") or 0)
+
+    if not entries:
+        snap["reason"] = (
+            "no entries yet"
+            if ledger.exists(project.name)
+            else "no ledger for this project yet"
+        )
+        snap["drift"]["since_watermark"]["dirty_files"] = dirty
+        # An empty ledger is not a degraded section — it is a project
+        # nobody has recorded intent for, which is itself worth saying.
+        snap["drift"]["summary"] = (
+            "nothing recorded for this project yet"
+            if last_activity
+            else None
+        )
+        return snap
+
+    snap["available"] = True
+    snap["entry_count"] = len(entries)
+    snap["recent"] = [e.to_dict() for e in entries[:limit]]
+
+    nxt = ledger.next_step(project.name)
+    if nxt is not None:
+        snap["next_step"] = {
+            "text": nxt.next_step,
+            "ts": nxt.ts,
+            "source": nxt.source,
+            "age_sec": _age_sec(nxt.ts),
+        }
+
+    watermark = ledger.watermark(project.name)
+    snap["watermark"] = watermark
+    snap["watermark_age_sec"] = _age_sec(watermark)
+    if watermark is None:
+        snap["drift"]["state"] = "unknown"
+        snap["drift"]["summary"] = "ledger entries carry no usable timestamp"
+        return snap
+
+    mark_dt = _parse_iso(watermark)
+    if mark_dt is None:  # pragma: no cover - watermark already parsed once
+        snap["drift"]["state"] = "unknown"
+        return snap
+
+    commits = _commits_since(project.path, mark_dt)
+    dirty_since = _dirty_files_since(project.path, git.get("dirty") or {}, mark_dt)
+    newer_sessions = 0
+    for sess in sessions.get("sessions") or []:
+        modified = _parse_iso(sess.get("modified"))
+        if modified and modified > mark_dt + _DRIFT_EPSILON:
+            newer_sessions += 1
+
+    snap["drift"]["since_watermark"] = {
+        "commits": commits,
+        "sessions": newer_sessions,
+        "dirty_files": dirty_since,
+    }
+
+    activity_dt = _parse_iso(last_activity)
+    behind = bool(
+        (commits or 0) > 0
+        or newer_sessions > 0
+        or dirty_since > 0
+        or (activity_dt and activity_dt > mark_dt + _DRIFT_EPSILON)
+    )
+    snap["drift"]["state"] = "behind" if behind else "current"
+
+    if behind:
+        parts: list[str] = []
+        if commits:
+            parts.append(f"{commits} commit{'s' if commits != 1 else ''}")
+        if newer_sessions:
+            parts.append(
+                f"{newer_sessions} agent session{'s' if newer_sessions != 1 else ''}"
+            )
+        if dirty_since:
+            parts.append(
+                f"{dirty_since} uncommitted file{'s' if dirty_since != 1 else ''}"
+            )
+        detail = ", ".join(parts) if parts else "activity"
+        snap["drift"]["summary"] = (
+            f"{detail} since the last ledger entry "
+            f"({humanize_age(snap['watermark_age_sec'])})"
+        )
+    else:
+        snap["drift"]["summary"] = (
+            f"ledger is current (last entry {humanize_age(snap['watermark_age_sec'])})"
+        )
+    return snap
+
+
 # ---------- pull requests ----------
 
 def pr_snapshot(path: str | Path, *, limit: int = _MAX_PRS) -> dict[str, Any]:
@@ -556,6 +753,15 @@ def pulse_for(
         dispatches.get("last_activity_at"),
         latest_session.get("modified"),
     )
+    # Computed last: drift is the ledger measured against every activity
+    # signal above, not against commits alone. Work that never produced a
+    # commit is exactly the work whose intent is most likely unrecorded.
+    ledger_section = ledger_snapshot(
+        project,
+        git=git,
+        sessions=sessions,
+        last_activity=last_activity_at,
+    )
 
     return {
         "ok": True,
@@ -570,6 +776,7 @@ def pulse_for(
         "dispatches": dispatches,
         "sessions": sessions,
         "pull_requests": prs,
+        "ledger": ledger_section,
     }
 
 
@@ -751,6 +958,23 @@ def render(p: dict[str, Any]) -> str:
         if latest.get("modified"):
             tail = f", latest {humanize_age(_age_sec(latest['modified']))}"
         lines.append(f"- **Sessions** — {s.get('count', 0)} resumable{tail}")
+
+    led = p.get("ledger") or {}
+    drift = led.get("drift") or {}
+    nxt = led.get("next_step") or {}
+    if nxt.get("text"):
+        lines.append(
+            f"- **Next** — {_oneline(nxt['text'], 80)} "
+            f"_({nxt.get('source', '?')}, {humanize_age(nxt.get('age_sec'))})_"
+        )
+    if drift.get("state") == "behind":
+        # Surfaced as a plain fact. Turning it into a question is the
+        # briefing's job, not the pulse's.
+        lines.append(f"- **Ledger** — ⚠️ behind: {drift.get('summary')}")
+    elif drift.get("state") == "empty":
+        lines.append("- **Ledger** — empty; nothing recorded for this project yet")
+    elif led.get("available"):
+        lines.append(f"- **Ledger** — {drift.get('summary')}")
 
     prs = p.get("pull_requests") or {}
     if prs.get("available"):

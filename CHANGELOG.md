@@ -3,6 +3,27 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.20.0] — 2026-08-30
+
+### Added
+- **The status ledger — durable per-project *intent*, and the question that keeps it honest.** `project_pulse` (0.15.0) answers *what is true* by reading the repository; it can never answer *what was meant* — why an approach was abandoned, what is half finished, what should happen next. That half only exists if somebody writes it down, so it now has a home: plain markdown at `~/.central-mcp/projects/<name>/STATUS.md`, append-only, hand-editable, and always attributed. New module `ledger.py`, new MCP tool `project_note`, new CLI `cmcp note`.
+- **`project_note(note, name=|cwd=, next_step=, source=)`.** The primary write path is *not* dispatch completion — most work never flows through the hub, and a ledger fed only by dispatches would be mostly empty. `cmcp install claude` registers central-mcp at user scope, so an interactive session opened directly in a project already carries this tool; the runtime guidance now tells it to record at the end of any real stretch of work, and above all when an approach is abandoned ("tried X, it fails because Y" leaves no commit, no diff, and no trace of any kind). Accepts `cwd=` because a session knows *where* it is more reliably than *what it is registered as*.
+- **`registry.find_project_by_path(path)`.** Resolves a filesystem location to the project that owns it, deepest match first so a registered package inside a registered monorepo wins. The precondition for every cwd-addressed surface above.
+- **`cmcp note [text] [-p PROJECT] [-n NEXT] [--show]`.** Defaults to whichever project contains the cwd. Entries written here are always `source: user` and the CLI deliberately offers no way to claim otherwise.
+- **Drift detection inside `project_pulse`.** The new `ledger` section carries `next_step` (with who recorded it and how long ago) and `drift.state` — `current` · `behind` · `empty` · `unknown` — computed fresh on every call from **commits, agent-session activity, and dirty-file mtimes**, not commits alone. Keying drift on commits would have missed the work whose intent is least likely to be recorded in the first place: a long exploratory session that produced no commit at all. Dirt is filtered by mtime rather than counted raw, so a repo with permanently untracked build output doesn't report drift forever — a signal that is always on is a signal nobody reads.
+- **Dispatched agents are asked to record their own work.** Every dispatch prompt now ends with a short `<!-- CENTRAL-MCP STATUS -->` block request (placed last: recency is the cheapest defense against a dropped instruction). On success the block is transcribed to the ledger as `source: agent`. central-mcp never summarizes the output itself — the agent is the only party that knows what it meant to do.
+
+### Changed
+- **The return-briefing recipe now ends with a question.** `data/{CLAUDE,AGENTS}.md` gains a "Recording intent" section: every project briefing closes by putting the ledger's `next_step` to the user **as a claim to confirm, not an open question** — a claim costs one word to correct, an open question costs a paragraph and gets skipped. Situations change, so even a perfectly recorded plan is a *past* plan; asking is the only way "what's next" becomes current. Bounded by four rules so it can't become nagging: the briefing always completes first, at most one question per briefing, the answer is recorded immediately so the same gap is never raised twice, and a question the user ignores is dropped rather than repeated.
+
+### Notes
+- **Two sources, and both omissions are deliberate.** There is no `inferred` source: synthesizing entries from commit history would make "the agent said this" and "the hub guessed this" indistinguishable, and the ledger's entire value is that you can trust what it says. Commits are evidence, never intent. There is no `dispatch` stub either — a placeholder for a dispatch that failed or recorded nothing would add nothing `project_pulse` doesn't already show, and because *any* entry advances the watermark it would actively **silence** the drift signal for work that genuinely went unrecorded. Silence is the correct output when nobody said anything.
+- The remaining blind spot is structural and stated rather than papered over: work done with an agent that has no central-mcp tools, which also never commits, is invisible to every layer. The drift marker and the briefing question are the last net.
+- Reading is liberal, writing is strict: hand-edited headings with a missing source, alternate separators, or an unparseable timestamp are all preserved rather than dropped, because losing something a human typed is worse than an unfamiliar label.
+- Tests: `test_ledger.py` (21), `test_note.py` (31 — tool, CLI, and STATUS-block capture), 8 `find_project_by_path` cases in `test_registry.py`, and `TestLedgerSection` in `test_pulse.py` (11, incl. drift from uncommitted work and from session activity with zero commits). 841 passing.
+
+---
+
 ## [0.19.0] — 2026-08-09
 
 ### Added

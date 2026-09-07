@@ -347,3 +347,81 @@ def test_projects_in_workspace_default_explicit_members(fake_home: Path) -> None
     names = [p.name for p in projects]
     assert "alpha" in names
     assert "beta" not in names
+
+
+def test_find_by_path_exact_root(fake_home: Path, tmp_path: Path) -> None:
+    root = tmp_path / "proj"
+    root.mkdir()
+    registry.add_project("proj", str(root))
+    found = registry.find_project_by_path(root)
+    assert found is not None and found.name == "proj"
+
+
+def test_find_by_path_from_subdirectory(fake_home: Path, tmp_path: Path) -> None:
+    root = tmp_path / "proj"
+    (root / "src" / "deep").mkdir(parents=True)
+    registry.add_project("proj", str(root))
+    found = registry.find_project_by_path(root / "src" / "deep")
+    assert found is not None and found.name == "proj"
+
+
+def test_find_by_path_deepest_match_wins(fake_home: Path, tmp_path: Path) -> None:
+    mono = tmp_path / "mono"
+    api = mono / "packages" / "api"
+    api.mkdir(parents=True)
+    registry.add_project("mono", str(mono))
+    registry.add_project("api", str(api))
+    found = registry.find_project_by_path(api / "src")
+    assert found is not None and found.name == "api"
+
+
+def test_find_by_path_falls_back_to_ancestor(fake_home: Path, tmp_path: Path) -> None:
+    mono = tmp_path / "mono"
+    (mono / "packages" / "web").mkdir(parents=True)
+    registry.add_project("mono", str(mono))
+    found = registry.find_project_by_path(mono / "packages" / "web")
+    assert found is not None and found.name == "mono"
+
+
+def test_find_by_path_unregistered_returns_none(fake_home: Path, tmp_path: Path) -> None:
+    registry.add_project("proj", str(tmp_path / "proj"))
+    elsewhere = tmp_path / "somewhere-else"
+    elsewhere.mkdir()
+    assert registry.find_project_by_path(elsewhere) is None
+
+
+def test_find_by_path_sibling_prefix_is_not_a_match(
+    fake_home: Path, tmp_path: Path
+) -> None:
+    """`/x/proj-two` must not match a project rooted at `/x/proj`."""
+    root = tmp_path / "proj"
+    root.mkdir()
+    sibling = tmp_path / "proj-two"
+    sibling.mkdir()
+    registry.add_project("proj", str(root))
+    assert registry.find_project_by_path(sibling) is None
+
+
+def test_find_by_path_expands_tilde(
+    fake_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    root = tmp_path / "proj"
+    root.mkdir()
+    registry.add_project("proj", "~/proj")
+    found = registry.find_project_by_path(root)
+    assert found is not None and found.name == "proj"
+
+
+def test_find_by_path_tolerates_missing_checkout(
+    fake_home: Path, tmp_path: Path
+) -> None:
+    """A registered project whose directory is gone must not break lookups
+    for a different project."""
+    gone = tmp_path / "vanished"
+    live = tmp_path / "live"
+    live.mkdir()
+    registry.add_project("vanished", str(gone))
+    registry.add_project("live", str(live))
+    found = registry.find_project_by_path(live)
+    assert found is not None and found.name == "live"

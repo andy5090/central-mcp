@@ -24,6 +24,7 @@ from central_mcp.cli._commands import (
     cmd_init,
     cmd_install,
     cmd_list,
+    cmd_note,
     cmd_pulse,
     cmd_remove,
     cmd_reorder,
@@ -394,6 +395,42 @@ def build_parser() -> argparse.ArgumentParser:
         help="emit the raw pulse as JSON instead of markdown",
     )
     p_pulse.set_defaults(func=cmd_pulse)
+
+    p_note = sub.add_parser(
+        "note",
+        help="record what was done / what's next for a project (status ledger)",
+        description=(
+            "Append an entry to a project's status ledger — the durable "
+            "record of intent that a return briefing is built from. "
+            "`cmcp pulse` can always tell you what is *true* by reading "
+            "the repo; only you can say what was *meant*: why an approach "
+            "was abandoned, what is half finished, what should happen "
+            "next. An abandoned approach leaves no commit and no diff, so "
+            "it is lost unless it is written here. With no --project, the "
+            "project owning the current directory is used."
+        ),
+    )
+    p_note.add_argument(
+        "text", nargs="*",
+        help="the note (what happened, what was left, what was learned)",
+    )
+    p_note.add_argument(
+        "-p", "--project",
+        help="project name (default: whichever project contains the cwd)",
+    )
+    p_note.add_argument(
+        "-n", "--next", dest="next", metavar="TEXT",
+        help="one line naming what should happen next",
+    )
+    p_note.add_argument(
+        "--show", action="store_true",
+        help="print recent ledger entries instead of writing one",
+    )
+    p_note.add_argument(
+        "--limit", type=int, default=10,
+        help="entries to print with --show (default: 10)",
+    )
+    p_note.set_defaults(func=cmd_note)
 
     p_digest = sub.add_parser(
         "digest",

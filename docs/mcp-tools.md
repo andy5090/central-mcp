@@ -30,8 +30,20 @@ Sections:
 - `dispatches`: `in_flight`, `stale` (rows still marked running after hours — a crashed server never wrote their terminal state, so they're unfinished, not live), the last `history` outcomes with prompts and previews, and all-time counts
 - `sessions`: resumable agent conversations, for agents whose adapter can enumerate them
 - `pull_requests`: open PRs via `gh` — the only network call, so pass `include_pr=False` when sweeping many projects
+- `ledger` (0.20.0+): the project's recorded *intent* — `next_step` (with who recorded it and how long ago) and `drift.state` (`current` · `behind` · `empty` · `unknown`). Drift compares the ledger's watermark against commits, agent-session activity, and dirty-file mtimes, so a long session that produced no commit still registers. Computed here, never stored, so it can't go stale.
 
 Each section degrades independently and carries a `reason` when unavailable; a missing section never means "nothing happened". Nothing is stored — every call recomputes from source.
+
+### `project_note(note, name=None, cwd=None, next_step=None, source="agent")` (0.20.0+)
+Record what was done, what was left, and what comes next — the durable half of the PM loop. `project_pulse` reads the repository for what is *true*; this stores what was *meant*, which no amount of reading git can recover.
+
+Pass `name`, or `cwd` (any path inside the project) when the caller knows where it is but not what the project is registered as. With neither, the server's own working directory is used — a session opened inside a project inherits it.
+
+Call it at the end of any stretch of real work, **including work that never went through `dispatch`**; when something you learn changes the plan; and above all when an approach is abandoned. *"Tried X, it fails because Y"* leaves no commit, no diff, and no trace of any kind — it is the one class of knowledge guaranteed lost otherwise.
+
+`source` is `"agent"` (recording your own work) or `"user"` (writing down what the human said). Those are the only two: there is no `inferred`, because an entry synthesized from commit history would be indistinguishable from a first-hand record, and the ledger's whole value is that you can trust what it says.
+
+Entries land in `~/.central-mcp/projects/<name>/STATUS.md` — plain markdown, append-only, safe to edit by hand.
 
 ### `orchestration_history(workspace=None, include_archives=False)`
 Portfolio-wide snapshot: in-flight dispatches + recent milestones + per-project counts (dispatched / succeeded / failed / cancelled).

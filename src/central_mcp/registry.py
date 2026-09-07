@@ -117,6 +117,50 @@ def find_project(name: str, path: Path | None = None) -> Project | None:
     return None
 
 
+def _resolved(path_: str | Path) -> Path | None:
+    """Best-effort absolute resolution: expands ~, follows symlinks, tolerates
+    paths that don't exist (a registered project whose checkout was moved
+    shouldn't blow up a lookup for a different one).
+    """
+    try:
+        return Path(path_).expanduser().resolve()
+    except (OSError, RuntimeError):
+        return None
+
+
+def find_project_by_path(
+    path_: str | Path, registry_path: Path | None = None
+) -> Project | None:
+    """Resolve a filesystem location to the project that owns it.
+
+    The counterpart to `find_project`, for callers that know where they
+    are but not what it's called — an agent session running in a
+    registered project's tree wants to record against that project
+    without being told its name.
+
+    A project matches when `path_` is its root or lives underneath it.
+    Nested checkouts are legal, so the *deepest* match wins: a session
+    inside `~/Projects/mono/packages/api` belongs to `api` if that is
+    registered, and falls back to `mono` if it isn't.
+    """
+    target = _resolved(path_)
+    if target is None:
+        return None
+
+    best: Project | None = None
+    best_depth = -1
+    for proj in load_registry(registry_path):
+        root = _resolved(proj.path)
+        if root is None:
+            continue
+        if root != target and root not in target.parents:
+            continue
+        depth = len(root.parts)
+        if depth > best_depth:
+            best, best_depth = proj, depth
+    return best
+
+
 def add_project(
     name: str,
     path_: str,

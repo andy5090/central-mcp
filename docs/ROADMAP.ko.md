@@ -25,7 +25,7 @@ central-mcp의 일은 그 PM이 되는 것입니다. 등록된 모든 프로젝�
 - **멀티에이전트 협업**은 PM이 한 프로젝트에 계약자 한 명 대신 *팀*을 투입하는 것.
 - **생태계 엔드포인트** (MCP Tasks, A2A)는 사람만이 아니라 다른 에이전트도 PM에게 물어볼 수 있게 하는 것.
 
-이번 재정의가 정면으로 마주하는 갭: 지금 허브는 자기를 *거쳐간* 일만 압니다 — `orchestration_history`는 dispatch 이벤트를 읽으므로, 직접 커밋·인터랙티브 에이전트 세션·수동 편집은 보이지 않습니다. 진짜 PM은 상태 보고를 기다리지 않고 레포를 직접 읽습니다. 이 갭을 메우는 것이 아래 [Portfolio PM](#portfolio-pm) 트랙의 첫 항목입니다.
+이번 재정의가 정면으로 마주했던 갭 — 허브가 자기를 *거쳐간* 일만 안다는 것 — 은 이제 두 절반 모두 닫혔고, 둘을 따로 부르는 게 중요합니다. **사실**(지금 무엇이 참인가)은 레포를 읽는 `project_pulse`에서 옵니다. 직접 커밋, 인터랙티브 세션, 수동 편집 전부 잡힙니다. **의도**(무엇을 하려 했나 — 뭐가 반쯤 됐고, 뭘 시도했다 접었고, 다음이 뭔지)는 상태 장부에서 옵니다. 그 자리에 있던 누구든 씁니다 — 인터랙티브 세션, dispatch된 에이전트, 사용자. 어느 절반도 작업이 central-mcp를 거친다고 전제하지 않습니다. 그리고 기록된 계획은 여전히 *과거의* 계획이므로 루프는 질문으로 끝납니다: 모든 복귀 브리핑은 기록된 다음 할 일을 사용자에게 확인용으로 내밀며 닫힙니다. 남은 건 더 좁습니다 — `orchestration_history`는 아직 dispatch 이벤트만으로 포트폴리오 질문에 답하고(아래 💭), 구조적 사각지대 하나는 덮지 않고 명시합니다: central-mcp 도구가 없는 에이전트로 작업하고 *동시에* 커밋도 안 한 경우는 어느 층에서도 안 보입니다. 드리프트 표시와 브리핑 질문이 마지막 그물입니다.
 
 2026년 스택에서의 자리를 압축하면: 벤더의 agent teams는 *한 벤더 아래 한 레포*를 병렬화하고, 클라우드 에이전트는 비동기 단일 작업을 흡수하고, IDE 에이전트는 실시간 페어링을 맡습니다. central-mcp는 그 누구도 차지하지 않은 층 — 벤더를 가로지르는 포트폴리오 전체 — 을 유지하면서, 이제 한 단계 더 깊이 들어갑니다: **한 프로젝트 안에서의 크로스 벤더 협업**, 어떤 단일 벤더 팀 기능도 제공할 수 없는 조합입니다.
 
@@ -33,11 +33,14 @@ central-mcp의 일은 그 PM이 되는 것입니다. 등록된 모든 프로젝�
 
 ## 1.0 마일스톤 — PM이 작동하는 순간
 
-이전에는 TUI 안정화 단독이 1.0을 정의했습니다. 재정의: **4개 orchestrator 전부에서 PM 루프가 실제로 작동하는 시점에 1.0을 출시합니다.**
+이전에는 TUI 안정화 단독이 1.0을 정의했습니다. 재정의: **4개 REPL orchestrator에서 PM 루프가 실제로 작동하는 시점에 1.0을 출시합니다** (claude, codex, gemini, opencode — TUI가 임베딩하는 넷. 상주 agentOS 호출자는 [Upstream agents](#upstream-agents) 트랙 소관).
 
-1. **복귀 브리핑** — `project_pulse` + 브리핑 레시피가 어떤 프로젝트에 대해서든 신뢰할 수 있는 "무슨 일이 있었고 / 지금 어디고 / 다음이 뭔지"를 내놓음. central-mcp 밖에서 이뤄진 작업 포함.
-2. **관제탑** — TUI가 4개 orchestrator를 안정적으로 호스팅(Phase D 완료)하고 포트폴리오 인지 사이드바를 갖춤.
-3. **다이제스트** — 정기 포트폴리오 다이제스트가 실제로 눈이 가는 곳(터미널, 또는 Hermes 브릿지 경유 chat)에 도착.
+*2026-09 재단.* 게이트 셋이 출시되자 드리프트가 드러났습니다: 관제탑만 남은 상태에서 1.0은 조용히 다시 "TUI 안정화 단독"이 돼 있었습니다 — 이 섹션이 거부했던 바로 그 정의로, 3단 표면에 릴리즈를 걸어둔 꼴입니다. 교정 둘: "다음이 뭔지"의 빠진 3분의 1이었던 상태 장부를 게이트로 올리고(출시됨), 관제탑 게이트는 안정화로 좁히되 포트폴리오 사이드바는 어차피 장부에 의존하므로 1.0 이후로 옮깁니다.
+
+1. ✅ **복귀 브리핑 (0.15.0)** — `project_pulse` + 브리핑 레시피가 어떤 프로젝트에 대해서든 신뢰할 수 있는 "무슨 일이 있었고 / 지금 어디인지"를 내놓음. central-mcp 밖에서 이뤄진 작업 포함.
+2. ✅ **상태 장부 (0.20.0)** — "다음이 뭔지"가 세션과 orchestrator를 넘어 살아남고, 실제 활동 대비 드리프트가 보이고, 모든 브리핑이 다음 할 일을 사용자에게 확인용으로 내밀며 닫힘.
+3. ✅ **다이제스트 (0.17.0)** — 정기 포트폴리오 다이제스트가 실제로 눈이 가는 곳(터미널, 또는 상주 agentOS 경유 chat)에 도착.
+4. 📋 **관제탑** — TUI가 4개 REPL orchestrator를 안정적으로 호스팅(Phase D 완료). 포트폴리오 사이드바는 더 이상 게이트에 없음.
 
 1.0 시점에 TUI의 `--experimental` 플래그는 no-op이 되고(하위 호환 유지), API 표면이 잠기고, breaking change는 2.0 대상이 됩니다.
 
@@ -51,7 +54,7 @@ central-mcp의 일은 그 PM이 되는 것입니다. 등록된 모든 프로젝�
 
 **1단 — ambient (주 진입로): 이미 쓰고 있는 세션 안의 MCP 도구.** `cmcp install claude`(또는 codex / gemini / opencode)를 한 번 실행하면, 그 CLI의 모든 세션이 평소 도구들과 나란히 `dispatch`, `project_pulse`, `orchestration_history`를 갖게 됩니다. 전환 비용은 0입니다: 프로젝트를 열고 "지금 어디까지 됐지?"를 물으면 복귀 브리핑이 그 자리에서 일어나고, 다른 곳에 일을 시켜야 하면 떠나지 않고 dispatch합니다. [Portfolio PM](#portfolio-pm) 트랙의 모든 것이 여기에 먼저 도착합니다.
 
-**2단 — reach: Hermes 브릿지.** 다른 모든 표면은 사람이 터미널 앞에 있다고 전제합니다. Hermes의 cron + Telegram/Discord gateway는 *나를 찾아오는* 유일한 채널 — 푸시 보고 항목(데일리 다이제스트, 실패 알림)의 배달 레일입니다. "새는 일감 0건"이 목표라면 이 층은 궁극적으로 1단만큼 중요합니다. 가장 많이 놓치는 건 정확히 터미널이 안 열려 있을 때니까요.
+**2단 — reach: 상주 agentOS 브릿지 (Hermes, OpenClaw).** 다른 모든 표면은 사람이 터미널 앞에 있다고 전제합니다. 상주 에이전트의 cron + Telegram/Discord gateway는 *나를 찾아오는* 유일한 채널 — 푸시 보고 항목(데일리 다이제스트, 실패 알림)의 배달 레일입니다. 0.19.0부터 두 런타임이 같은 번들 orchestration skill을 설치하며, 다음 agentOS도 그 패턴을 따릅니다. "새는 일감 0건"이 목표라면 이 층은 궁극적으로 1단만큼 중요합니다. 가장 많이 놓치는 건 정확히 터미널이 안 열려 있을 때니까요.
 
 **3단 — focus (매일이 아니라 그런 날에): TUI.** 오케스트레이션 자체가 주 업무인 세션용 — 포트폴리오 전체에 일을 뿌리고, 도착을 지켜보고, 결과를 감독하는 날. 관제탑은 오케스트레이션이 전경 작업일 때 화면을 차지할 자격을 얻습니다.
 
@@ -61,7 +64,7 @@ central-mcp의 일은 그 PM이 되는 것입니다. 등록된 모든 프로젝�
 
 📋 **`cmcp monitor`는 TUI 사이드바로 은퇴.** 쿼터 바 + 프로젝트별 dispatch 카운트 + 토큰 합계는 사이드바의 직무 기술서 *그 자체*입니다 — 같은 데이터를 그리는 표면 둘은 서로 어긋나기 마련입니다. TUI가 1.0에서 안정되면 `monitor`는 `cmcp tui`를 가리키는 deprecation shim이 되고, 그때까지는 그대로 둡니다.
 
-**오케스트레이터는 어느 에이전트로?** 오케스트레이션은 코딩이 아니라 라우팅과 서술입니다 — 제약 조건은 모델의 지능이 아니라 논블로킹 루프(dispatch → 백그라운드 폴링 → 보고)를 규율 있게 도는 능력입니다. claude는 이 루프를 안정적으로 돌고, codex와 gemini는 지속 폴링에 약합니다 — [Dispatch 코어](#dispatch-core-routing) 트랙에 `wait_for_dispatch`가 존재하는 문서화된 이유입니다. 그것(또는 네이티브 MCP Tasks 클라이언트)이 격차를 메우기 전까지의 권고: **오케스트레이터는 claude, dispatch 대상은 어느 에이전트든.**
+**오케스트레이터는 어느 에이전트로?** 오케스트레이션은 코딩이 아니라 라우팅과 서술입니다 — 제약 조건은 모델의 지능이 아니라 논블로킹 루프(dispatch → 백그라운드 폴링 → 보고)를 규율 있게 도는 능력입니다. claude는 이 루프를 안정적으로 돌고, codex와 gemini는 지속 폴링에 약합니다 — [Dispatch 코어](#dispatch-core-routing) 트랙에 `wait_for_dispatch`가 존재하는 문서화된 이유입니다. 그것(또는 네이티브 MCP Tasks 클라이언트)이 격차를 메우기 전까지의 권고: **오케스트레이터는 claude, dispatch 대상은 어느 에이전트든.** Hermes와 OpenClaw는 다른 경우입니다: REPL이 아니라 2단 상주 런타임이라, skill이 루프 규율을 싣고 cron이 지속 폴링을 대신합니다.
 
 ---
 
@@ -75,7 +78,7 @@ central-mcp의 일은 그 PM이 되는 것입니다. 등록된 모든 프로젝�
 
 ❌ **철회: `cmcp brief`의 pulse 기반 다이제스트화.** 원래 여기 계획돼 있었으나 측정 후 철회했습니다. `brief`는 55ms(YAML 한 번 읽기), 전체 pulse 스윕은 2.5초에 git 프로세스 수십 개입니다. SessionStart 훅이 orchestrator를 띄울 **때마다** `brief`를 실행하므로 시작 비용이 45배가 됩니다 — 게다가 대부분 버려지는 계산입니다. 세션을 여는 건 17개가 아니라 한두 개 프로젝트를 만지기 위해서니까요. 올바른 분리는 **세션 시작은 "무엇이 있는지"만 싸게 알리고, "어떤 상태인지"는 사용자가 프로젝트를 지목한 순간에 가져오는 것**입니다. 양쪽 모두 이제 존재하므로 `brief`는 registry 나열로 남습니다.
 
-📋 **상태 장부 (phase 2).** `~/.central-mcp/projects/<name>/STATUS.md` — 프로젝트별 영속 기억: dispatch 완료 시 덧붙는 구조화된 델타(뭘 했고 뭐가 남았는지), 열린 질문들, 그리고 세션과 orchestrator를 넘어 살아남는 "다음 할 일" 목록. `cmcp note <project> "…"`로 수동 항목 추가. 이후 브리핑은 장부(의도, 다음 할 일)와 pulse(ground truth)를 결합하고 둘 사이의 드리프트를 표시합니다. registry와 같은 평문 파일 — 요청 간 stateless 불변식은 유지됩니다.
+✅ **상태 장부 (0.20.0).** `~/.central-mcp/projects/<name>/STATUS.md` — 프로젝트별 영속 *의도*, pulse의 사실과 엄격히 분리. 계획과 출시 사이에 셋이 바뀌었고, 각각 남겨둘 이유가 있습니다. **주 작성자는 dispatch 완료가 아닙니다.** 대부분의 작업은 허브를 거치지 않으므로 dispatch가 먹이는 장부는 대부분 비어 있을 것입니다. 주 경로는 `project_note` — central-mcp가 (user scope로) 설치된 어떤 세션이든 쓸 수 있고, 세션은 자기가 뭐로 등록됐는지보다 어디 있는지를 더 확실히 알기 때문에 `cwd`로 지정합니다. dispatch 캡처(에이전트가 STATUS 블록을 남기고 허브는 전사만, 요약은 절대 안 함)는 부 작성자입니다. **출처는 둘뿐 — `agent`, `user`.** `inferred`는 없고(커밋에서 합성한 항목은 직접 기록과 구별 불가), 실패 dispatch 스텁도 없습니다(어떤 항목이든 워터마크를 전진시켜, 정확히 기록 안 된 작업에 대한 드리프트 신호를 *꺼버립니다*). **드리프트는 계산될 뿐 저장되지 않으며,** 커밋·세션 활동·변경 파일 mtime을 함께 봅니다 — 커밋만 보면 커밋을 하나도 안 남긴 긴 탐색 세션을 놓치는데, 그게 의도가 기록되지 않았을 가능성이 가장 높은 작업입니다. `cmcp note`가 사람의 경로. 브리핑 레시피는 이제 모든 브리핑을 `next_step`을 확인형 주장으로 내밀며 끝냅니다 — 질문 하나, 절대 블로킹 없음, 답은 기록해서 같은 갭을 두 번 묻지 않음.
 
 ✅ **푸시 보고 (0.17.0).** 일간/주간 다이제스트와 이벤트 알림을 새 데몬 없이 배달합니다. `portfolio_digest`가 고정 포맷의 pulse 기반 리포트를 서버 쪽에서 렌더링하고(`digest_markdown`, 그대로 전달 — `token_usage.summary_markdown`과 같은 논리), `cmcp digest`가 같은 리포트를 일반 crontab에도 서빙합니다. `list_dispatches(status="failed", since=…)`가 상주 에이전트에게 재알림 없는 failure 커서를 주되 워터마크는 구독자가 보관해 central-mcp는 무상태로 남습니다. Hermes skill의 스케치는 1급 레시피 둘(일간 다이제스트 cron, failure watch)로 승격됐고, TUI watcher는 로컬 표면으로 유지됩니다.
 
@@ -88,6 +91,8 @@ central-mcp의 일은 그 PM이 되는 것입니다. 등록된 모든 프로젝�
 ## Multi-agent collaboration
 
 **명시적 non-goal에서 승격.** 예전 논리 — 레포 내부 병렬화는 벤더들의 홈그라운드 — 는 *단일 벤더* 팀(Claude Code agent teams, Codex 멀티에이전트)에는 여전히 참입니다. 놓쳤던 것: **크로스 벤더** 조합. 한 에이전트가 구현하고 다른 벤더의 에이전트가 리뷰하는 것 — central-mcp가 이미 소유한 크로스 벤더 라우팅을 한 단계 깊이 적용한 것일 뿐입니다. 어떤 벤더 팀 기능도 못 하는 일입니다.
+
+순서: 이 트랙은 1.0 이후입니다. 체인은 기존 배관 위에 싸게 얹히지만 1.0 게이트("PM이 작동한다")와는 다른 직무("PM이 팀을 굴린다")를 맡으며, 구체적 필요가 생길 때만 앞당깁니다.
 
 📋 **순차 역할 체인 먼저.** `dispatch_chain(project, steps)` — 각 step이 에이전트와 역할 프롬프트를 지정하고, 이전 step의 출력이 다음 step의 컨텍스트로 주입됩니다. 대표 체인: 구현(에이전트 A) → 리뷰(에이전트 B) → 리뷰 반영(에이전트 A). step들은 `chain_id`를 공유하는 연결된 dispatch로 이력에 나타나고, 체인을 폴링하면 step별 상태가 돌아옵니다. 기존 dispatch 배관 위에 거의 그대로 얹히기 때문에 먼저 갑니다.
 
@@ -121,7 +126,7 @@ central-mcp의 일은 그 PM이 되는 것입니다. 등록된 모든 프로젝�
 
 📋 **Phase D — 안정화.** 자체 scrollback / search / copy. 한국어 IME와 더블폭 문자 corner case. 알림 정책 미세 조정 (`config.toml [tui].auto_inject = passive | hint | prompt`). 1.0 게이트에 들어가는 항목.
 
-📋 **포트폴리오 사이드바.** 사이드바를 dispatch 중심에서 PM 중심으로 진화: dispatch 피드만이 아니라 `project_pulse` 기반 프로젝트별 상태 라인(브랜치, 마지막 활동, 장부의 다음 할 일 힌트).
+📋 **포트폴리오 사이드바 (1.0 이후).** 사이드바를 dispatch 중심에서 PM 중심으로 진화: dispatch 피드만이 아니라 `project_pulse` 기반 프로젝트별 상태 라인(브랜치, 마지막 활동, 장부의 `next_step`과 드리프트 표시). 2026-09 재단에서 1.0 게이트에서 제외. 필요한 데이터는 이제 존재합니다.
 
 📋 **Expanded dispatch row.** 선택된 row가 펼쳐져서 마지막 N줄 라이브 tail, elapsed, 토큰 델타, "마지막 output Xs 전" 헬스 힌트. [Dispatch 코어](#dispatch-core-routing) 트랙의 `tail_dispatch` + progress 컬럼 위에 얹힘.
 
@@ -171,7 +176,7 @@ opt-in, 세션 단위의 두 번째 실행 모드로, 기본 비대화 dispatch�
 
 PM의 손: dispatch 파이프라인 자체와, 일을 어디로 보낼지에 대한 지능. 프런티어 CLI들의 순수 능력이 수렴했으므로, 흥미로운 라우팅 신호는 비용·쿼터 여유·작업 형태·프로젝트 적합도 — central-mcp가 이미 추적하는 상태들입니다.
 
-📋 **`tail_dispatch(dispatch_id, since_ts=null)` MCP 도구.** 완료를 기다리지 않고 시각 기준 최근 출력 청크 반환. `dispatches.db`의 `output` 컬럼은 subprocess 종료 시에만 쓰이므로, 실행 중 진행 상황을 보려는 표면은 전부 `dispatch.jsonl`을 직접 파싱해야 합니다 — 줄 단위 `output` 이벤트는 TUI가 생기기 훨씬 전부터 거기에 실시간으로 쌓이고 있었습니다. 이 도구가 그 경로를 임시 리더 세 개가 아닌 하나의 지원되는 방법으로 만듭니다. 왜 이게 어려운 문제가 아니라 배선인지는 [Focused panes](#focused-panes) 참고.
+📋 **`tail_dispatch(dispatch_id, since_ts=null)` MCP 도구 — 이 트랙의 다음 항목.** 소비자 셋(TUI 라이브 출력, expanded dispatch row, orchestrator)에 보드에서 비용 대비 레버리지가 가장 좋습니다. 완료를 기다리지 않고 시각 기준 최근 출력 청크 반환. `dispatches.db`의 `output` 컬럼은 subprocess 종료 시에만 쓰이므로, 실행 중 진행 상황을 보려는 표면은 전부 `dispatch.jsonl`을 직접 파싱해야 합니다 — 줄 단위 `output` 이벤트는 TUI가 생기기 훨씬 전부터 거기에 실시간으로 쌓이고 있었습니다. 이 도구가 그 경로를 임시 리더 세 개가 아닌 하나의 지원되는 방법으로 만듭니다. 왜 이게 어려운 문제가 아니라 배선인지는 [Focused panes](#focused-panes) 참고.
 
 📋 **`dispatches` 테이블 progress 컬럼.** `last_output_ts`, `output_bytes`, `attempt_count` — 청크마다 싼 쓰기; 읽기는 모든 표면의 "살아있나 멈췄나" 표시기를 구동.
 
@@ -214,6 +219,8 @@ MCP 2026-07-28 릴리즈가 프로토콜 코어를 stateless로 만들고 장기
 오케스트레이터를 프로그램적 호출자에게 엽니다 — 사람이 REPL 앞에 없어도 포트폴리오 작업을 위임하고 싶은 개인용 자율 에이전트들. `dispatch`를 직접 부르면 오케스트레이터의 routing / fallback / 충돌 감지 레이어를 우회합니다; 아래 항목들은 upstream 호출자에게 온전한 오케스트레이터를 줍니다.
 
 ✅ **Hermes Agent 브릿지 (0.12.2–0.14.0).** `_Hermes` 어댑터(dispatch 대상 *겸* orchestrator), Hermes 설정에 central-mcp를 등록하는 `cmcp install hermes` + 번들 orchestration skill, quota HUD의 Hermes 사용량. Hermes의 cron + Telegram/Discord gateway가 [Portfolio PM 푸시 보고](#portfolio-pm) 항목의 배달 레일입니다.
+
+✅ **OpenClaw 브릿지 (0.18.0–0.19.0).** `_OpenClaw` 어댑터(dispatch 대상 겸 orchestrator), JSON5 설정을 직접 고치는 대신 벤더 CLI를 구동하는 `cmcp install openclaw`, 그리고 orchestration skill도 함께 설치 — 두 번째 상주 agentOS이자, `data/hermes-skill.md`를 두 런타임이 바이트 단위로 동일하게 설치하는 벤더 중립 `data/agentos-skill.md`로 바꾸게 만든 계기입니다.
 
 📋 **`dispatch_orchestrator(prompt, agent=None, workspace=None)` MCP 도구.** central-mcp 도구를 로드한 fresh 비대화 orchestrator(claude `-p`, codex `exec`, …)를 띄우고 `dispatch`와 같은 의미의 `dispatch_id` 반환.
 

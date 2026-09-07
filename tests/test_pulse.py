@@ -648,3 +648,159 @@ class TestProjectPulseTool:
         r = server.project_pulse("proj", commits=-5, history=-5, include_pr=False)
         assert r["git"]["recent_commits"] == []
         assert r["dispatches"]["recent"] == []
+
+
+# ---------- status ledger + drift ----------
+
+class TestLedgerSection:
+    """`ledger` reports recorded intent and whether it has fallen behind.
+
+    Drift is the point of the section: it is what turns silence into a
+    visible gap, so these tests care most about *when* `behind` fires —
+    especially for activity that leaves no commit.
+    """
+
+    def _project(self, fake_home: Path, tmp_path: Path, **kw) -> registry.Project:
+        repo = tmp_path / "proj"
+        repo.mkdir(parents=True, exist_ok=True)
+        return registry.add_project("proj", str(repo), **kw)
+
+    def test_no_ledger_reports_empty(self, fake_home: Path, tmp_path: Path) -> None:
+        proj = self._project(fake_home, tmp_path)
+        led = pulse.pulse_for(proj, include_pr=False)["ledger"]
+        assert led["available"] is False
+        assert led["drift"]["state"] == "empty"
+        assert led["entry_count"] == 0
+
+    def test_next_step_surfaces_with_attribution(
+        self, fake_home: Path, tmp_path: Path
+    ) -> None:
+        from central_mcp import ledger
+
+        proj = self._project(fake_home, tmp_path)
+        ledger.append("proj", "did a thing", source="agent", next_step="ship it")
+        led = pulse.pulse_for(proj, include_pr=False)["ledger"]
+        assert led["available"] is True
+        assert led["next_step"]["text"] == "ship it"
+        assert led["next_step"]["source"] == "agent"
+        assert led["watermark"] is not None
+
+    @needs_git
+    def test_commits_after_watermark_mark_it_behind(
+        self, fake_home: Path, tmp_path: Path
+    ) -> None:
+        from central_mcp import ledger
+
+        repo = _make_repo(tmp_path / "proj", commits=1)
+        proj = registry.add_project("proj", str(repo))
+        ledger.append("proj", "recorded", ts="2000-01-01T00:00:00+00:00")
+        led = pulse.pulse_for(proj, include_pr=False)["ledger"]
+        assert led["drift"]["state"] == "behind"
+        assert led["drift"]["since_watermark"]["commits"] == 1
+        assert "1 commit" in led["drift"]["summary"]
+
+    @needs_git
+    def test_ledger_newer_than_all_activity_is_current(
+        self, fake_home: Path, tmp_path: Path
+    ) -> None:
+        from central_mcp import ledger
+
+        repo = _make_repo(tmp_path / "proj", commits=1)
+        proj = registry.add_project("proj", str(repo))
+        ledger.append("proj", "recorded just now")
+        led = pulse.pulse_for(proj, include_pr=False)["ledger"]
+        assert led["drift"]["state"] == "current"
+        assert led["drift"]["since_watermark"]["commits"] == 0
+
+    @needs_git
+    def test_commit_count_is_not_capped_by_the_commits_limit(
+        self, fake_home: Path, tmp_path: Path
+    ) -> None:
+        """The number goes into a question put to the user, so an
+        undercount would be actively misleading."""
+        from central_mcp import ledger
+
+        repo = _make_repo(tmp_path / "proj", commits=7)
+        proj = registry.add_project("proj", str(repo))
+        ledger.append("proj", "recorded", ts="2000-01-01T00:00:00+00:00")
+        led = pulse.pulse_for(proj, commits=2, include_pr=False)["ledger"]
+        assert led["drift"]["since_watermark"]["commits"] == 7
+
+    @needs_git
+    def test_uncommitted_work_alone_marks_it_behind(
+        self, fake_home: Path, tmp_path: Path
+    ) -> None:
+        """Work that never became a commit is exactly the work whose
+        intent is most likely unrecorded — it must not read as silence."""
+        from central_mcp import ledger
+
+        repo = _make_repo(tmp_path / "proj", commits=1)
+        proj = registry.add_project("proj", str(repo))
+        # Ledger recorded *after* the only commit, so commits-since is 0.
+        ledger.append("proj", "recorded")
+        scratch = repo / "scratch.txt"
+        scratch.write_text("exploring\n")
+        # Stamp it unambiguously after the entry — the drift epsilon
+        # deliberately ignores same-second activity.
+        import os
+        future = time.time() + 60
+        os.utime(scratch, (future, future))
+        led = pulse.pulse_for(proj, include_pr=False)["ledger"]
+        assert led["drift"]["since_watermark"]["commits"] == 0
+        assert led["drift"]["since_watermark"]["dirty_files"] == 1
+        assert "1 uncommitted file" in led["drift"]["summary"]
+
+    def test_session_activity_after_watermark_marks_it_behind(
+        self, fake_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A long interactive session with zero commits still counts."""
+        from central_mcp import ledger
+
+        class _Reader(Adapter):
+            def list_sessions(self, cwd, limit=3):
+                return [
+                    SessionInfo(
+                        id="s1",
+                        modified="2030-01-01T00:00:00+00:00",
+                        title="long session",
+                    )
+                ]
+
+        monkeypatch.setattr(pulse, "get_adapter", lambda name: _Reader(name="fake"))
+        proj = self._project(fake_home, tmp_path)
+        ledger.append("proj", "recorded", ts="2026-01-01T00:00:00+00:00")
+        led = pulse.pulse_for(proj, include_pr=False)["ledger"]
+        assert led["drift"]["state"] == "behind"
+        assert led["drift"]["since_watermark"]["sessions"] == 1
+
+    def test_unparseable_timestamps_degrade_to_unknown(
+        self, fake_home: Path, tmp_path: Path
+    ) -> None:
+        from central_mcp import ledger
+
+        proj = self._project(fake_home, tmp_path)
+        path = ledger.path_for("proj")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("## someday · user\nvague\n", encoding="utf-8")
+        led = pulse.pulse_for(proj, include_pr=False)["ledger"]
+        assert led["available"] is True
+        assert led["drift"]["state"] == "unknown"
+
+    def test_render_flags_a_behind_ledger(
+        self, fake_home: Path, tmp_path: Path
+    ) -> None:
+        from central_mcp import ledger
+
+        proj = self._project(fake_home, tmp_path)
+        ledger.append("proj", "old news", next_step="finish the migration",
+                      ts="2000-01-01T00:00:00+00:00")
+        out = pulse.render(pulse.pulse_for(proj, include_pr=False))
+        assert "finish the migration" in out
+        assert "Next" in out
+
+    def test_render_reports_an_empty_ledger(
+        self, fake_home: Path, tmp_path: Path
+    ) -> None:
+        proj = self._project(fake_home, tmp_path)
+        out = pulse.render(pulse.pulse_for(proj, include_pr=False))
+        assert "nothing recorded" in out
