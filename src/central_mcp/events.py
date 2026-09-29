@@ -26,7 +26,7 @@ import json
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Collection
+from typing import Any, Collection, Iterator
 
 from central_mcp import paths
 
@@ -261,6 +261,190 @@ def read_jsonl(
             continue
         out.append(record)
     return out
+
+
+# ---------- tailing one dispatch's output ----------
+
+#: Writers stamp `ts` before they append, so two threads can land a few
+#: milliseconds out of order. The backward scan keeps going this far past
+#: its lower bound before it concludes nothing older can match.
+_TAIL_SLACK_SEC = 2.0
+
+_TAIL_BLOCK = 64 * 1024
+
+_TS_PREFIX = b'{"ts": "'
+
+
+def _parse_ts(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def _lines_reversed(path: Path) -> Iterator[bytes]:
+    """Yield a file's lines last-to-first without reading the whole file.
+
+    Project logs are dominated by output chunks and reach tens of MB; a
+    caller polling a running dispatch wants the last few hundred lines.
+    """
+    with path.open("rb") as f:
+        f.seek(0, 2)
+        pos = f.tell()
+        carry = b""
+        while pos > 0:
+            step = min(_TAIL_BLOCK, pos)
+            pos -= step
+            f.seek(pos)
+            pieces = (f.read(step) + carry).split(b"\n")
+            # The first piece may be the tail end of a line that starts in
+            # the previous block — hold it until that block is read.
+            carry = pieces[0]
+            for piece in reversed(pieces[1:]):
+                if piece:
+                    yield piece
+        if carry:
+            yield carry
+
+
+def _line_ts(line: bytes) -> datetime | None:
+    """A record's timestamp without parsing the record.
+
+    `log_event` always writes `ts` first, so it can be sliced out. Depends
+    on the writer's format, which is why it lives next to the writer.
+    """
+    if not line.startswith(_TS_PREFIX):
+        return None
+    end = line.find(b'"', len(_TS_PREFIX))
+    if end < 0:
+        return None
+    return _parse_ts(line[len(_TS_PREFIX):end].decode("ascii", errors="replace"))
+
+
+def parse_cursor(since: str | None) -> tuple[datetime | None, int | None]:
+    """Split a tail cursor into `(timestamp, already_delivered_at_it)`.
+
+    A cursor from `tail_output` is `<ts>#<n>`: n output lines stamped
+    exactly `ts` were already delivered. Timestamps have millisecond
+    precision and output arrives in bursts, so a bare timestamp cannot say
+    where inside one millisecond the previous read stopped — it would
+    either repeat lines or drop them.
+
+    A bare timestamp is accepted too, for a caller that has none of ours;
+    it means "strictly after", returned as a count of None.
+    """
+    if not since:
+        return None, 0
+    ts_part, sep, count_part = since.partition("#")
+    ts = _parse_ts(ts_part.strip())
+    if ts is None:
+        return None, 0
+    if not sep:
+        return ts, None
+    try:
+        return ts, max(0, int(count_part))
+    except ValueError:
+        return ts, None
+
+
+def tail_output(
+    project: str,
+    dispatch_id: str,
+    *,
+    since: str | None = None,
+    not_before: datetime | None = None,
+    max_lines: int = 200,
+    max_chunk_chars: int = 2000,
+) -> dict[str, Any]:
+    """Output lines one dispatch has emitted since a cursor.
+
+    Reads the project log backward and stops at the lower bound, so the
+    cost follows the amount of new output, not the size of the log.
+    `not_before` (the dispatch's start) bounds the first read, when there
+    is no cursor yet.
+
+    Returns the newest `max_lines` lines oldest-first, how many older new
+    lines were left out (`skipped`), and `next_since` — the cursor to pass
+    on the next call. With no new output `next_since` is the cursor that
+    came in, so a caller can pass it back unchanged.
+
+    Only the live log is read. Output written before a log rotation is
+    not returned.
+    """
+    empty = {"lines": [], "skipped": 0, "next_since": since}
+    path = log_path(project)
+    cursor_ts, delivered = parse_cursor(since)
+    lower = cursor_ts or not_before
+    id_marker = f'"id": "{dispatch_id}"'.encode()
+    event_marker = b'"event": "output"'
+
+    matched: list[tuple[datetime, dict[str, Any]]] = []  # newest first
+    try:
+        if not path.exists():
+            return empty
+        for line in _lines_reversed(path):
+            ts = _line_ts(line)
+            if ts is not None and lower is not None:
+                if (lower - ts).total_seconds() > _TAIL_SLACK_SEC:
+                    break
+            if id_marker not in line or event_marker not in line:
+                continue
+            try:
+                record = json.loads(line.decode("utf-8", errors="replace"))
+            except json.JSONDecodeError:
+                continue  # a half-written final line; the next call gets it
+            if (
+                not isinstance(record, dict)
+                or record.get("id") != dispatch_id
+                or record.get("event") != "output"
+            ):
+                continue
+            rec_ts = _parse_ts(record.get("ts"))
+            if rec_ts is None:
+                continue
+            if cursor_ts is not None and rec_ts < cursor_ts:
+                continue
+            matched.append((rec_ts, record))
+    except OSError:
+        return empty
+
+    matched.reverse()  # oldest first, file order preserved within a timestamp
+    if not matched:
+        return empty
+
+    newest_ts = matched[-1][0]
+    at_newest = sum(1 for ts, _ in matched if ts == newest_ts)
+
+    fresh: list[dict[str, Any]] = []
+    seen_at_cursor = 0
+    for ts, record in matched:
+        if cursor_ts is not None and ts == cursor_ts:
+            seen_at_cursor += 1
+            if delivered is None or seen_at_cursor <= delivered:
+                continue
+        fresh.append(record)
+
+    next_since = f"{matched[-1][1]['ts']}#{at_newest}"
+    if not fresh:
+        return {"lines": [], "skipped": 0, "next_since": next_since}
+
+    limit = max(1, int(max_lines))
+    skipped = max(0, len(fresh) - limit)
+    lines = []
+    for record in fresh[-limit:]:
+        text = str(record.get("chunk") or "")
+        cut = len(text) > max_chunk_chars
+        lines.append({
+            "ts": record.get("ts"),
+            "stream": record.get("stream"),
+            "agent": record.get("agent"),
+            "text": text[:max_chunk_chars] if cut else text,
+            "truncated": cut,
+        })
+    return {"lines": lines, "skipped": skipped, "next_since": next_since}
 
 
 def log_event(project: str, dispatch_id: str, event: str, **data: Any) -> None:

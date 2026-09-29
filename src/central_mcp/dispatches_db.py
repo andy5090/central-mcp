@@ -54,13 +54,41 @@ CREATE TABLE IF NOT EXISTS dispatches (
     error          TEXT,
     tokens_json    TEXT,                 -- JSON-encoded tokens dict
     chain_json     TEXT,                 -- JSON-encoded agent-chain list
-    updated_at     TEXT    NOT NULL
+    updated_at     TEXT    NOT NULL,
+    last_output_at TEXT,                 -- ISO 8601 UTC of the newest output line
+    output_lines   INTEGER DEFAULT 0,
+    output_bytes   INTEGER DEFAULT 0,
+    attempt_count  INTEGER DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_dispatches_status
     ON dispatches(status, updated_at);
 CREATE INDEX IF NOT EXISTS idx_dispatches_project
     ON dispatches(project, started_at);
 """
+
+
+#: Columns added after the table first shipped. `CREATE TABLE IF NOT
+#: EXISTS` never alters an existing table, so databases from older
+#: versions get them through `_migrate`.
+_PROGRESS_COLUMNS = {
+    "last_output_at": "TEXT",
+    "output_lines": "INTEGER DEFAULT 0",
+    "output_bytes": "INTEGER DEFAULT 0",
+    "attempt_count": "INTEGER DEFAULT 0",
+}
+
+_migrated: set[str] = set()
+
+
+def _migrate(conn: sqlite3.Connection, key: str) -> None:
+    """Add any missing progress columns. Runs once per database per process."""
+    if key in _migrated:
+        return
+    have = {row["name"] for row in conn.execute("PRAGMA table_info(dispatches)")}
+    for name, decl in _PROGRESS_COLUMNS.items():
+        if name not in have:
+            conn.execute(f"ALTER TABLE dispatches ADD COLUMN {name} {decl}")
+    _migrated.add(key)
 
 
 @contextmanager
@@ -71,6 +99,7 @@ def _connect() -> Iterator[sqlite3.Connection]:
     conn.row_factory = sqlite3.Row
     try:
         conn.executescript(_SCHEMA)
+        _migrate(conn, str(path))
         yield conn
         conn.commit()
     finally:
@@ -173,6 +202,43 @@ def upsert_finished(
         pass
 
 
+def record_progress(
+    dispatch_id: str,
+    *,
+    last_output_at: str | None,
+    output_lines: int,
+    output_bytes: int,
+    attempt_count: int,
+) -> None:
+    """Store a running dispatch's output progress.
+
+    Values are absolute totals, not increments: the writer keeps the
+    running counts in memory and calls this on a throttle, so a lost or
+    repeated write changes nothing. Never raises.
+    """
+    try:
+        with _connect() as conn:
+            conn.execute(
+                """
+                UPDATE dispatches SET
+                    last_output_at = ?,
+                    output_lines   = ?,
+                    output_bytes   = ?,
+                    attempt_count  = ?
+                WHERE id = ?
+                """,
+                (
+                    last_output_at,
+                    int(output_lines),
+                    int(output_bytes),
+                    int(attempt_count),
+                    dispatch_id,
+                ),
+            )
+    except Exception:
+        pass
+
+
 def mark_cancel_requested(dispatch_id: str) -> None:
     """Signal to other processes that a cancel has been requested.
 
@@ -248,6 +314,12 @@ def _row_to_entry(row: sqlite3.Row | None) -> dict[str, Any] | None:
         "updated":   updated_epoch,
         "process":   None,      # not shared across processes
         "result":    result,
+        "progress": {
+            "last_output_at": row["last_output_at"],
+            "output_lines":   row["output_lines"] or 0,
+            "output_bytes":   row["output_bytes"] or 0,
+            "attempt_count":  row["attempt_count"] or 0,
+        },
         "attempts":  [],        # full attempt history not mirrored — keep
                                 # in memory for performance and detailed
                                 # inspection locally.

@@ -168,6 +168,77 @@ def _record_dispatch_status(
         pass
 
 
+#: Minimum interval between progress writes for one dispatch. A chatty
+#: agent emits thousands of lines; a database write per line would slow
+#: the reader threads enough to back up the agent's stdout pipe. Surfaces
+#: read this value to tell minutes of silence from seconds, so a few
+#: seconds of lag costs them nothing.
+_PROGRESS_FLUSH_SEC = 2.0
+
+
+class _Progress:
+    """Running output totals for one dispatch, mirrored to the shared db.
+
+    The stdout and stderr reader threads both call `note`. The in-memory
+    entry is updated on every line; `dispatches.db`, which every other
+    process reads, is written on a throttle.
+
+    A throttle alone would lose the lines that matter most: an agent that
+    prints and then hangs emits nothing further to trigger the next write,
+    so the db would keep the totals from before its last lines. Each
+    deferred write therefore arms a timer that delivers it.
+    """
+
+    def __init__(self, dispatch_id: str, entry: dict[str, Any]) -> None:
+        self._id = dispatch_id
+        self._entry = entry
+        self._lock = threading.Lock()
+        self._last_flush = 0.0
+        self._timer: threading.Timer | None = None
+        self._state = {
+            "last_output_at": None,
+            "output_lines": 0,
+            "output_bytes": 0,
+            "attempt_count": 0,
+        }
+        entry["progress"] = dict(self._state)
+
+    def attempt_started(self) -> None:
+        with self._lock:
+            self._state["attempt_count"] += 1
+        self.flush()
+
+    def note(self, line: str) -> None:
+        now = time.time()
+        with self._lock:
+            self._state["last_output_at"] = datetime.now(timezone.utc).isoformat(
+                timespec="milliseconds"
+            )
+            self._state["output_lines"] += 1
+            self._state["output_bytes"] += len(line.encode("utf-8", errors="replace"))
+            snapshot = dict(self._state)
+            wait = _PROGRESS_FLUSH_SEC - (now - self._last_flush)
+            if wait > 0 and self._timer is None:
+                self._timer = threading.Timer(wait, self.flush)
+                self._timer.daemon = True
+                self._timer.start()
+        with _dispatch_lock:
+            self._entry["progress"] = snapshot
+        if wait <= 0:
+            self.flush()
+
+    def flush(self) -> None:
+        with self._lock:
+            snapshot = dict(self._state)
+            self._last_flush = time.time()
+            timer, self._timer = self._timer, None
+        if timer is not None:
+            timer.cancel()
+        with _dispatch_lock:
+            self._entry["progress"] = snapshot
+        dispatches_db.record_progress(self._id, **snapshot)
+
+
 def _running_siblings(project_name: str) -> list[dict[str, Any]]:
     """Return summary dicts for dispatches currently running for project_name.
 
@@ -900,6 +971,7 @@ def _launch_dispatch(
         "result": None,
         "attempts": [],
     }
+    progress = _Progress(dispatch_id, entry)
 
     def _run_one(agent_name: str) -> dict[str, Any]:
         """Spawn one attempt with a specific agent. Streams stdout/stderr
@@ -924,6 +996,7 @@ def _launch_dispatch(
             project.name, dispatch_id, "attempt_start",
             agent=agent_name, command=" ".join(argv),
         )
+        progress.attempt_started()
 
         try:
             proc = subprocess.Popen(
@@ -965,6 +1038,7 @@ def _launch_dispatch(
                         agent=agent_name, stream=stream_name,
                         chunk=line.rstrip("\n"),
                     )
+                    progress.note(line)
             except Exception:
                 pass
             finally:
@@ -1101,6 +1175,7 @@ def _launch_dispatch(
         # Persist the terminal state so other central-mcp processes
         # (notably sub-agents the orchestrator spawned for polling) see
         # the completion.
+        progress.flush()
         dispatches_db.upsert_finished(dispatch_id, final_status, final_result)
         _record_dispatch_status(
             project.name, final_status, (final_result or {}).get("output", "")
@@ -1309,6 +1384,9 @@ def check_dispatch(dispatch_id: str) -> dict[str, Any]:
             "dispatch_id": dispatch_id,
             "project": entry["project"],
             "elapsed_sec": round(time.time() - entry["started"], 1),
+            "output": pulse_mod.output_health(
+                entry.get("progress"), entry.get("agent")
+            ),
         }
     return {
         "ok": True,
@@ -1317,6 +1395,74 @@ def check_dispatch(dispatch_id: str) -> dict[str, Any]:
         "project": entry["project"],
         **(entry["result"] or {}),
     }
+
+
+@mcp.tool()
+def tail_dispatch(
+    dispatch_id: str,
+    since: str | None = None,
+    max_lines: int = 50,
+) -> dict[str, Any]:
+    """Read what a dispatch has printed so far, without waiting for it to finish.
+
+    `check_dispatch` returns output only after the agent exits. Use this
+    while a dispatch is still running — to answer "what is it doing right
+    now?", or to look closer when `output.state` is `quiet`.
+
+    Arguments:
+      dispatch_id — the id `dispatch` returned.
+      since       — the `next_since` value from your previous call, to get
+                    only newer lines. Omit it on the first call. A plain
+                    ISO 8601 timestamp is accepted too.
+      max_lines   — most lines to return (default 50). When more are new,
+                    you get the newest and `skipped` counts the rest.
+
+    Returns `lines` (oldest first; each has `ts`, `stream`, `agent`, `text`),
+    `skipped`, `next_since`, the dispatch `status`, and `output`:
+
+      state               streaming | quiet | no_output_yet | exit_only
+      last_output_age_sec seconds since the newest line
+      output_lines        lines emitted so far
+
+    Read `output.state` before you report on a silent dispatch:
+      - `exit_only` — this agent prints only when it exits (claude does).
+        No lines is its normal state. Do not report it as stuck.
+      - `quiet` — the agent printed before and has printed nothing for 15
+        minutes. It may be stuck. Tell the user; do not cancel on your own.
+      - `no_output_yet` — nothing printed so far. Report the elapsed time.
+
+    Lines are raw agent output (often JSON events) — summarize them for
+    the user; do not paste them. Once `status` is no longer `running`,
+    call `check_dispatch` for the final result.
+    """
+    entry = _lookup_entry(dispatch_id)
+    if entry is None:
+        return {"ok": False, "error": f"no dispatch with id {dispatch_id!r}"}
+    started = datetime.fromtimestamp(entry["started"], tz=timezone.utc)
+    tail = events.tail_output(
+        entry["project"],
+        dispatch_id,
+        since=since,
+        not_before=started,
+        max_lines=max(1, min(int(max_lines), 500)),
+    )
+    # The in-memory entry is current to the line; a db row lags by the
+    # flush interval. Either is accurate enough to tell minutes from seconds.
+    with _dispatch_lock:
+        progress = dict(entry.get("progress") or {})
+    return _with_completed({
+        "ok": True,
+        "dispatch_id": dispatch_id,
+        "project": entry["project"],
+        "agent": entry.get("agent"),
+        "status": entry["status"],
+        "elapsed_sec": round(time.time() - entry["started"], 1),
+        "lines": tail["lines"],
+        "returned": len(tail["lines"]),
+        "skipped": tail["skipped"],
+        "next_since": tail["next_since"],
+        "output": pulse_mod.output_health(progress, entry.get("agent")),
+    })
 
 
 def _dispatch_row(e: dict[str, Any]) -> dict[str, Any]:
@@ -1336,7 +1482,7 @@ def _dispatch_row(e: dict[str, Any]) -> dict[str, Any]:
             finished_at = datetime.fromtimestamp(
                 epoch, tz=timezone.utc
             ).isoformat(timespec="milliseconds")
-    return {
+    row = {
         "dispatch_id": e["id"],
         "project": e["project"],
         "agent": e["agent"],
@@ -1345,6 +1491,9 @@ def _dispatch_row(e: dict[str, Any]) -> dict[str, Any]:
         "elapsed_sec": round(time.time() - e["started"], 1),
         "finished_at": finished_at,
     }
+    if e["status"] == "running":
+        row["output"] = pulse_mod.output_health(e.get("progress"), e.get("agent"))
+    return row
 
 
 def _is_failure(row: dict[str, Any]) -> bool:

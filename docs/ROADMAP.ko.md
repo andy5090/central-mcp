@@ -146,11 +146,11 @@ central-mcp의 일은 그 PM이 되는 것입니다. 등록된 모든 프로젝�
 
 ✅ **관측 페인 기본값이 포커스로 (0.16.0).** `cmcp up` / `tmux` / `zellij`가 더 이상 등록된 전 프로젝트를 타일링하지 않습니다. 한 창에 다 들어가면 동작은 그대로고, 넘칠 때는 들어갈 수 있는 만큼 **가장 최근에 활동한** 프로젝트로 페인을 열고 빠진 것과 보는 방법을 함께 출력합니다. `--projects a,b,c`로 직접 고르고, `--all-projects`로 기존 전체 타일링을 복원합니다. 활동 랭킹은 pulse 신호를 재사용하므로(`pulse.rank_by_activity`), "최근"이 dispatch 기록만이 아니라 git 커밋을 포함한 진짜 작업을 뜻합니다.
 
-📋 **TUI 안의 라이브 출력.** 사이드바가 실행 중인 dispatch의 출력을 도착하는 대로 보여줄 수 있습니다. 데이터는 처음부터 거기 있었습니다. `dispatch()`의 reader 스레드가 이미 줄마다 `output` 이벤트를 실시간으로 `dispatch.jsonl`에 씁니다 — `watch`가 렌더링하는 게 바로 그것입니다 — 그런데 `DispatchWatcher`는 `dispatches.db`를 폴링하고, db의 `output` 컬럼은 프로세스 종료 시에만 채워집니다. 즉 TUI가 실행 중에 아무것도 못 보는 이유는 출력을 얻기 어려워서가 아니라 **엉뚱한 파일을 보고 있어서**입니다. 필요한 offset 기반 tail(잘림 처리 포함)은 `watch._tail_forever`에 이미 구현돼 있습니다.
+📋 **TUI 안의 라이브 출력 — 다음 항목.** 사이드바가 실행 중인 dispatch의 출력을 도착하는 대로 보여줄 수 있습니다. 데이터는 처음부터 거기 있었습니다. `dispatch()`의 reader 스레드가 이미 줄마다 `output` 이벤트를 실시간으로 `dispatch.jsonl`에 씁니다 — `watch`가 렌더링하는 게 바로 그것입니다 — 그런데 `DispatchWatcher`는 `dispatches.db`를 폴링하고, db의 `output` 컬럼은 프로세스 종료 시에만 채워집니다. 즉 TUI가 실행 중에 아무것도 못 보는 이유는 출력을 얻기 어려워서가 아니라 **엉뚱한 파일을 보고 있어서**입니다. 필요한 offset 기반 tail(잘림 처리 포함)은 `watch._tail_forever`에 이미 구현돼 있습니다.
 
 > 이걸 명시하는 이유는, 진짜로 어려운 문제와 계속 혼동돼 왔기 때문입니다. **PTY 모드 출력 캡처**(아래)는 애초에 청크 이벤트 스트림 자체가 없고, 원본 ANSI 화면에서 구조화된 청크를 복원하는 게 진짜 난점입니다. 둘은 무관한 문제입니다. MCP dispatch 쪽은 배선이고, PTY 쪽은 연구 과제입니다.
 
-📋 **공용 캡슐화로서의 `tail_dispatch`.** 표면마다 jsonl 파싱을 가르치는 대신, [Dispatch 코어](#dispatch-core-routing) 트랙의 `tail_dispatch` 도구가 orchestrator·TUI 사이드바·그 외 무엇이든 "이 dispatch가 T 이후로 뭘 내놨나?"를 묻는 단일한 방법을 제공합니다.
+✅ **공용 캡슐화로서의 `tail_dispatch` (0.21.0).** `events.tail_output`이 유일한 리더입니다. MCP 도구가, 그리고 배선되면 TUI가, jsonl을 직접 파싱하지 않고 이것을 호출합니다.
 
 ### Live agent panes
 
@@ -176,9 +176,9 @@ opt-in, 세션 단위의 두 번째 실행 모드로, 기본 비대화 dispatch�
 
 PM의 손: dispatch 파이프라인 자체와, 일을 어디로 보낼지에 대한 지능. 프런티어 CLI들의 순수 능력이 수렴했으므로, 흥미로운 라우팅 신호는 비용·쿼터 여유·작업 형태·프로젝트 적합도 — central-mcp가 이미 추적하는 상태들입니다.
 
-📋 **`tail_dispatch(dispatch_id, since_ts=null)` MCP 도구 — 이 트랙의 다음 항목.** 소비자 셋(TUI 라이브 출력, expanded dispatch row, orchestrator)에 보드에서 비용 대비 레버리지가 가장 좋습니다. 완료를 기다리지 않고 시각 기준 최근 출력 청크 반환. `dispatches.db`의 `output` 컬럼은 subprocess 종료 시에만 쓰이므로, 실행 중 진행 상황을 보려는 표면은 전부 `dispatch.jsonl`을 직접 파싱해야 합니다 — 줄 단위 `output` 이벤트는 TUI가 생기기 훨씬 전부터 거기에 실시간으로 쌓이고 있었습니다. 이 도구가 그 경로를 임시 리더 세 개가 아닌 하나의 지원되는 방법으로 만듭니다. 왜 이게 어려운 문제가 아니라 배선인지는 [Focused panes](#focused-panes) 참고.
+✅ **`tail_dispatch(dispatch_id, since=None)` MCP 도구 (0.21.0).** dispatch가 종료하기를 기다리지 않고 지금까지 출력한 줄을 반환 — 임시 jsonl 리더 셋 대신 지원되는 경로 하나. 계획이 예상하지 못한 것 둘. **로그가 39MB까지 큽니다.** 파일 전체 읽기는 폴링에 쓸 수 없어서, 끝에서 거꾸로 읽다가 커서에서 멈춥니다. **커서는 타임스탬프가 아니라 `<ts>#<n>`입니다.** 출력은 몰아서 도착하고 타임스탬프는 밀리초 정밀도라, 타임스탬프만으로는 같은 밀리초를 공유하는 줄을 중복하거나 빠뜨립니다.
 
-📋 **`dispatches` 테이블 progress 컬럼.** `last_output_ts`, `output_bytes`, `attempt_count` — 청크마다 싼 쓰기; 읽기는 모든 표면의 "살아있나 멈췄나" 표시기를 구동.
+✅ **`dispatches` 테이블 progress 컬럼 (0.21.0).** `last_output_at`, `output_lines`, `output_bytes`, `attempt_count`. 계획처럼 청크마다 쓰지 않고 2초 스로틀로 씁니다 — 줄마다 쓰면 출력이 많은 에이전트의 stdout 파이프가 밀립니다. 미뤄진 쓰기는 타이머가 배달하므로, 출력하고 나서 멈춘 에이전트가 있어도 db에 마지막 줄 이전의 합계가 남지 않습니다. **침묵은 에이전트별로, 측정값으로 읽습니다.** claude는 긴 dispatch 43건 중 43건이 종료 전까지 아무것도 출력하지 않았습니다. 단순한 "마지막 출력 X 전" 표시기였다면 그 전부를 멈춘 것으로 표시했을 것입니다. `output.state` 블록(`streaming` · `quiet` · `no_output_yet` · `exit_only`)은 `check_dispatch`, `list_dispatches`, `tail_dispatch`, `project_pulse`에 실립니다. `quiet` 임계값은 15분 — 이후 성공한 dispatch에서 관측된 가장 긴 침묵(660초)보다 위입니다.
 
 📋 **토큰 예산 + 알림.** `config.toml`의 프로젝트/워크스페이스별 캡; 임계 도달 시 dispatch 시작 시점에 배너.
 

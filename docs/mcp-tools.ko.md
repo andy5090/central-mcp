@@ -78,7 +78,25 @@ pulse 기반이라 `orchestration_history`와 달리 central-mcp를 거치지 �
 `name="@workspace"` 형식으로 부르면 그 워크스페이스의 모든 프로젝트로 한 번에 fan-out 됩니다 (리스트로 `dispatch_id`들 반환).
 
 ### `check_dispatch(dispatch_id)`
-dispatch 상태 폴링: `running` / `complete` / `error` / `cancelled`. 완료된 경우 풀 출력까지 같이 반환.
+dispatch 상태 폴링: `running` / `complete` / `error` / `cancelled`. 완료된 경우 풀 출력까지 같이 반환. 실행 중에는 응답에 `output` 블록이 들어갑니다 — `tail_dispatch`가 반환하는 것과 같은 블록이라, 폴링만으로 일하는 중인 dispatch와 조용한 dispatch를 구별할 수 있습니다.
+
+### `tail_dispatch(dispatch_id, since=None, max_lines=50)` (0.21.0+)
+실행 중인 dispatch가 지금까지 출력한 줄을 반환합니다. `check_dispatch`는 에이전트가 종료한 뒤에만 출력을 주고, 이 도구는 프로젝트의 `dispatch.jsonl`에 줄 단위로 쌓이는 `output` 이벤트를 읽습니다.
+
+반환: `lines`(오래된 것부터. 각 줄에 `ts`, `stream`, `agent`, `text`), `skipped`, `next_since`, `status`, `output`. `next_since`를 다음 호출의 `since`로 넘기면 새 줄만 받습니다. 새 줄이 `max_lines`보다 많으면 최신 줄만 받고 나머지 개수는 `skipped`에 들어가며, 커서는 그 줄들을 지나갑니다.
+
+`output` 블록은 활동을 판정이 아니라 사실로 기술합니다:
+
+| `state` | 의미 |
+|---|---|
+| `streaming` | 최근 15분 안에 출력이 있었음. |
+| `quiet` | 전에 출력이 있었고, 15분 이상 없음. 멈춘 dispatch를 시사하는 유일한 상태. |
+| `no_output_yet` | 아직 아무것도 출력하지 않음. |
+| `exit_only` | 아직 출력이 없고, 종료할 때만 출력하는 에이전트임. 침묵이 정상 상태. |
+
+어느 에이전트가 `exit_only`인지는 벤더 문서가 아니라 dispatch 로그에서 측정했습니다: claude는 20초 넘는 dispatch 43건 중 43건이 종료 전까지 아무것도 출력하지 않았고, codex·gemini·opencode는 실행 중에 출력합니다. 표본이 부족한 에이전트는 미측정으로 두고 판정하지 않습니다. 15분 임계값은 이후 성공한 dispatch에서 관측된 가장 긴 침묵(660초)보다 위에 있습니다.
+
+로그 끝에서 거꾸로 읽다가 커서에서 멈추므로 비용은 로그 크기가 아니라 새 출력량을 따릅니다. 라이브 로그만 읽습니다.
 
 ### `cancel_dispatch(dispatch_id)`
 진행 중 dispatch 중단.

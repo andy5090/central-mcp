@@ -47,6 +47,7 @@ One-off instructions ("just this time", "for this dispatch only") do NOT need pe
 | `list_projects` | See what's registered. Call this first if unsure. |
 | `dispatch` | Send a prompt to a project's agent. NON-BLOCKING — returns dispatch_id in <100ms. |
 | `check_dispatch` | Poll a dispatch. Returns running/complete/error + output when done. |
+| `tail_dispatch` | Lines a dispatch has printed so far, while it is still running. Params: `since` (the `next_since` from your previous call), `max_lines` (default 50). Returns `lines`, `skipped`, `next_since`, and `output` (state, age of the newest line, line count). See "A dispatch that is still running" below. |
 | `list_dispatches` | All active + recent dispatches. |
 | `cancel_dispatch` | Abort a running dispatch. |
 | `add_project` | Register a new project (default agent: claude). |
@@ -76,6 +77,7 @@ The tools overlap on purpose — cheap ones for cheap questions. Pick by what wa
 | "what conversations do I have for X?" | `list_project_sessions(X)` |
 | "is anything running?" | `list_dispatches()` |
 | "how did dispatch `<id>` go?" | `check_dispatch(id)` |
+| "what is dispatch `<id>` doing right now?", "is it stuck?" | `tail_dispatch(id)` — read `output.state` first |
 
 Never answer any of these by reading files or running shell commands.
 
@@ -101,6 +103,23 @@ Beyond routing, sharpen multi-project sessions when the rhythm allows. These are
 - **Brief the arriving project, not the one being left.** When the user switches from project A to project B, call `project_pulse(B)` and compress it into two or three lines: **what happened** (recent commits + dispatch outcomes), **where it stands** (branch, uncommitted work, anything running), **what's next** (the obvious loose end — unpushed commits, a failed dispatch, an open PR). Prefer it over `dispatch_history`: history only sees work that went through central-mcp, and after an absence the interesting work often didn't. Skip only when B is brand new. Close the briefing with the ledger's `next_step` as a claim to confirm — see "Recording intent" below.
 - **Never report a stale dispatch as live.** `project_pulse` splits `dispatches.in_flight` from `dispatches.stale` (rows still marked running after hours — a crashed or restarted server never wrote their terminal state). Report stale ones as unfinished, not as work in progress.
 - **Portfolio briefing on explicit ask, unprompted on heavy churn.** When the user asks for overall status / "how is everything?", always call `orchestration_history()` and group `recent[]` by project — per project, report prompts (`prompt_preview`), outcomes, and `output_preview` (tail of agent stdout) when present. Unprompted mode: volunteer the same snapshot once per session when the user has bounced across 3+ projects in a short span.
+
+## A dispatch that is still running
+
+`check_dispatch` returns output only after the agent exits. While a dispatch runs, its response carries `output` instead, and `tail_dispatch(id)` returns the lines printed so far.
+
+Read `output.state` before you say anything about a silent dispatch:
+
+| `output.state` | Meaning | What to say |
+|---|---|---|
+| `streaming` | It printed within the last 15 minutes. | It is working. Give `last_output_age_sec` if asked. |
+| `exit_only` | This agent prints only when it exits (claude does). | Silence is normal. **Never report it as stuck.** |
+| `no_output_yet` | Nothing printed so far. | Report the elapsed time. Do not guess a cause. |
+| `quiet` | It printed before, then nothing for 15 minutes or longer. | It may be stuck. Tell the user and offer to cancel. **Do not cancel on your own.** |
+
+Call `tail_dispatch(id)` when the user asks what a running dispatch is doing, or when the state is `quiet`. Pass the `next_since` value from one call as `since` on the next, and you get only newer lines. The lines are raw agent output, often JSON events: summarize them in a sentence or two. Do not paste them.
+
+Do not use `tail_dispatch` in place of the completion poll. Keep polling `check_dispatch` for the result.
 
 ## Recording intent — the status ledger
 

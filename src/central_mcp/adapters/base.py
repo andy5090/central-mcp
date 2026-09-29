@@ -80,6 +80,12 @@ class Adapter:
     launch: Sequence[str] = ()
     has_exec: bool = False
     supports_auto: bool = False
+    # Whether a dispatch emits output while it runs (True), only when it
+    # exits (False), or unmeasured (None). It decides how silence is read:
+    # a quiet streaming agent may be stuck, a quiet exit-only agent is
+    # working normally. Set from observed dispatch logs, not from vendor
+    # documentation — leave None rather than guess.
+    streams_output: bool | None = None
 
     def launch_command(self) -> str:
         """Shell-joined interactive launch command for tmux panes."""
@@ -973,11 +979,16 @@ class _OpenClaw(Adapter):
 
 
 _ADAPTERS: dict[str, Adapter] = {
-    "claude":   _Claude("claude",   launch=("claude",),   has_exec=True, supports_auto=True),
-    "codex":    _Codex("codex",     launch=("codex",),    has_exec=True),
-    "gemini":   _Gemini("gemini",   launch=("gemini",),   has_exec=True),
+    # streams_output, measured over dispatches longer than 20s: claude 0 of
+    # 43 emitted anything before exit (`--output-format json` is one blob);
+    # codex 86 of 106, gemini 22 of 22 and opencode 15 of 15 emitted mid-run.
+    # droid (2 samples), hermes, gjc and openclaw stay unmeasured.
+    "claude":   _Claude("claude",   launch=("claude",),   has_exec=True, supports_auto=True,
+                        streams_output=False),
+    "codex":    _Codex("codex",     launch=("codex",),    has_exec=True, streams_output=True),
+    "gemini":   _Gemini("gemini",   launch=("gemini",),   has_exec=True, streams_output=True),
     "droid":    _Droid("droid",     launch=("droid",),    has_exec=True),
-    "opencode": _OpenCode("opencode", launch=("opencode",), has_exec=True),
+    "opencode": _OpenCode("opencode", launch=("opencode",), has_exec=True, streams_output=True),
     "hermes":   _Hermes("hermes",   launch=("hermes",),   has_exec=True),
     "gjc":      _Gjc("gjc",         launch=("gjc",),      has_exec=True),
     "openclaw": _OpenClaw("openclaw", launch=("openclaw", "chat"), has_exec=True),

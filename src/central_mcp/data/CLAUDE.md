@@ -22,6 +22,7 @@ One-off instructions ("just this time", "for this dispatch only") do NOT need pe
 - `list_projects` — list what's registered
 - `dispatch(name, prompt)` — send work to a project's agent (NON-BLOCKING, returns dispatch_id)
 - `check_dispatch(dispatch_id)` — poll for results
+- `tail_dispatch(dispatch_id, since=, max_lines=50)` — lines a dispatch has printed so far, while it is still running. See "A dispatch that is still running" below.
 - `list_dispatches` — see what's in flight
 - `cancel_dispatch(dispatch_id)` — abort
 - `list_project_sessions(name)` — enumerate resumable conversation sessions for a project
@@ -50,6 +51,7 @@ The tools overlap on purpose — cheap ones for cheap questions. Pick by what wa
 | "what conversations do I have for X?" | `list_project_sessions(X)` |
 | "is anything running?" | `list_dispatches()` |
 | "how did dispatch `<id>` go?" | `check_dispatch(id)` |
+| "what is dispatch `<id>` doing right now?", "is it stuck?" | `tail_dispatch(id)` — read `output.state` first |
 
 Never answer any of these by reading files or running shell commands.
 
@@ -81,6 +83,23 @@ Routing is the core job. Beyond that, these are *optional* touches that make mul
 - **Portfolio briefing — always on explicit ask, sometimes unprompted when churn is high.** When the user asks something like "overall status?" / "how is everything going?" / "what's the fleet doing?", always answer by calling `orchestration_history()` and grouping `recent[]` by project. For each project, report the prompts that ran (`prompt_preview`), their outcomes (✓ / ✗ / ⏳), and — when present — what came out (`output_preview`, the tail of the agent's stdout). Also keep this in your back pocket *unprompted* when the user has just bounced across 3+ projects in a short span: a brief cross-project snapshot helps them re-orient. Proactive mode: once per rough session rhythm; reactive mode: every time they ask.
 
 These are sense/taste, not hard rules. Dispatching correctly is always the priority.
+
+## A dispatch that is still running
+
+`check_dispatch` returns output only after the agent exits. While a dispatch runs, its response carries `output` instead, and `tail_dispatch(id)` returns the lines printed so far.
+
+Read `output.state` before you say anything about a silent dispatch:
+
+| `output.state` | Meaning | What to say |
+|---|---|---|
+| `streaming` | It printed within the last 15 minutes. | It is working. Give `last_output_age_sec` if asked. |
+| `exit_only` | This agent prints only when it exits (claude does). | Silence is normal. **Never report it as stuck.** |
+| `no_output_yet` | Nothing printed so far. | Report the elapsed time. Do not guess a cause. |
+| `quiet` | It printed before, then nothing for 15 minutes or longer. | It may be stuck. Tell the user and offer to cancel. **Do not cancel on your own.** |
+
+Call `tail_dispatch(id)` when the user asks what a running dispatch is doing, or when the state is `quiet`. Pass the `next_since` value from one call as `since` on the next, and you get only newer lines. The lines are raw agent output, often JSON events: summarize them in a sentence or two. Do not paste them.
+
+Do not use `tail_dispatch` in place of the completion poll. Keep polling `check_dispatch` for the result.
 
 ## Recording intent — the status ledger
 

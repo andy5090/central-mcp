@@ -3,6 +3,28 @@
 All notable changes to central-mcp are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.21.0] — 2026-09-29
+
+### Added
+- **`tail_dispatch(dispatch_id, since=None, max_lines=50)` — what a dispatch has printed so far, while it is still running.** `check_dispatch` returns output only after the agent exits, so a running dispatch was opaque: the hub knew that it had started and nothing else. The per-line `output` events had been in `dispatch.jsonl` all along; this is the supported way to read them. Returns `lines`, `skipped`, `next_since`, and an `output` block.
+- **Progress columns on `dispatches`** — `last_output_at`, `output_lines`, `output_bytes`, `attempt_count`. Databases from older versions are migrated in place on first open.
+- **`output.state` on every running dispatch** — `streaming` · `quiet` · `no_output_yet` · `exit_only`. Carried by `check_dispatch`, `list_dispatches`, `tail_dispatch`, and the `in_flight` rows of `project_pulse`, which now renders it (`running 12m · last output 40s ago`, `· reports on exit`, `· ⚠️ quiet, last output 18m ago`).
+- **`Adapter.streams_output`** — whether an agent prints while it runs (`True`), only when it exits (`False`), or is unmeasured (`None`).
+
+### Changed
+- **The orchestrator guidance and the agentOS skill teach how to read a silent dispatch.** `exit_only` is never reported as stuck; `quiet` is reported to the user and never cancelled without being asked.
+
+### Notes
+- **Silence is read per agent, and the per-agent facts are measured.** Over dispatches longer than 20 seconds in a working install, claude printed nothing before exit in 43 of 43 (`--output-format json` is one blob at the end), while codex (86 of 106), gemini (22 of 22) and opencode (15 of 15) printed mid-run. A plain "last output X ago" indicator would have flagged every claude dispatch as stuck. droid (2 samples), hermes, gjc and openclaw are left unmeasured rather than guessed, and an unmeasured agent is never judged.
+- **The `quiet` threshold is 15 minutes, set from the same logs.** The longest silence inside a dispatch that then succeeded was 192 s for codex, 91 s for gemini and 660 s for opencode. A 5-minute threshold would have flagged healthy opencode work at its 90th percentile (525 s).
+- **The tail reads backward and stops at the cursor.** Project logs reach 39 MB here, so reading the file on every poll was not an option; the cost now follows the amount of new output. Measured on that 39 MB log: 373 ms to read the file, 0.3 ms to tail it.
+- **The cursor is `<ts>#<n>`, not a timestamp.** Output arrives in bursts and timestamps have millisecond precision, so a read can land between two lines that share one. A bare timestamp would then repeat the first or drop the second. A bare ISO timestamp is still accepted and means "strictly after".
+- **Progress is written on a 2-second throttle, with a timer behind it.** A database write per line would slow the reader threads enough to back up a chatty agent's stdout. But a throttle alone loses the lines that matter most: an agent that prints and then hangs emits nothing further to trigger the next write. Each deferred write arms a timer that delivers it.
+- Known limit: only the live log is read, so output written before a log rotation is not returned.
+- Tests: `test_tail.py` (44 — tail reader incl. same-millisecond lines, half-written final line and block boundaries; cursor parsing; output health; column migration from an old database; end-to-end against a real subprocess). 884 passing.
+
+---
+
 ## [0.20.0] — 2026-08-30
 
 ### Added

@@ -78,7 +78,25 @@ Run a one-shot agent in the project's cwd. **Non-blocking** — returns a `dispa
 Pass `name="@workspace"` to fan-out the prompt to every project in that workspace at once (returns a list of `dispatch_id`s).
 
 ### `check_dispatch(dispatch_id)`
-Poll a dispatch's status: `running` / `complete` / `error` / `cancelled`. Returns full output once complete.
+Poll a dispatch's status: `running` / `complete` / `error` / `cancelled`. Returns full output once complete. While the dispatch runs, the response carries `output` — the same block `tail_dispatch` returns — so a poller can tell a working dispatch from a silent one without a second call.
+
+### `tail_dispatch(dispatch_id, since=None, max_lines=50)` (0.21.0+)
+The lines a dispatch has printed so far, while it is still running. `check_dispatch` returns output only after the agent exits; this reads the per-line `output` events from the project's `dispatch.jsonl`.
+
+Returns `lines` (oldest first; each has `ts`, `stream`, `agent`, `text`), `skipped`, `next_since`, `status`, and `output`. Pass `next_since` back as `since` to get only newer lines. When more than `max_lines` are new, you get the newest and `skipped` counts the rest; the cursor moves past them.
+
+The `output` block describes activity as fact, not verdict:
+
+| `state` | Meaning |
+|---|---|
+| `streaming` | Output arrived within the last 15 minutes. |
+| `quiet` | Output arrived before, none for 15 minutes or longer. The one state that suggests a stuck dispatch. |
+| `no_output_yet` | Nothing printed so far. |
+| `exit_only` | Nothing printed so far, by an agent that prints only when it exits. Silence is its normal state. |
+
+Which agents are `exit_only` is measured from dispatch logs, not taken from vendor documentation: claude printed nothing before exit in 43 of 43 dispatches longer than 20 seconds, while codex, gemini and opencode print as they run. Agents with too few samples are left unmeasured and are never judged. The 15-minute threshold sits above the longest silence seen in a dispatch that then succeeded (660 seconds).
+
+The read is backward from the end of the log and stops at the cursor, so its cost follows the amount of new output, not the size of the log. Only the live log is read.
 
 ### `cancel_dispatch(dispatch_id)`
 Abort a running dispatch.

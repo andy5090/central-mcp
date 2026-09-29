@@ -21,7 +21,7 @@ Prefer these tools over raw shell commands whenever the work targets a **registe
 
 1. **`list_projects`** — see the portfolio (name, agent, path, tags). Pass `workspace="__all__"` for every workspace.
 2. **`dispatch(name, prompt)`** — run the project's agent non-interactively in its cwd. **Non-blocking**: returns a `dispatch_id` in <100 ms while the agent works in the background.
-3. **`check_dispatch(dispatch_id)`** — poll. `{status: "running", elapsed_sec}` while alive; the full result (`output`, `tokens`, `duration_sec`) once finished.
+3. **`check_dispatch(dispatch_id)`** — poll. `{status: "running", elapsed_sec, output}` while alive; the full result (`output`, `tokens`, `duration_sec`) once finished. While it runs, `output.state` says how to read silence: `exit_only` means the agent prints only when it exits (claude does) and is not stuck; `quiet` means it printed before and then stopped for 15 minutes — tell the user, do not cancel on your own. `tail_dispatch(dispatch_id, since=)` returns the lines printed so far.
 4. **`cancel_dispatch(dispatch_id)`** — abort a runaway dispatch.
 
 ```

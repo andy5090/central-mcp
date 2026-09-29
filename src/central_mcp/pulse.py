@@ -331,6 +331,63 @@ def git_snapshot(
 
 # ---------- dispatches ----------
 
+#: How long a streaming agent may be silent before a running dispatch is
+#: reported `quiet`. Set above every silence seen in a dispatch that went
+#: on to succeed: the longest were 192s (codex), 91s (gemini) and 660s
+#: (opencode). A lower value would flag healthy work, and a warning that
+#: fires on healthy work stops being read.
+_QUIET_AFTER_SEC = 15 * 60
+
+
+def output_health(
+    progress: dict[str, Any] | None,
+    agent: str | None,
+    *,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Describe a running dispatch's output activity.
+
+    `state` is a statement of fact, not a verdict:
+
+      streaming      output arrived within the quiet threshold
+      quiet          output arrived before, none for the threshold or longer
+      no_output_yet  nothing emitted so far, by an agent that streams or
+                     whose behavior is unmeasured
+      exit_only      nothing emitted so far, by an agent that reports only
+                     when it exits — silence is its normal state
+
+    `quiet` is the one state that suggests a stuck dispatch, and only
+    suggests it; the caller decides what to do.
+    """
+    progress = progress or {}
+    last_at = progress.get("last_output_at")
+    lines = int(progress.get("output_lines") or 0)
+    age = _age_sec(last_at, now=now)
+
+    streams: bool | None = None
+    try:
+        streams = get_adapter(agent).streams_output if agent else None
+    except Exception:
+        streams = None
+
+    if lines > 0 and age is not None:
+        state = "quiet" if age >= _QUIET_AFTER_SEC else "streaming"
+    elif streams is False:
+        state = "exit_only"
+    else:
+        state = "no_output_yet"
+
+    return {
+        "state": state,
+        "last_output_at": last_at,
+        "last_output_age_sec": age,
+        "output_lines": lines,
+        "output_bytes": int(progress.get("output_bytes") or 0),
+        "attempt_count": int(progress.get("attempt_count") or 0),
+        "streams_output": streams,
+    }
+
+
 def dispatch_snapshot(project_name: str, *, history: int = 5) -> dict[str, Any]:
     """In-flight dispatches plus recent outcomes for one project.
 
@@ -362,6 +419,7 @@ def dispatch_snapshot(project_name: str, *, history: int = 5) -> dict[str, Any]:
                 ).isoformat(timespec="seconds"),
                 "elapsed_sec": elapsed,
                 "stale": elapsed > _STALE_AFTER_SEC,
+                "output": output_health(e.get("progress"), e.get("agent")),
             }
             # Stale rows are reported separately rather than dropped: a
             # never-finalized dispatch is itself a fact worth briefing on,
@@ -904,6 +962,20 @@ def _git_line(git: dict[str, Any]) -> str:
     return "- **Git** — " + " · ".join(bits)
 
 
+def _output_note(health: dict[str, Any] | None) -> str:
+    """The output-activity suffix for an in-flight dispatch line."""
+    if not health:
+        return ""
+    state = health.get("state")
+    if state == "streaming":
+        return f" · last output {humanize_age(health.get('last_output_age_sec'))}"
+    if state == "quiet":
+        return f" · ⚠️ quiet, last output {humanize_age(health.get('last_output_age_sec'))}"
+    if state == "exit_only":
+        return " · reports on exit"
+    return " · no output yet"
+
+
 def render(p: dict[str, Any]) -> str:
     """Render one pulse as a compact markdown block."""
     if not p.get("ok"):
@@ -937,7 +1009,7 @@ def render(p: dict[str, Any]) -> str:
     for e in (d.get("in_flight") or [])[:3]:
         lines.append(
             f"    - ⏳ `{e.get('agent') or '?'}` running {humanize_duration(e.get('elapsed_sec'))}"
-            f" — {_oneline(e.get('prompt'))}"
+            f"{_output_note(e.get('output'))} — {_oneline(e.get('prompt'))}"
         )
     for e in stale[:3]:
         lines.append(
